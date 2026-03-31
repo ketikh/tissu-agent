@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tissu Agent - Test Chat</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; height: 100vh; display: flex; flex-direction: column; }
+
+        .header { background: #075e54; color: white; padding: 16px 20px; display: flex; align-items: center; gap: 12px; }
+        .header h1 { font-size: 18px; font-weight: 600; }
+        .header .subtitle { font-size: 12px; opacity: 0.8; }
+        .agent-switch { display: flex; gap: 8px; margin-left: auto; }
+        .agent-switch button { padding: 6px 14px; border: 1px solid rgba(255,255,255,0.4); background: transparent; color: white; border-radius: 16px; cursor: pointer; font-size: 13px; }
+        .agent-switch button.active { background: white; color: #075e54; font-weight: 600; }
+
+        .chat-container { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 8px; }
+
+        .message { max-width: 80%; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; word-wrap: break-word; }
+        .message.user { align-self: flex-end; background: #dcf8c6; border-bottom-right-radius: 4px; }
+        .message.assistant { align-self: flex-start; background: white; border-bottom-left-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        .message.system { align-self: center; background: #e1f0ff; font-size: 12px; color: #555; padding: 6px 12px; border-radius: 8px; }
+
+        .metadata { background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 10px 14px; margin-top: 4px; font-size: 12px; align-self: flex-start; max-width: 80%; }
+        .metadata .label { font-weight: 600; color: #856404; }
+        .metadata .row { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 4px; }
+        .metadata .tag { background: #ffeeba; padding: 2px 8px; border-radius: 4px; }
+        .metadata .hot { background: #f8d7da; color: #721c24; }
+
+        .tools-used { font-size: 11px; color: #888; margin-top: 4px; align-self: flex-start; padding-left: 4px; }
+
+        .input-area { background: white; padding: 12px 16px; display: flex; gap: 10px; border-top: 1px solid #ddd; }
+        .input-area input { flex: 1; padding: 10px 14px; border: 1px solid #ddd; border-radius: 20px; font-size: 14px; outline: none; }
+        .input-area input:focus { border-color: #075e54; }
+        .input-area button { padding: 10px 20px; background: #075e54; color: white; border: none; border-radius: 20px; cursor: pointer; font-size: 14px; font-weight: 600; }
+        .input-area button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .typing { align-self: flex-start; color: #888; font-size: 13px; padding: 8px 14px; }
+        .typing::after { content: '...'; animation: dots 1.5s infinite; }
+        @keyframes dots { 0%,20% { content: '.'; } 40% { content: '..'; } 60%,100% { content: '...'; } }
+
+        .context-bar { background: #e8f4e8; padding: 8px 20px; font-size: 12px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+        .context-bar label { font-weight: 600; color: #333; }
+        .context-bar input { padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; width: 120px; }
+        .context-bar select { padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>Tissu Agent</h1>
+            <div class="subtitle" id="agentName">Customer Support & Sales</div>
+        </div>
+        <div class="agent-switch">
+            <button class="active" onclick="switchAgent('support')">Support + Sales</button>
+            <button onclick="switchAgent('marketing')">Marketing</button>
+        </div>
+    </div>
+
+    <div class="context-bar" id="contextBar">
+        <label>Customer:</label>
+        <input type="text" id="custName" placeholder="Name" value="">
+        <input type="email" id="custEmail" placeholder="Email" value="">
+        <label>Product:</label>
+        <input type="text" id="custProduct" placeholder="Interest" value="">
+        <label>Channel:</label>
+        <select id="custChannel">
+            <option value="web">Web</option>
+            <option value="facebook_messenger">Messenger</option>
+            <option value="instagram_dm">Instagram</option>
+            <option value="whatsapp">WhatsApp</option>
+        </select>
+    </div>
+
+    <div class="chat-container" id="chat">
+        <div class="message system">Agent is ready. Type a message to start.</div>
+    </div>
+
+    <div class="input-area">
+        <input type="text" id="msgInput" placeholder="Write a message..." onkeydown="if(event.key==='Enter')sendMessage()">
+        <button id="sendBtn" onclick="sendMessage()">Send</button>
+    </div>
+
+    <script>
+        let currentAgent = 'support';
+        let conversationId = null;
+        const API = 'http://localhost:8000';
+
+        function switchAgent(agent) {
+            currentAgent = agent;
+            conversationId = null;
+            document.getElementById('chat').innerHTML = '<div class="message system">Switched to ' +
+                (agent === 'support' ? 'Support + Sales' : 'Marketing') + ' agent</div>';
+            document.getElementById('agentName').textContent =
+                agent === 'support' ? 'Customer Support & Sales' : 'Marketing & Content';
+            document.getElementById('contextBar').style.display = agent === 'support' ? 'flex' : 'none';
+            document.querySelectorAll('.agent-switch button').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('msgInput');
+            const msg = input.value.trim();
+            if (!msg) return;
+
+            input.value = '';
+            addMessage(msg, 'user');
+            document.getElementById('sendBtn').disabled = true;
+
+            const typing = document.createElement('div');
+            typing.className = 'typing';
+            typing.textContent = 'Agent is thinking';
+            document.getElementById('chat').appendChild(typing);
+            scrollDown();
+
+            const endpoint = currentAgent === 'support' ? '/api/support' : '/api/marketing';
+            const body = { message: msg };
+            if (conversationId) body.conversation_id = conversationId;
+
+            if (currentAgent === 'support') {
+                body.channel = document.getElementById('custChannel').value;
+                const name = document.getElementById('custName').value.trim();
+                const email = document.getElementById('custEmail').value.trim();
+                const product = document.getElementById('custProduct').value.trim();
+                if (name || email || product) {
+                    body.customer_context = {};
+                    if (name) body.customer_context.name = name;
+                    if (email) body.customer_context.email = email;
+                    if (product) body.customer_context.product_interest = product;
+                }
+            }
+
+            try {
+                const res = await fetch(API + endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                typing.remove();
+
+                conversationId = data.conversation_id;
+                addMessage(data.reply, 'assistant');
+
+                if (data.tool_calls_made && data.tool_calls_made.length > 0) {
+                    const toolsDiv = document.createElement('div');
+                    toolsDiv.className = 'tools-used';
+                    toolsDiv.textContent = 'Tools used: ' + data.tool_calls_made.join(', ');
+                    document.getElementById('chat').appendChild(toolsDiv);
+                }
+
+                if (data.agent_metadata) {
+                    const m = data.agent_metadata;
+                    const metaDiv = document.createElement('div');
+                    metaDiv.className = 'metadata';
+                    metaDiv.innerHTML = `
+                        <div class="label">Agent Analysis</div>
+                        <div class="row">
+                            <span class="tag">Intent: ${m.intent || '-'}</span>
+                            <span class="tag">Stage: ${m.customer_stage || '-'}</span>
+                            <span class="tag ${m.hot_lead ? 'hot' : ''}">Hot Lead: ${m.hot_lead ? 'YES' : 'no'}</span>
+                            <span class="tag">Action: ${m.next_action || '-'}</span>
+                        </div>
+                        ${m.notes ? '<div style="margin-top:6px;color:#666;">' + m.notes + '</div>' : ''}
+                    `;
+                    document.getElementById('chat').appendChild(metaDiv);
+                }
+            } catch (err) {
+                typing.remove();
+                addMessage('Error: ' + err.message, 'system');
+            }
+
+            document.getElementById('sendBtn').disabled = false;
+            document.getElementById('msgInput').focus();
+            scrollDown();
+        }
+
+        function addMessage(text, role) {
+            const div = document.createElement('div');
+            div.className = 'message ' + role;
+            div.textContent = text;
+            document.getElementById('chat').appendChild(div);
+            scrollDown();
+        }
+
+        function scrollDown() {
+            const chat = document.getElementById('chat');
+            chat.scrollTop = chat.scrollHeight;
+        }
+    </script>
+</body>
+</html>

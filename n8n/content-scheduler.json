@@ -1,0 +1,46 @@
+{
+  "id": "2",
+  "name": "Daily Content Generator",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 9 * * 1-5" }]
+        }
+      },
+      "id": "schedule-1",
+      "name": "Schedule (Weekdays 9AM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/api/marketing",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"message\": \"Generate one social media post for today. Make it engaging, relevant, and include a call to action. Check existing content first to avoid duplicates. Save the result.\"}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "http-marketing",
+      "name": "Ask Marketing Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [470, 300]
+    }
+  ],
+  "connections": {
+    "Schedule (Weekdays 9AM)": {
+      "main": [
+        [{ "node": "Ask Marketing Agent", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

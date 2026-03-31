@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tissu Shop — Admin Panel</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, sans-serif; background: #f5f5f5; color: #333; }
+        .header { background: #2c3e50; color: white; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+        .header h1 { font-size: 20px; }
+        .header a { color: #ecf0f1; text-decoration: none; font-size: 14px; }
+        .tabs { display: flex; background: #34495e; }
+        .tabs button { flex: 1; padding: 12px; border: none; background: transparent; color: #bdc3c7; font-size: 14px; cursor: pointer; }
+        .tabs button.active { background: #2c3e50; color: white; font-weight: 600; }
+        .container { max-width: 1200px; margin: 20px auto; padding: 0 16px; }
+        .card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { background: #ecf0f1; padding: 8px 12px; text-align: left; font-weight: 600; }
+        td { padding: 8px 12px; border-bottom: 1px solid #eee; }
+        .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+        .btn-primary { background: #3498db; color: white; }
+        .btn-danger { background: #e74c3c; color: white; }
+        .btn-sm { padding: 4px 10px; font-size: 12px; }
+        .hot-badge { background: #e74c3c; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+        .section { display: none; }
+        .section.active { display: block; }
+        .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 16px; }
+        .stat-card { background: white; border-radius: 8px; padding: 14px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .stat-card .num { font-size: 26px; font-weight: 700; color: #2c3e50; }
+        .stat-card .label { font-size: 11px; color: #999; margin-top: 2px; }
+
+        /* Filter */
+        .filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 12px 20px; background: white; border-radius: 8px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+        /* Product Grid */
+        .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+
+        .product-card { background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.1); position: relative; }
+        .product-card.sold-out { opacity: 0.3; pointer-events: none; }
+        .product-card.sold-out .sold-overlay { pointer-events: auto; }
+        .sold-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 5; border-radius: 10px; }
+        .sold-overlay span { background: #e74c3c; color: white; font-size: 18px; font-weight: 700; padding: 8px 24px; border-radius: 6px; transform: rotate(-15deg); }
+        .sold-overlay button { position: absolute; bottom: 10px; right: 10px; background: white; border: none; padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; }
+
+        /* Two photos side by side */
+        .photos { display: grid; grid-template-columns: 1fr 1fr; height: 160px; gap: 2px; background: #f0f0f0; }
+        .photo-slot { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #f8f8f8; }
+        .photo-slot img { width: 100%; height: 160px; object-fit: cover; cursor: grab; }
+        .photo-slot img.drag-over { outline: 3px solid #3498db; }
+        .photo-slot .empty-slot { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 4px; color: #bbb; font-size: 11px; cursor: pointer; border: 2px dashed #ddd; transition: all 0.2s; }
+        .photo-slot .empty-slot:hover, .photo-slot .empty-slot.drag-over { border-color: #3498db; background: #eaf2f8; color: #3498db; }
+        .photo-slot .slot-label { position: absolute; bottom: 3px; left: 3px; background: rgba(0,0,0,0.55); color: white; font-size: 9px; padding: 2px 6px; border-radius: 3px; z-index: 2; cursor: pointer; }
+        .photo-slot .slot-label:hover { background: #3498db; }
+        .photo-slot .remove-btn { position: absolute; top: 3px; right: 3px; background: rgba(231,76,60,0.85); color: white; border: none; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; cursor: pointer; z-index: 2; display: none; }
+        .photo-slot:hover .remove-btn { display: block; }
+
+        .info { padding: 10px 12px; }
+        .model-tag { font-size: 10px; color: white; padding: 2px 7px; border-radius: 10px; }
+        .model-tag.zipper { background: #8e44ad; }
+        .model-tag.strap { background: #e67e22; }
+        .price { font-size: 17px; font-weight: 700; color: #2c3e50; margin: 3px 0; }
+        .stock-control { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+        .stock-control button { width: 28px; height: 28px; border: none; border-radius: 50%; cursor: pointer; font-size: 16px; font-weight: 700; }
+        .stock-control .minus { background: #fadbd8; color: #e74c3c; }
+        .stock-control .plus { background: #d5f5e3; color: #27ae60; }
+        .stock-control .count { font-size: 18px; font-weight: 700; min-width: 24px; text-align: center; }
+        .stock-control .soldout-btn { margin-left: auto; background: none; border: 1px solid #e74c3c; color: #e74c3c; border-radius: 4px; width: auto; padding: 2px 8px; font-size: 10px; font-weight: 600; }
+        .actions { padding: 0 12px 10px; }
+
+        /* Add new */
+        .add-card { background: white; border: 3px dashed #ccc; border-radius: 10px; display: flex; align-items: center; justify-content: center; min-height: 280px; cursor: pointer; font-size: 14px; color: #999; transition: all 0.2s; flex-direction: column; gap: 8px; }
+        .add-card:hover { border-color: #3498db; color: #3498db; }
+        .add-card .plus-icon { font-size: 40px; font-weight: 300; }
+
+        /* Upload input hidden */
+        .hidden-input { display: none; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Tissu Shop Admin</h1>
+        <a href="/">Chat Test &rarr;</a>
+    </div>
+    <div class="tabs">
+        <button class="active" onclick="showTab('inventory')">მარაგი</button>
+        <button onclick="showTab('leads')">ლიდები</button>
+        <button onclick="showTab('orders')">შეკვეთები</button>
+        <button onclick="showTab('notifications')">შეტყობინებები</button>
+    </div>
+    <div class="container">
+        <div id="tab-inventory" class="section active">
+            <div class="stat-cards" id="inv-stats"></div>
+            <div class="filter-bar">
+                <b>მოდელი:</b>
+                <button class="btn btn-primary btn-sm" onclick="setFilter('model','')">ყველა</button>
+                <button class="btn btn-sm" style="background:#8e44ad;color:white" onclick="setFilter('model','ფხრიწიანი')">ფხრიწიანი</button>
+                <button class="btn btn-sm" style="background:#e67e22;color:white" onclick="setFilter('model','თასმიანი')">თასმიანი</button>
+                <span style="margin:0 8px;color:#ccc">|</span>
+                <b>ზომა:</b>
+                <button class="btn btn-sm" style="background:#2c3e50;color:white" onclick="setFilter('size','')">ყველა</button>
+                <button class="btn btn-sm" style="background:#27ae60;color:white" onclick="setFilter('size','პატარა')">პატარა</button>
+                <button class="btn btn-sm" style="background:#e74c3c;color:white" onclick="setFilter('size','დიდი')">დიდი</button>
+            </div>
+            <div class="product-grid" id="inv-grid"></div>
+        </div>
+        <div id="tab-leads" class="section">
+            <div class="card"><h2>ლიდები</h2><table><thead><tr><th>სახელი</th><th>ტელეფონი</th><th>Score</th><th>შენიშვნა</th><th>თარიღი</th></tr></thead><tbody id="leads-table"></tbody></table></div>
+        </div>
+        <div id="tab-orders" class="section">
+            <div class="card"><h2>შეკვეთები</h2><table><thead><tr><th>#</th><th>კლიენტი</th><th>ტელეფონი</th><th>მისამართი</th><th>ნივთები</th><th>ჯამი</th><th>სტატუსი</th><th></th></tr></thead><tbody id="orders-table"></tbody></table></div>
+        </div>
+        <div id="tab-notifications" class="section">
+            <div class="card"><h2>შეტყობინებები</h2><table><thead><tr><th>თემა</th><th>პრიორიტეტი</th><th>სტატუსი</th><th>თარიღი</th></tr></thead><tbody id="notif-table"></tbody></table></div>
+        </div>
+    </div>
+
+    <input type="file" id="fileInput" class="hidden-input" accept="image/*" onchange="handleFileUpload(this)">
+
+    <script>
+        const API = 'http://localhost:8000';
+        let filterModel = '';
+        let filterSize = '';
+        let allInventory = [];
+        let uploadTarget = null;
+
+        function showTab(tab) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.getElementById('tab-' + tab).classList.add('active');
+            document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+            loadData();
+        }
+
+        function setFilter(type, val) {
+            if (type === 'model') filterModel = val;
+            if (type === 'size') filterSize = val;
+            renderGrid();
+        }
+
+        function renderGrid() {
+            let items = allInventory;
+            if (filterModel) items = items.filter(i => i.model === filterModel);
+            if (filterSize) items = items.filter(i => i.size.includes(filterSize));
+            const inStock = items.filter(i => i.stock > 0);
+            const totalStock = items.reduce((s, i) => s + i.stock, 0);
+            const soldOut = items.filter(i => i.stock === 0).length;
+
+            document.getElementById('inv-stats').innerHTML = `
+                <div class="stat-card"><div class="num">${items.length}</div><div class="label">სულ</div></div>
+                <div class="stat-card"><div class="num">${inStock.length}</div><div class="label">მარაგში</div></div>
+                <div class="stat-card"><div class="num">${totalStock}</div><div class="label">ჯამი ცალი</div></div>
+                <div class="stat-card"><div class="num" style="color:#e74c3c">${soldOut}</div><div class="label">გაყიდული</div></div>
+            `;
+
+            const grid = document.getElementById('inv-grid');
+            const cards = items.map(i => {
+                const isSoldOut = i.stock === 0;
+                const mc = i.model === 'ფხრიწიანი' ? 'zipper' : 'strap';
+                const hasBack = i.image_url_back && i.image_url_back.length > 1;
+                return `
+                <div class="product-card ${isSoldOut ? 'sold-out' : ''}" data-id="${i.id}">
+                    ${isSoldOut ? `<div class="sold-overlay"><span>SOLD OUT</span><button onclick="event.stopPropagation();restock(${i.id})">დაბრუნება</button></div>` : ''}
+                    <div class="photos">
+                        <div class="photo-slot"
+                            ondragover="event.preventDefault()" ondragenter="slotEnter(event)" ondragleave="slotLeave(event)"
+                            ondrop="dropPhoto(event,${i.id},'front')">
+                            ${i.image_url
+                                ? `<img src="${API}${i.image_url}" draggable="true" ondragstart="dragPhoto(event,${i.id},'front')">
+                                   <button class="remove-btn" onclick="clearSlot(${i.id},'front')">&times;</button>`
+                                : `<div class="empty-slot" onclick="clickUpload(${i.id},'front')"
+                                    ondragover="event.preventDefault()" ondragenter="this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')"
+                                    ondrop="dropPhoto(event,${i.id},'front')">
+                                    <span style="font-size:24px">+</span>ფოტო
+                                   </div>`}
+                            <span class="slot-label" onclick="event.stopPropagation();clickUpload(${i.id},'front')" title="ფოტოს ატვირთვა">გარე ↑</span>
+                        </div>
+                        <div class="photo-slot"
+                            ondragover="event.preventDefault()" ondragenter="slotEnter(event)" ondragleave="slotLeave(event)"
+                            ondrop="dropPhoto(event,${i.id},'back')">
+                            ${hasBack
+                                ? `<img src="${API}${i.image_url_back}" draggable="true" ondragstart="dragPhoto(event,${i.id},'back')">
+                                   <button class="remove-btn" onclick="clearSlot(${i.id},'back')">&times;</button>`
+                                : `<div class="empty-slot" onclick="clickUpload(${i.id},'back')"
+                                    ondragover="event.preventDefault()" ondragenter="this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')"
+                                    ondrop="dropPhoto(event,${i.id},'back')">
+                                    <span style="font-size:24px">+</span>შიდა
+                                   </div>`}
+                            <span class="slot-label" onclick="event.stopPropagation();clickUpload(${i.id},'back')" title="ფოტოს ატვირთვა">შიდა ↑</span>
+                        </div>
+                    </div>
+                    <div class="info">
+                        <input type="text" value="${i.tags || ''}" placeholder="ტეგები (ფერი, სტილი...)"
+                            style="width:100%;font-size:11px;padding:4px 6px;border:1px solid #ddd;border-radius:4px;margin-bottom:4px"
+                            onchange="setLabel(${i.id},'tags',this.value)" title="მაგ: ყვითელი, ზოლებიანი, ბაზმიანი">
+                        <div style="display:flex;gap:4px">
+                            <select style="font-size:11px;padding:2px;border-radius:4px;border:1px solid #ddd;flex:1" onchange="setLabel(${i.id},'model',this.value)">
+                                <option value="ფხრიწიანი" ${i.model==='ფხრიწიანი'?'selected':''}>ფხრიწიანი</option>
+                                <option value="თასმიანი" ${i.model==='თასმიანი'?'selected':''}>თასმიანი</option>
+                            </select>
+                            <select style="font-size:11px;padding:2px;border-radius:4px;border:1px solid #ddd;flex:1" onchange="setLabel(${i.id},'size',this.value)">
+                                <option value="პატარა (33x25)" ${i.size.includes('პატარა')?'selected':''}>პატარა</option>
+                                <option value="დიდი (37x27)" ${i.size.includes('დიდი')?'selected':''}>დიდი</option>
+                            </select>
+                        </div>
+                        <div style="font-size:14px;font-weight:bold;color:#8e44ad;margin:4px 0;text-align:center">${i.code || '—'}</div>
+                        <div class="price">${i.price} ₾</div>
+                        <div class="stock-control">
+                            <button class="minus" onclick="chg(${i.id},${i.stock-1})">−</button>
+                            <span class="count">${i.stock}</span>
+                            <button class="plus" onclick="chg(${i.id},${i.stock+1})">+</button>
+                            <button class="soldout-btn" onclick="chg(${i.id},0)">SOLD OUT</button>
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button class="btn btn-danger btn-sm" onclick="del(${i.id})">წაშლა</button>
+                    </div>
+                </div>`;
+            });
+
+            // Add new product card at the end
+            cards.push(`
+                <div class="add-card" onclick="addNewProduct()">
+                    <span class="plus-icon">+</span>
+                    ახალი პროდუქტის დამატება
+                </div>
+            `);
+
+            grid.innerHTML = cards.join('');
+        }
+
+        async function loadData() {
+            const inv = await (await fetch(API + '/api/inventory')).json();
+            allInventory = inv.inventory;
+            renderGrid();
+            const leads = await (await fetch(API + '/api/leads')).json();
+            document.getElementById('leads-table').innerHTML = leads.leads.map(l => `<tr><td>${l.name||'—'}</td><td>${l.phone||'—'}</td><td>${l.score>=80?'<span class="hot-badge">HOT '+l.score+'</span>':l.score}</td><td>${l.notes||'—'}</td><td>${new Date(l.created_at).toLocaleString('ka-GE')}</td></tr>`).join('') || '<tr><td colspan="5">ჯერ არ არის</td></tr>';
+            const orders = await (await fetch(API + '/api/orders')).json();
+            document.getElementById('orders-table').innerHTML = orders.orders.map(o => `<tr>
+                <td>#${o.id}</td>
+                <td>${o.customer_name}</td>
+                <td contenteditable="true" onblur="updateOrder(${o.id},'customer_phone',this.innerText)">${o.customer_phone||'—'}</td>
+                <td contenteditable="true" onblur="updateOrder(${o.id},'customer_address',this.innerText)">${o.customer_address||'—'}</td>
+                <td>${o.items}</td>
+                <td>${o.total}₾</td>
+                <td>
+                    <select onchange="changeOrderStatus(${o.id},this.value,'${o.items}')" style="font-size:12px;padding:2px">
+                        <option value="pending" ${o.status==='pending'?'selected':''}>⏳ Pending</option>
+                        <option value="ready_for_send" ${o.status==='ready_for_send'?'selected':''}>📦 Ready</option>
+                        <option value="sent" ${o.status==='sent'?'selected':''}>🚚 Sent</option>
+                        <option value="delivered" ${o.status==='delivered'?'selected':''}>✅ Delivered</option>
+                    </select>
+                </td>
+                <td><button onclick="deleteOrder(${o.id})" style="background:#e74c3c;color:white;border:none;padding:3px 8px;border-radius:4px;cursor:pointer">✕</button></td>
+            </tr>`).join('') || '<tr><td colspan="8">ჯერ არ არის</td></tr>';
+            const tickets = await (await fetch(API + '/api/tickets')).json();
+            document.getElementById('notif-table').innerHTML = tickets.tickets.map(t => `<tr><td>${t.subject}</td><td>${t.priority}</td><td>${t.status}</td><td>${new Date(t.created_at).toLocaleString('ka-GE')}</td></tr>`).join('') || '<tr><td colspan="4">ჯერ არ არის</td></tr>';
+        }
+
+        // Drag & drop photos between slots
+        let dragInfo = null;
+        function dragPhoto(e, id, side) {
+            dragInfo = {id, side};
+            e.dataTransfer.effectAllowed = 'move';
+        }
+        function slotEnter(e) { e.currentTarget.style.outline = '3px solid #3498db'; }
+        function slotLeave(e) { e.currentTarget.style.outline = ''; }
+        async function dropPhoto(e, toId, toSide) {
+            e.preventDefault();
+            e.currentTarget.style.outline = '';
+            if (!dragInfo) return;
+            await fetch(API+'/api/inventory/swap-images', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({from_id:dragInfo.id, from_side:dragInfo.side, to_id:toId, to_side:toSide})
+            });
+            dragInfo = null;
+            loadData();
+        }
+
+        // Click to upload photo to a slot
+        function clickUpload(id, side) {
+            uploadTarget = {id, side};
+            document.getElementById('fileInput').click();
+        }
+        async function handleFileUpload(input) {
+            if (!input.files[0] || !uploadTarget) return;
+            const fd = new FormData();
+            fd.append('image', input.files[0]);
+            if (uploadTarget.id) {
+                const endpoint = uploadTarget.side === 'front' ? 'image' : 'image_back';
+                await fetch(API+'/api/inventory/'+uploadTarget.id+'/'+endpoint, {method:'POST', body:fd});
+            }
+            input.value = '';
+            uploadTarget = null;
+            loadData();
+        }
+
+        // Clear a photo slot
+        async function clearSlot(id, side) {
+            const col = side === 'front' ? 'image_url' : 'image_url_back';
+            await fetch(API+'/api/inventory/'+id+'/clear-image?side='+side, {method:'POST'});
+            loadData();
+        }
+
+        // Orders management
+        async function updateOrder(id, field, value) {
+            await fetch(API+'/api/orders/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({[field]:value})});
+        }
+        async function changeOrderStatus(id, status, itemCode) {
+            await fetch(API+'/api/orders/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:status})});
+            if (status === 'ready_for_send' && itemCode) {
+                // Auto-decrease stock for the product
+                await fetch(API+'/api/orders/'+id+'/decrease-stock', {method:'POST'});
+            }
+            loadData();
+        }
+        async function deleteOrder(id) {
+            if (!confirm('წაშალოთ ეს შეკვეთა?')) return;
+            await fetch(API+'/api/orders/'+id, {method:'DELETE'});
+            loadData();
+        }
+
+        // Stock
+        async function chg(id, val) {
+            if(val<0) val=0;
+            await fetch(API+'/api/inventory/'+id+'?stock='+val, {method:'PUT'});
+            const item = allInventory.find(i=>i.id===id);
+            if(item) item.stock=val;
+            renderGrid();
+        }
+
+        async function restock(id) {
+            await fetch(API+'/api/inventory/'+id+'?stock=1', {method:'PUT'});
+            loadData();
+        }
+
+        async function setLabel(id, field, value) {
+            await fetch(API+'/api/inventory/'+id+'?'+field+'='+encodeURIComponent(value), {method:'PUT'});
+            loadData();
+        }
+
+        async function del(id) {
+            if(confirm('წავშალოთ?')) { await fetch(API+'/api/inventory/'+id,{method:'DELETE'}); loadData(); }
+        }
+
+        // Add new product
+        async function addNewProduct() {
+            const model = prompt('მოდელი?\\n1 = ფხრიწიანი\\n2 = თასმიანი', '1');
+            if (!model) return;
+            const m = model === '2' ? 'თასმიანი' : 'ფხრიწიანი';
+            const size = prompt('ზომა?\\n1 = პატარა (33x25)\\n2 = დიდი (37x27)', '1');
+            const s = size === '2' ? 'დიდი (37x27)' : 'პატარა (33x25)';
+            const p = size === '2' ? 74 : 69;
+            const fd = new FormData();
+            fd.append('product_name', m === 'თასმიანი' ? 'Tissu with strap' : 'Tissu without strap');
+            fd.append('model', m);
+            fd.append('size', s);
+            fd.append('price', p);
+            fd.append('stock', 1);
+            fd.append('color', '');
+            fd.append('style', '');
+            await fetch(API+'/api/inventory', {method:'POST', body:fd});
+            loadData();
+        }
+
+        loadData();
+    </script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.whl
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+serviceAccountKey.json
+secrets/
+
+# Uploads & product photos (stored on Cloudinary CDN)
+static/uploads/
+static/labeled/
+static/products/
+*.HEIC
+
+# Database
+data/*.db
+data/*.db-journal
+data/*.db-wal
+*.sqlite3
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# Build
+*.egg
+MANIFEST

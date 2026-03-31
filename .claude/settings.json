@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "git status", "git diff", "git log", "git add",
+      "git commit", "git checkout -b", "git branch",
+      "git stash", "git stash pop",
+      "ls", "find", "cat", "head", "tail", "wc",
+      "pip install", "pip freeze", "pip audit",
+      "python -m pytest", "python -m pytest --cov",
+      "python server.py",
+      "python -m black", "python -m isort", "python -m ruff",
+      "python -m mypy"
+    ],
+    "deny": [
+      "rm -rf /", "rm -rf ~", "rm -rf .", "rm -rf *",
+      "git push --force", "git push -f",
+      "git reset --hard", "git clean -f", "git clean -fd",
+      "git checkout -- .", "git branch -D main", "git branch -D develop",
+      "sudo", "su -",
+      "chmod 777", "chmod -R 777",
+      "DROP TABLE", "DROP DATABASE", "TRUNCATE",
+      "ssh ", "scp ",
+      "curl | bash", "curl | sh", "wget | bash", "wget | sh",
+      "npm install -g", "pip install --break-system-packages",
+      "python -m http.server", "ngrok", "localtunnel",
+      "osascript", "defaults write",
+      "shutdown", "reboot",
+      "kill -9", "killall",
+      "eval ", "exec "
+    ]
+  },
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  }
+}
