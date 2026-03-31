@@ -328,6 +328,8 @@ async def wa_webhook_verify(request: Request):
     raise HTTPException(status_code=403, detail="Verification failed")
 
 
+_wa_processed_mids = {}
+
 @app.post("/wa-webhook")
 async def wa_webhook_receive(request: Request):
     """Receive WhatsApp messages from owner — forward to customer or confirm/deny."""
@@ -342,6 +344,16 @@ async def wa_webhook_receive(request: Request):
                 owner_number = os.getenv("OWNER_WHATSAPP", "")
                 if sender != owner_number:
                     continue
+
+                # Anti-duplicate
+                wa_mid = msg.get("id", "")
+                if wa_mid and wa_mid in _wa_processed_mids:
+                    continue
+                if wa_mid:
+                    _wa_processed_mids[wa_mid] = _time.time()
+                    for k in list(_wa_processed_mids):
+                        if _time.time() - _wa_processed_mids[k] > 300:
+                            del _wa_processed_mids[k]
 
                 text = msg.get("text", {}).get("body", "").strip()
                 if not text:
@@ -418,10 +430,10 @@ async def owner_confirm(conversation_id: str):
 
     if FB_PAGE_TOKEN and sender_id:
         async with httpx.AsyncClient(timeout=30) as client:
-            # Run agent with owner's confirmation
+            # Owner confirmed payment — ask for address
             agent = get_support_sales_agent()
-            result = await run_agent(agent, "[მფლობელმა დაადასტურა შეკვეთა. ეკითხე კლიენტს: თიბისი თუ საქართველოს ბანკი?]", conversation_id)
-            reply = result["reply"].strip() or "შეკვეთა დადასტურებულია! ✨ თიბისი თუ საქართველოს ბანკი?"
+            result = await run_agent(agent, "[მფლობელმა დაადასტურა გადახდა. მოითხოვე მისამართი და ტელეფონი.]", conversation_id)
+            reply = result["reply"].strip() or "გადახდა დადასტურებულია! ✨ მისამართი და ტელეფონის ნომერი მომწერეთ."
 
             await client.post(
                 "https://graph.facebook.com/v21.0/me/messages",
