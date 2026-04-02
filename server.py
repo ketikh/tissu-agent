@@ -138,33 +138,62 @@ async def _process_message(sender_id: str, text: str, conversation_id: str, chan
     import logging
     logger = logging.getLogger(__name__)
 
-    # Forward customer image to owner via WhatsApp
+    # Analyze customer image with Gemini Vision
     if image_url:
         try:
-            _wa_phone_id = os.getenv("WA_PHONE_ID", "")
-            _wa_token = os.getenv("WA_TOKEN", "")
-            _owner = os.getenv("OWNER_WHATSAPP", "")
-            if _wa_phone_id and _wa_token and _owner:
-                async with httpx.AsyncClient(timeout=15, follow_redirects=True) as _c:
-                    _img_resp = await _c.get(image_url)
-                    if _img_resp.status_code == 200:
-                        _cname = customer_name or sender_id
-                        _upload = await _c.post(
-                            f"https://graph.facebook.com/v21.0/{_wa_phone_id}/media",
-                            headers={"Authorization": f"Bearer {_wa_token}"},
-                            data={"messaging_product": "whatsapp", "type": "image/jpeg"},
-                            files={"file": ("photo.jpg", _img_resp.content, "image/jpeg")},
-                        )
-                        _media_id = _upload.json().get("id", "")
-                        if _media_id:
-                            await _c.post(
-                                f"https://graph.facebook.com/v21.0/{_wa_phone_id}/messages",
-                                headers={"Authorization": f"Bearer {_wa_token}", "Content-Type": "application/json"},
-                                json={"messaging_product": "whatsapp", "to": _owner,
-                                      "type": "image", "image": {"id": _media_id, "caption": f"📷 {_cname}\n\nვადასტურებ / არ ვადასტურებ"}},
+            from google import genai as _genai
+            from google.genai import types as _types
+            _vision_client = _genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
+
+            # Download image
+            async with httpx.AsyncClient(timeout=15, follow_redirects=True) as _c:
+                _img_resp = await _c.get(image_url)
+                if _img_resp.status_code == 200:
+                    _img_bytes = _img_resp.content
+                    _cname = customer_name or sender_id
+
+                    # Analyze: payment receipt or product photo?
+                    _analysis = _vision_client.models.generate_content(
+                        model="gemini-2.5-flash",
+                        contents=[_types.Content(role="user", parts=[
+                            _types.Part.from_bytes(data=_img_bytes, mime_type="image/jpeg"),
+                            _types.Part(text='ეს ფოტო რა არის? უპასუხე JSON: {"type": "payment_receipt" ან "product" ან "other", "description": "მოკლე აღწერა"}'),
+                        ])],
+                    )
+                    _analysis_text = _analysis.text.strip() if _analysis.text else ""
+                    _is_receipt = "payment_receipt" in _analysis_text
+
+                    if _is_receipt:
+                        # Payment receipt — forward to WhatsApp for confirmation
+                        text = text.replace(f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
+                            "[კლიენტმა გადახდის ქვითარი გამოგზავნა. უთხარი 'მადლობა, გადავამოწმებ ✨' და ᲒᲐᲩᲔᲠᲓᲘ!]")
+                        # Forward receipt to WA
+                        _wa_phone_id = os.getenv("WA_PHONE_ID", "")
+                        _wa_token = os.getenv("WA_TOKEN", "")
+                        _owner = os.getenv("OWNER_WHATSAPP", "")
+                        if _wa_phone_id and _wa_token and _owner:
+                            _upload = await _c.post(
+                                f"https://graph.facebook.com/v21.0/{_wa_phone_id}/media",
+                                headers={"Authorization": f"Bearer {_wa_token}"},
+                                data={"messaging_product": "whatsapp", "type": "image/jpeg"},
+                                files={"file": ("receipt.jpg", _img_bytes, "image/jpeg")},
                             )
+                            _media_id = _upload.json().get("id", "")
+                            if _media_id:
+                                await _c.post(
+                                    f"https://graph.facebook.com/v21.0/{_wa_phone_id}/messages",
+                                    headers={"Authorization": f"Bearer {_wa_token}", "Content-Type": "application/json"},
+                                    json={"messaging_product": "whatsapp", "to": _owner,
+                                          "type": "image", "image": {"id": _media_id, "caption": f"📷 {_cname} — გადახდის ქვითარი\n\nვადასტურებ / არ ვადასტურებ"}},
+                                )
+                    else:
+                        # Product photo — analyze and find similar in our inventory
+                        text = text.replace(f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
+                            f"[კლიენტმა პროდუქტის ფოტო გამოგზავნა. Gemini-ს ანალიზი: {_analysis_text[:200]}. ეძებს მსგავს ქეისს. check_inventory(search=...) გამოიძახე აღწერის მიხედვით და თუ იპოვე, აჩვენე. თუ ვერ იპოვე, უთხარი 'სამწუხაროდ ზუსტად ასეთი არ გვაქვს, მაგრამ სხვა ლამაზი მოდელები გვაქვს ✨']")
         except Exception as e:
-            logger.error(f"WA image forward failed: {e}", exc_info=True)
+            logger.error(f"Image analysis failed: {e}", exc_info=True)
+            text = text.replace(f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
+                "[კლიენტმა ფოტო გამოგზავნა. ვერ დამუშავდა. უთხარი 'გადავამოწმებ და მოგწერთ ✨' და გამოიძახე notify_owner]")
 
     # Add customer name as hidden context (agent uses it internally, never shows to customer)
     if customer_name:
@@ -279,9 +308,10 @@ async def webhook_receive(request: Request):
             if not text and not image_url:
                 continue
 
-            # If customer sent image — tell bot + forward will happen in _process_message
+            # If customer sent image — analyze with Gemini Vision
             if image_url:
-                text = (text or "") + "\n[კლიენტმა გამოგზავნა ფოტო (შესაძლოა გადახდის სქრინი). უთხარი 'მადლობა, გადავამოწმებ ✨' და გამოიძახე notify_owner 'კლიენტმა ფოტო გამოგზავნა']"
+                # Will be analyzed in _process_message
+                text = (text or "") + f"\n[კლიენტმა გამოგზავნა ფოტო: {image_url}]"
 
             if mid and mid in _processed_mids:
                 continue
