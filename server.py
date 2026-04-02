@@ -187,10 +187,10 @@ async def _process_message(sender_id: str, text: str, conversation_id: str, chan
                                           "type": "image", "image": {"id": _media_id, "caption": f"📷 {_cname} — გადახდის ქვითარი\n\nვადასტურებ / არ ვადასტურებ"}},
                                 )
                     else:
-                        # Product photo — forward to WA + tell bot
+                        # Product photo — forward to WA + tell bot (NO notify_owner needed, WA already sent)
                         text = text.replace(f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
-                            f"[კლიენტმა პროდუქტის ფოტო გამოგზავნა (არა ქვითარი). ეძებს მსგავს ქეისს. უთხარი 'გადავამოწმებ და მოგწერთ ✨' და გამოიძახე notify_owner 'კლიენტი ეძებს კონკრეტულ მოდელს, ფოტო გამოგზავნა']")
-                        # Forward photo to WA owner
+                            "[კლიენტმა პროდუქტის ფოტო გამოგზავნა. მფლობელს უკვე ეცნობა. უთხარი 'გადავამოწმებ და მოგწერთ ✨'. notify_owner ᲐᲠ გამოიძახო!]")
+                        # Forward photo to WA owner (once only, no confirmation needed)
                         _wa_phone_id = os.getenv("WA_PHONE_ID", "")
                         _wa_token = os.getenv("WA_TOKEN", "")
                         _owner = os.getenv("OWNER_WHATSAPP", "")
@@ -207,7 +207,7 @@ async def _process_message(sender_id: str, text: str, conversation_id: str, chan
                                     f"https://graph.facebook.com/v21.0/{_wa_phone_id}/messages",
                                     headers={"Authorization": f"Bearer {_wa_token}", "Content-Type": "application/json"},
                                     json={"messaging_product": "whatsapp", "to": _owner,
-                                          "type": "image", "image": {"id": _media_id, "caption": f"📷 {_cname} ეძებს ამ მოდელს"}},
+                                          "type": "image", "image": {"id": _media_id, "caption": f"📷 {_cname} ეძებს ამ მოდელს. მიწერე რა უპასუხო."}},
                                 )
         except Exception as e:
             logger.error(f"Image analysis failed: {e}", exc_info=True)
