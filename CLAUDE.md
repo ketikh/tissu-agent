@@ -1,96 +1,75 @@
 # Tissu Agent System
 
-Local-first AI agent system for business. Two connected agents:
-
-1. **Support + Sales** (`/api/support`) — handles customer inquiries, qualifies leads
-2. **Marketing + Content** (`/api/marketing`) — generates content, analyzes data
+AI-powered sales agent for Tissu Shop — handmade laptop sleeves. Runs on Railway, uses Facebook Messenger for customer communication and WhatsApp for owner notifications.
 
 ## Tech Stack
-- Python 3.11+ / FastAPI / SQLite / Anthropic Claude API
-- N8N for workflow orchestration (localhost:5678)
-
-## Run
-```bash
-cp .env.example .env  # Add your ANTHROPIC_API_KEY
-pip install -r requirements.txt
-python server.py      # Starts on localhost:8000
-```
+- Python 3.11+ / FastAPI / SQLite / Google Gemini API (gemini-2.5-flash)
+- Gemini Vision AI for photo analysis (product identification + payment receipt detection)
+- Cloudinary CDN for product images
+- Railway for hosting
+- Facebook Messenger API for customer chat
+- WhatsApp Business API for owner notifications
 
 ## Architecture
 - `src/engine.py` — Agent loop (LLM → Tool → Result → LLM)
-- `src/agents/` — Agent definitions (system prompt + tools)
-- `src/tools/` — Business logic tools (DB operations)
-- `src/llm.py` — LLM client abstraction
+- `src/agents/support_sales.py` — Sales agent (system prompt + tools)
+- `src/agents/marketing.py` — Marketing agent
+- `src/tools/support.py` — Business logic tools (inventory, orders, notifications)
+- `src/llm.py` — Gemini LLM client
 - `src/db.py` — SQLite database layer
-- `server.py` — FastAPI entry point
-- `n8n/` — Importable N8N workflow JSONs
+- `server.py` — FastAPI entry point + Facebook/WhatsApp webhooks
+- `seed_inventory.json` — Product inventory with Cloudinary image URLs
+- `admin.html` — Admin panel (inventory, orders, leads)
+
+## Live URLs
+- **Bot API**: https://tissu-agent-production.up.railway.app
+- **Admin Panel**: https://tissu-agent-production.up.railway.app/admin
+- **Health Check**: https://tissu-agent-production.up.railway.app/api/health
 
 ## API Endpoints
-- `POST /api/support` — Chat with support+sales agent
+- `POST /api/support` — Chat with sales agent
 - `POST /api/marketing` — Chat with marketing agent
+- `POST /webhook` — Facebook Messenger webhook
+- `POST /wa-webhook` — WhatsApp webhook (owner responses)
+- `GET /api/inventory` — List products
+- `GET /api/orders` — List orders
 - `GET /api/leads` — List leads
-- `GET /api/tickets` — List tickets
-- `GET /api/content` — List content
 - `GET /api/conversations` — List conversations
-- `GET /api/health` — Health check
+- `GET /admin` — Admin panel
 
-## Conventions
-- All dates in UTC ISO format
-- Agent tools return dicts, engine serializes to JSON
-- Conversation state stored in SQLite, keyed by conversation_id
+## Environment Variables (Railway)
+- `GEMINI_API_KEY` — Google Gemini API key
+- `FB_PAGE_TOKEN` — Facebook Page access token (permanent, via System User)
+- `WA_TOKEN` — WhatsApp Business API token (permanent, via System User)
+- `WA_PHONE_ID` — WhatsApp phone number ID
+- `OWNER_WHATSAPP` — Owner's WhatsApp number (for notifications)
+- `LLM_MODEL` — Gemini model name (gemini-2.5-flash)
+- `LLM_PROVIDER` — LLM provider (gemini)
+- `PUBLIC_URL` — Railway public URL
 
-## Development Commands
+## Key Features
+- Facebook Messenger bot for Tissu Shop
+- Gemini Vision AI: analyzes customer photos (product vs payment receipt)
+- Cloudinary CDN for product images
+- WhatsApp notifications to owner for order confirmations
+- Admin panel for inventory/order management
+- Automatic order creation with create_order tool
+- Product code system (FP, TP, FD, TD)
+
+## Product Codes
+- FP = ფხრიწიანი პატარა (FP1-FP16)
+- TP = თასმიანი პატარა (TP1-TP15)
+- FD = ფხრიწიანი დიდი (FD1-FD6)
+- TD = თასმიანი დიდი (TD1)
+
+## Development
 ```bash
-# Install dependencies
 pip install -r requirements.txt
-
-# Run server
-python server.py
-
-# Run tests
-python -m pytest
-python -m pytest --cov=src --cov-report=term-missing
-
-# Code quality
-python -m black src/ tests/ server.py
-python -m isort src/ tests/ server.py
-python -m ruff check src/ tests/ server.py
-python -m mypy src/
-
-# Dependency audit
-pip audit
+python server.py  # Starts on localhost:8000
 ```
 
-## Project Structure
-```
-├── server.py           # FastAPI entry point
-├── src/
-│   ├── engine.py       # Agent loop (LLM → Tool → Result → LLM)
-│   ├── llm.py          # LLM client abstraction
-│   ├── db.py           # SQLite database layer
-│   ├── config.py       # Configuration management
-│   ├── channels.py     # Communication channels
-│   ├── models.py       # Data models
-│   ├── agents/         # Agent definitions
-│   │   ├── support_sales.py
-│   │   └── marketing.py
-│   └── tools/          # Business logic tools
-│       ├── support.py
-│       └── marketing.py
-├── tests/
-│   ├── conftest.py
-│   ├── unit/
-│   └── integration/
-├── n8n/                # N8N workflow JSONs
-├── data/               # SQLite databases (gitignored)
-├── static/             # Static assets
-├── docs/               # Documentation
-│   └── decisions/      # Architecture Decision Records
-└── .github/            # CI/CD and templates
-```
-
-## Environment Variables
-- `ANTHROPIC_API_KEY` — Required. Claude API key.
-- `DATABASE_PATH` — Optional. SQLite database path (default: data/tissu.db)
-- `PORT` — Optional. Server port (default: 8000)
-- `LOG_LEVEL` — Optional. Logging level (default: INFO)
+## Deployment
+- Push to GitHub → Railway auto-deploys
+- Product images stored on Cloudinary CDN
+- SQLite DB recreated on each deploy (seed_inventory.json)
+- All tokens are permanent (System User tokens)
