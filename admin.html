@@ -118,7 +118,7 @@
     <input type="file" id="fileInput" class="hidden-input" accept="image/*" onchange="handleFileUpload(this)">
 
     <script>
-        const API = 'http://localhost:8000';
+        const API = window.location.origin;
         let filterModel = '';
         let filterSize = '';
         let allInventory = [];
