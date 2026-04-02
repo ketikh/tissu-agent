@@ -485,7 +485,15 @@ async def chat_support(req: ChatRequest):
             enriched_message = f"[Context: {'; '.join(context_parts)}]\n\n{req.message}"
 
     result = await run_agent(agent, enriched_message, req.conversation_id)
-    return ChatResponse(**result)
+    try:
+        return ChatResponse(**result)
+    except Exception:
+        return ChatResponse(
+            reply=result.get("reply", ""),
+            conversation_id=result.get("conversation_id", ""),
+            agent_type=result.get("agent_type", "support_sales"),
+            tool_calls_made=result.get("tool_calls_made", []),
+        )
 
 
 @app.post("/api/webhook/{channel}")
