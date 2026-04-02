@@ -1,37 +1,33 @@
 """Tissu Agent Server.
 
-Local-first AI agent API that serves two business agents:
-- /api/support — Customer Support + Sales Hybrid
-- /api/marketing — Marketing + Content + Ads Intelligence
-
-N8N connects to these endpoints to orchestrate workflows.
+AI-powered sales agent for Tissu Shop. Facebook Messenger bot with
+Gemini Vision, WhatsApp owner notifications, and admin panel.
 """
-
 import os
 import json
+import shutil
 from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-import shutil
-import io
 from PIL import Image
 from pillow_heif import register_heif_opener
 register_heif_opener()
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
-from fastapi import Request
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+
 from src.config import API_HOST, API_PORT
 from src.db import init_db, get_db
-from src.models import ChatRequest, ChatResponse, LeadCreate, TicketCreate, ContentCreate
+from src.models import ChatRequest, ChatResponse, LeadCreate, ContentCreate
 from src.engine import run_agent
 from src.agents.support_sales import get_support_sales_agent
 from src.agents.marketing import get_marketing_agent
 from src.channels import get_adapter, ADAPTERS
-import httpx
+from src.webhooks.facebook import router as fb_router
+from src.webhooks.whatsapp import router as wa_router
 
 
 @asynccontextmanager
@@ -43,28 +39,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Tissu Agents",
-    description="Local-first AI agent system for business",
-    version="0.1.0",
+    description="AI-powered sales agent for Tissu Shop",
+    version="0.2.0",
     lifespan=lifespan,
 )
-
-def save_uploaded_image(upload: UploadFile, prefix: str) -> str:
-    """Save uploaded image, converting HEIC/HEIF to JPEG automatically."""
-    filename_base = f"{prefix}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    save_dir = Path(__file__).parent / "static" / "products"
-
-    ext = Path(upload.filename).suffix.lower()
-    if ext in ('.heic', '.heif'):
-        img = Image.open(upload.file)
-        filename = f"{filename_base}.jpg"
-        img.save(save_dir / filename, "JPEG", quality=85)
-    else:
-        filename = f"{filename_base}{ext}"
-        with open(save_dir / filename, "wb") as f:
-            shutil.copyfileobj(upload.file, f)
-
-    return f"/static/products/{filename}"
-
 
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
@@ -75,8 +53,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include webhook routers
+app.include_router(fb_router)
+app.include_router(wa_router)
 
-# ── Chat UI ───────────────────────────────────────────────────
+
+# ── Pages ────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
 async def chat_ui():
@@ -90,502 +72,13 @@ async def admin_ui():
     return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
 
-# ── Agent Chat Endpoints ──────────────────────────────────────
-
-# ── Facebook / Instagram Webhook ───────────────────────────────
-
-VERIFY_TOKEN = "tissu_verify_2026"
-FB_PAGE_TOKEN = os.getenv("FB_PAGE_TOKEN", "")
-PUBLIC_URL = os.getenv("PUBLIC_URL", "https://endurant-hyped-johnna.ngrok-free.dev")
-PAGE_ID = "447377388462459"  # Tissu Shop page ID
-
-# Anti-loop: track recently processed messages
-import time as _time
-_processed_mids = {}  # mid -> timestamp
-
-@app.get("/webhook")
-async def webhook_verify(request: Request):
-    """Facebook webhook verification (GET request)."""
-    params = request.query_params
-    mode = params.get("hub.mode")
-    token = params.get("hub.verify_token")
-    challenge = params.get("hub.challenge")
-    if mode == "subscribe" and token == VERIFY_TOKEN:
-        from fastapi.responses import PlainTextResponse
-        return PlainTextResponse(challenge)
-    raise HTTPException(status_code=403, detail="Verification failed")
-
-
-async def _notify_owner_whatsapp(message: str):
-    """Send WhatsApp notification to owner."""
-    wa_phone_id = os.getenv("WA_PHONE_ID", "")
-    wa_token = os.getenv("WA_TOKEN", "")
-    owner = os.getenv("OWNER_WHATSAPP", "")
-    if wa_phone_id and wa_token and owner:
-        try:
-            async with httpx.AsyncClient(timeout=10) as c:
-                await c.post(
-                    f"https://graph.facebook.com/v21.0/{wa_phone_id}/messages",
-                    headers={"Authorization": f"Bearer {wa_token}", "Content-Type": "application/json"},
-                    json={"messaging_product": "whatsapp", "to": owner, "type": "text", "text": {"body": message}},
-                )
-        except Exception:
-            logging.getLogger(__name__).error(f"Failed to notify owner: {message}")
-
-
-async def _process_message(sender_id: str, text: str, conversation_id: str, channel: str, customer_name: str = "", image_url: str = ""):
-    """Process a message in the background — agent + reply + images."""
-    import logging
-    logger = logging.getLogger(__name__)
-
-    # Analyze customer image with Gemini Vision
-    if image_url:
-        try:
-            from google import genai as _genai
-            from google.genai import types as _types
-            _vision_client = _genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
-
-            # Download image
-            async with httpx.AsyncClient(timeout=15, follow_redirects=True) as _c:
-                _img_resp = await _c.get(image_url)
-                if _img_resp.status_code == 200:
-                    _img_bytes = _img_resp.content
-                    _cname = customer_name or sender_id
-
-                    # Check conversation context — expecting receipt?
-                    from src.db import get_db as _get_db2
-                    _db_ctx = await _get_db2()
-                    _expecting_receipt = False
-                    try:
-                        _last_msgs = await (await _db_ctx.execute(
-                            "SELECT content FROM messages WHERE conversation_id = ? AND role = 'assistant' ORDER BY created_at DESC LIMIT 3",
-                            (conversation_id,)
-                        )).fetchall()
-                        for _lm in _last_msgs:
-                            _lm_text = _lm["content"] or ""
-                            if "სქრინ" in _lm_text or "ჩარიცხ" in _lm_text or "გადარიცხ" in _lm_text or "გადასახდელი" in _lm_text:
-                                _expecting_receipt = True
-                                break
-                    finally:
-                        await _db_ctx.close()
-
-                    # Analyze: payment receipt or product photo?
-                    _ctx_hint = "კლიენტმა გადახდის სქრინი/ქვითარი უნდა გამოეგზავნა." if _expecting_receipt else "კლიენტი ჩანთას ეძებს."
-                    _analysis = _vision_client.models.generate_content(
-                        model="gemini-2.5-flash",
-                        contents=[_types.Content(role="user", parts=[
-                            _types.Part.from_bytes(data=_img_bytes, mime_type="image/jpeg"),
-                            _types.Part(text=f'კონტექსტი: {_ctx_hint}\nეს ფოტო რა არის? თუ ბანკის ტრანზაქცია, გადარიცხვა, check icon, თანხა — payment_receipt. თუ ჩანთა/ქეისი — product. JSON: {{"type": "payment_receipt" ან "product", "description": "მოკლე აღწერა"}}'),
-                        ])],
-                    )
-                    _analysis_text = _analysis.text.strip() if _analysis.text else ""
-                    _is_receipt = "payment_receipt" in _analysis_text
-
-                    if _is_receipt:
-                        # Payment receipt — forward to WhatsApp for confirmation
-                        text = text.replace(f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
-                            "[კლიენტმა გადახდის ქვითარი გამოგზავნა. უთხარი 'მადლობა, გადავამოწმებ ✨' და ᲒᲐᲩᲔᲠᲓᲘ! notify_owner ᲐᲠ გამოიძახო!]")
-                        # Forward receipt to WA
-                        _wa_phone_id = os.getenv("WA_PHONE_ID", "")
-                        _wa_token = os.getenv("WA_TOKEN", "")
-                        _owner = os.getenv("OWNER_WHATSAPP", "")
-                        if _wa_phone_id and _wa_token and _owner:
-                            _upload = await _c.post(
-                                f"https://graph.facebook.com/v21.0/{_wa_phone_id}/media",
-                                headers={"Authorization": f"Bearer {_wa_token}"},
-                                data={"messaging_product": "whatsapp", "type": "image/jpeg"},
-                                files={"file": ("receipt.jpg", _img_bytes, "image/jpeg")},
-                            )
-                            _media_id = _upload.json().get("id", "")
-                            if _media_id:
-                                await _c.post(
-                                    f"https://graph.facebook.com/v21.0/{_wa_phone_id}/messages",
-                                    headers={"Authorization": f"Bearer {_wa_token}", "Content-Type": "application/json"},
-                                    json={"messaging_product": "whatsapp", "to": _owner,
-                                          "type": "image", "image": {"id": _media_id, "caption": f"📷 {_cname} — გადახდის ქვითარი\n\nვადასტურებ / არ ვადასტურებ"}},
-                                )
-                    else:
-                        # Product photo — compare with our inventory using Vision
-                        from src.db import get_db as _get_db
-                        _db = await _get_db()
-                        try:
-                            _cursor = await _db.execute(
-                                "SELECT code, image_url, model, size, price FROM inventory WHERE stock > 0 AND image_url IS NOT NULL AND image_url != ''"
-                            )
-                            _products = [dict(r) for r in await _cursor.fetchall()]
-                        finally:
-                            await _db.close()
-
-                        # Build comparison prompt
-                        _product_list = "\n".join([f"- {p['code']}: {p['model']}, {p['size']}, {p['price']}₾" for p in _products])
-                        _compare = _vision_client.models.generate_content(
-                            model="gemini-2.5-flash",
-                            contents=[_types.Content(role="user", parts=[
-                                _types.Part.from_bytes(data=_img_bytes, mime_type="image/jpeg"),
-                                _types.Part(text=f"კლიენტის ფოტოზე ჩანთა/ქეისია. ჩვენ მარაგში ეს პროდუქტები გვაქვს:\n{_product_list}\n\nრომელი კოდ(ებ)ი ჰგავს ყველაზე მეტად? უპასუხე JSON: {{\"similar_codes\": [\"FD1\",\"FP3\"], \"found\": true}} ან {{\"similar_codes\": [], \"found\": false}}"),
-                            ])],
-                        )
-                        _compare_text = _compare.text.strip() if _compare.text else ""
-
-                        import json as _json
-                        _similar_codes = []
-                        try:
-                            if "{" in _compare_text:
-                                _parsed = _json.loads(_compare_text[_compare_text.index("{"):_compare_text.rindex("}")+1])
-                                _similar_codes = _parsed.get("similar_codes", [])
-                        except Exception:
-                            pass
-
-                        if _similar_codes:
-                            # Found similar — tell bot to show them
-                            _codes_str = ", ".join(_similar_codes[:5])
-                            text = text.replace(f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
-                                f"[კლიენტმა ფოტო გამოგზავნა. მსგავსი მოდელები ვიპოვეთ: {_codes_str}. check_inventory გამოიძახე და ეს კოდები აჩვენე კლიენტს. უთხარი 'თქვენი ფოტოს მიხედვით ეს ვიპოვე ✨'. notify_owner ᲐᲠ გამოიძახო!]")
-                        else:
-                            # Not found — notify owner
-                            text = text.replace(f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
-                                "[კლიენტმა ფოტო გამოგზავნა. მსგავსი მოდელი ვერ ვიპოვეთ. მფლობელს უკვე ეცნობა. უთხარი 'სამწუხაროდ ზუსტად ასეთი ამჟამად არ გვაქვს, მაგრამ სხვა ლამაზი მოდელები გვაქვს ✨ გაჩვენოთ?'. notify_owner ᲐᲠ გამოიძახო!]")
-                            # Forward to WA only if not found
-                            _wa_phone_id = os.getenv("WA_PHONE_ID", "")
-                            _wa_token = os.getenv("WA_TOKEN", "")
-                            _owner = os.getenv("OWNER_WHATSAPP", "")
-                            if _wa_phone_id and _wa_token and _owner:
-                                _upload = await _c.post(
-                                    f"https://graph.facebook.com/v21.0/{_wa_phone_id}/media",
-                                    headers={"Authorization": f"Bearer {_wa_token}"},
-                                    data={"messaging_product": "whatsapp", "type": "image/jpeg"},
-                                    files={"file": ("photo.jpg", _img_bytes, "image/jpeg")},
-                                )
-                                _media_id = _upload.json().get("id", "")
-                                if _media_id:
-                                    await _c.post(
-                                        f"https://graph.facebook.com/v21.0/{_wa_phone_id}/messages",
-                                        headers={"Authorization": f"Bearer {_wa_token}", "Content-Type": "application/json"},
-                                        json={"messaging_product": "whatsapp", "to": _owner,
-                                              "type": "image", "image": {"id": _media_id, "caption": f"📷 {_cname} ეძებს ამ მოდელს. მარაგში ვერ ვიპოვეთ."}},
-                                    )
-        except Exception as e:
-            logger.error(f"Image analysis failed: {e}", exc_info=True)
-            text = text.replace(f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
-                "[კლიენტმა ფოტო გამოგზავნა. ვერ დამუშავდა. უთხარი 'გადავამოწმებ და მოგწერთ ✨' და გამოიძახე notify_owner]")
-
-    # Add customer name as hidden context (agent uses it internally, never shows to customer)
-    if customer_name:
-        text = f"[SYSTEM: customer_name={customer_name}]\n{text}"
-
-    agent = get_support_sales_agent()
-    try:
-        result = await run_agent(agent, text, conversation_id)
-    except Exception as e:
-        logger.error(f"Agent error: {e}", exc_info=True)
-        await _notify_owner_whatsapp(f"🚨 აგენტის შეცდომა!\nკლიენტის მესიჯი: {text[:200]}\nშეცდომა: {str(e)[:300]}")
-        result = {"reply": "გადავამოწმებ და მოგწერთ ✨", "tool_calls_made": [], "tool_results_data": {}}
-
-    # Send reply back via Facebook/Instagram API
-    if not FB_PAGE_TOKEN:
-        return
-
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            fb_api = "https://graph.facebook.com/v21.0/me/messages"
-            fb_params = {"access_token": FB_PAGE_TOKEN}
-
-            reply_text = result["reply"].strip()
-            # Clean internal instructions from reply
-            import re as _re2
-            reply_text = _re2.sub(r'\(აქ ავტომატურად[^)]*\)', '', reply_text).strip()
-            reply_text = _re2.sub(r'\[SYSTEM:[^\]]*\]', '', reply_text).strip()
-            if not reply_text:
-                if image_url:
-                    reply_text = "მადლობა, გადავამოწმებ ✨"
-                else:
-                    reply_text = "გადავამოწმებ და მოგწერთ ✨"
-                    await _notify_owner_whatsapp(f"⚠️ ბოტი ვერ უპასუხა!\nკლიენტის მესიჯი: {text[:200]}")
-
-            await client.post(fb_api, params=fb_params, json={
-                "recipient": {"id": sender_id},
-                "message": {"text": reply_text[:2000]},
-            })
-
-            # Send product images: code text → front photo → back photo
-            tool_data = result.get("tool_results_data", {})
-            logger.info(f"tool_results_data keys: {list(tool_data.keys())}")
-            inventory_data = tool_data.get("check_inventory")
-            if inventory_data:
-                logger.info(f"check_inventory found={inventory_data.get('found')}, items={len(inventory_data.get('items',[]))}")
-            if inventory_data and inventory_data.get("found"):
-                items = inventory_data.get("items", [])
-                for item in items:
-                    code = item.get("code", "")
-                    front = item.get("image_url", "")
-                    back = item.get("image_url_back", "")
-                    if not front:
-                        continue
-                    # 1. Send code as text
-                    if code:
-                        try:
-                            await client.post(fb_api, params=fb_params, json={
-                                "recipient": {"id": sender_id},
-                                "message": {"text": f"📌 {code}"},
-                            })
-                        except Exception:
-                            pass
-                    # 2. Send front photo
-                    try:
-                        img_url = PUBLIC_URL + front if front.startswith("/") else front
-                        await client.post(fb_api, params=fb_params, json={
-                            "recipient": {"id": sender_id},
-                            "message": {"attachment": {"type": "image", "payload": {"url": img_url, "is_reusable": True}}},
-                        })
-                    except Exception:
-                        pass
-                    # 3. Send back photo
-                    if back:
-                        try:
-                            img_url = PUBLIC_URL + back if back.startswith("/") else back
-                            await client.post(fb_api, params=fb_params, json={
-                                "recipient": {"id": sender_id},
-                                "message": {"attachment": {"type": "image", "payload": {"url": img_url, "is_reusable": True}}},
-                            })
-                        except Exception:
-                            pass
-    except Exception as e:
-        logger.error(f"Failed to send FB reply: {e}", exc_info=True)
-        await _notify_owner_whatsapp(f"⚠️ პასუხის გაგზავნა ვერ მოხერხდა!\nკლიენტი: {sender_id}\nშეცდომა: {str(e)[:300]}")
-
-
-@app.post("/webhook")
-async def webhook_receive(request: Request):
-    """Receive messages from Facebook Messenger / Instagram DM."""
-    import asyncio
-    body = await request.json()
-
-    if body.get("object") not in ("page", "instagram"):
-        return {"status": "ignored"}
-
-    for entry in body.get("entry", []):
-        for event in entry.get("messaging", []):
-            if event.get("delivery") or event.get("read"):
-                continue
-
-            sender_id = event.get("sender", {}).get("id", "")
-            message = event.get("message", {})
-            text = message.get("text", "")
-            mid = message.get("mid", "")
-
-            if message.get("is_echo") or sender_id == PAGE_ID or not sender_id:
-                continue
-
-            attachments = message.get("attachments", [])
-            image_url = ""
-            for att in attachments:
-                if att.get("type") == "image":
-                    image_url = att.get("payload", {}).get("url", "")
-                    break
-
-            if not text and not image_url:
-                continue
-
-            # If customer sent image — analyze with Gemini Vision
-            if image_url:
-                text = (text or "") + f"\n[კლიენტმა გამოგზავნა ფოტო: {image_url}]"
-
-            # If customer sent a link (not a photo)
-            import re as _re
-            if not image_url and text and _re.search(r'https?://', text):
-                text = text + "\n[კლიენტმა ლინკი გამოგზავნა. უთხარი: 'სამწუხაროდ ლინკის გახსნა ვერ შემიძლია, თუ შეგიძლიათ ფოტო გამომიგზავნეთ ✨'. notify_owner ᲐᲠ გამოიძახო!]"
-
-            if mid and mid in _processed_mids:
-                continue
-            if mid:
-                _processed_mids[mid] = _time.time()
-                now = _time.time()
-                for k in list(_processed_mids):
-                    if now - _processed_mids[k] > 300:
-                        del _processed_mids[k]
-
-            channel = "instagram_dm" if body["object"] == "instagram" else "facebook_messenger"
-            conversation_id = f"{channel}_{sender_id}"
-
-            # Get customer name from Facebook profile
-            customer_name = ""
-            try:
-                async with httpx.AsyncClient(timeout=5) as c:
-                    resp = await c.get(
-                        f"https://graph.facebook.com/v21.0/{sender_id}",
-                        params={"fields": "first_name,last_name,name", "access_token": FB_PAGE_TOKEN},
-                    )
-                    profile = resp.json()
-                    customer_name = profile.get("name", "") or f"{profile.get('first_name', '')} {profile.get('last_name', '')}".strip()
-            except Exception:
-                pass
-
-            # Process in background — return 200 to Facebook immediately
-            asyncio.create_task(_process_message(sender_id, text, conversation_id, channel, customer_name, image_url))
-
-    return {"status": "ok"}
-
-
-# ── WhatsApp Owner Response Webhook ──────────────────────────
-
-@app.get("/wa-webhook")
-async def wa_webhook_verify(request: Request):
-    """WhatsApp webhook verification."""
-    params = request.query_params
-    mode = params.get("hub.mode", "")
-    token = params.get("hub.verify_token", "")
-    challenge = params.get("hub.challenge", "")
-    if mode == "subscribe" and token == "tissu_wa_verify":
-        return int(challenge)
-    raise HTTPException(status_code=403, detail="Verification failed")
-
-
-_wa_processed_mids = {}
-
-@app.post("/wa-webhook")
-async def wa_webhook_receive(request: Request):
-    """Receive WhatsApp messages from owner — forward to customer or confirm/deny."""
-    body = await request.json()
-
-    for entry in body.get("entry", []):
-        for change in entry.get("changes", []):
-            value = change.get("value", {})
-            messages = value.get("messages", [])
-            for msg in messages:
-                sender = msg.get("from", "")
-                owner_number = os.getenv("OWNER_WHATSAPP", "")
-                if sender != owner_number:
-                    continue
-
-                # Anti-duplicate
-                wa_mid = msg.get("id", "")
-                if wa_mid and wa_mid in _wa_processed_mids:
-                    continue
-                if wa_mid:
-                    _wa_processed_mids[wa_mid] = _time.time()
-                    for k in list(_wa_processed_mids):
-                        if _time.time() - _wa_processed_mids[k] > 300:
-                            del _wa_processed_mids[k]
-
-                text = msg.get("text", {}).get("body", "").strip()
-                if not text:
-                    continue
-
-                # Find the latest conversation
-                db = await get_db()
-                try:
-                    cursor = await db.execute(
-                        "SELECT conversation_id FROM tickets ORDER BY created_at DESC LIMIT 1"
-                    )
-                    row = await cursor.fetchone()
-                    conv_id = row["conversation_id"] if row else ""
-                finally:
-                    await db.close()
-
-                if not conv_id:
-                    continue
-
-                sender_id = conv_id.replace("facebook_messenger_", "").replace("instagram_dm_", "")
-                if not FB_PAGE_TOKEN or not sender_id:
-                    continue
-
-                # Check latest ticket status to determine which stage we're at
-                db2 = await get_db()
-                try:
-                    _tcursor = await db2.execute(
-                        "SELECT subject, status FROM tickets WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1", (conv_id,)
-                    )
-                    _ticket = await _tcursor.fetchone()
-                    _ticket_status = _ticket["status"] if _ticket else "open"
-                    _ticket_subject = _ticket["subject"] if _ticket else ""
-                finally:
-                    await db2.close()
-
-                # Owner's message → forward as agent instruction to customer
-                text_lower = text.lower()
-                if "ვადასტურებ" in text_lower and "არ" not in text_lower:
-                    # Payment confirmation — clean up uploaded photos
-                    _uploads_dir = Path(__file__).parent / "static" / "uploads"
-                    if _uploads_dir.exists():
-                        for _f in _uploads_dir.iterdir():
-                            if _f.suffix in ('.jpg', '.jpeg', '.png'):
-                                _f.unlink(missing_ok=True)
-                    agent = get_support_sales_agent()
-                    result = await run_agent(agent, "[მფლობელმა დაადასტურა გადახდა. მოითხოვე მისამართი და ტელეფონი.]", conv_id)
-                    reply = result["reply"].strip() or "გადახდა დადასტურებულია! ✨ მისამართი და ტელეფონის ნომერი მოგვწერეთ."
-                elif "არ ვადასტურებ" in text_lower or ("არ" in text_lower and "ვადასტურებ" in text_lower):
-                    # Deny
-                    agent = get_support_sales_agent()
-                    result = await run_agent(agent, "[მფლობელმა უარყო. თავაზიანად უთხარი რომ ეს პროდუქტი ამჟამად არ არის ხელმისაწვდომი და შესთავაზე სხვა ვარიანტი.]", conv_id)
-                    reply = result["reply"].strip() or "სამწუხაროდ ეს მოდელი ამჟამად არ არის ხელმისაწვდომი. გსურთ სხვა ვარიანტი ნახოთ?"
-                elif text.startswith("უპასუხე:") or text.startswith("უპასუხე "):
-                    # Owner dictates reply — send directly
-                    reply = text.replace("უპასუხე:", "").replace("უპასუხე ", "").strip()
-                else:
-                    # Other text from owner — forward as instruction to bot
-                    agent = get_support_sales_agent()
-                    result = await run_agent(agent, f"[მფლობელის ინსტრუქცია: {text}]", conv_id)
-                    reply = result["reply"].strip()
-                    if not reply:
-                        continue
-
-                async with httpx.AsyncClient(timeout=30) as client:
-                    await client.post(
-                        "https://graph.facebook.com/v21.0/me/messages",
-                        params={"access_token": FB_PAGE_TOKEN},
-                        json={"recipient": {"id": sender_id}, "message": {"text": reply}},
-                    )
-
-    return {"status": "ok"}
-
-
-@app.get("/api/owner-confirm/{conversation_id}")
-async def owner_confirm(conversation_id: str):
-    """Owner confirms order — agent continues with bank question."""
-    sender_id = conversation_id.replace("facebook_messenger_", "").replace("instagram_dm_", "")
-
-    if FB_PAGE_TOKEN and sender_id:
-        async with httpx.AsyncClient(timeout=30) as client:
-            # Owner confirmed payment — ask for address
-            agent = get_support_sales_agent()
-            result = await run_agent(agent, "[მფლობელმა დაადასტურა გადახდა. მოითხოვე მისამართი და ტელეფონი.]", conversation_id)
-            reply = result["reply"].strip() or "გადახდა დადასტურებულია! ✨ მისამართი და ტელეფონის ნომერი მომწერეთ."
-
-            await client.post(
-                "https://graph.facebook.com/v21.0/me/messages",
-                params={"access_token": FB_PAGE_TOKEN},
-                json={"recipient": {"id": sender_id}, "message": {"text": reply}},
-            )
-    return HTMLResponse("<h1>✅ დადასტურებულია!</h1><p>კლიენტს ეცნობა.</p>")
-
-
-@app.get("/api/owner-deny/{conversation_id}")
-async def owner_deny(conversation_id: str):
-    """Owner denies — agent tells customer."""
-    sender_id = conversation_id.replace("facebook_messenger_", "").replace("instagram_dm_", "")
-
-    if FB_PAGE_TOKEN and sender_id:
-        async with httpx.AsyncClient(timeout=30) as client:
-            agent = get_support_sales_agent()
-            result = await run_agent(agent, "[მფლობელმა უარყო. თავაზიანად უთხარი რომ ეს პროდუქტი ამჟამად არ არის ხელმისაწვდომი და შესთავაზე სხვა ვარიანტი.]", conversation_id)
-            reply = result["reply"].strip() or "სამწუხაროდ ეს მოდელი ამჟამად არ არის ხელმისაწვდომი. გსურთ სხვა ვარიანტი ნახოთ?"
-
-            await client.post(
-                "https://graph.facebook.com/v21.0/me/messages",
-                params={"access_token": FB_PAGE_TOKEN},
-                json={"recipient": {"id": sender_id}, "message": {"text": reply}},
-            )
-    return HTMLResponse("<h1>❌ უარყოფილია</h1><p>კლიენტს ეცნობა.</p>")
-
-
-# ── Agent Chat Endpoints ──────────────────────────────────────
+# ── Agent Chat Endpoints ─────────────────────────────────────
 
 @app.post("/api/support", response_model=ChatResponse)
 async def chat_support(req: ChatRequest):
     agent = get_support_sales_agent()
-
-    # Enrich the message with customer context if provided
     enriched_message = req.message
+
     if req.customer_context:
         ctx = req.customer_context
         context_parts = []
@@ -614,16 +107,7 @@ async def chat_support(req: ChatRequest):
 
 @app.post("/api/webhook/{channel}")
 async def channel_webhook(channel: str, request: Request):
-    """Universal webhook endpoint for any channel.
-
-    N8N routes platform webhooks here:
-    - POST /api/webhook/facebook_messenger
-    - POST /api/webhook/instagram_dm
-    - POST /api/webhook/whatsapp
-
-    The adapter parses the platform payload, runs the agent,
-    and returns a platform-formatted response.
-    """
+    """Universal webhook endpoint for any channel (N8N routes here)."""
     if channel not in ADAPTERS:
         raise HTTPException(status_code=400, detail=f"Unknown channel: {channel}. Available: {list(ADAPTERS.keys())}")
 
@@ -653,7 +137,7 @@ async def chat_marketing(req: ChatRequest):
     return ChatResponse(**result)
 
 
-# ── Data Endpoints (for N8N and direct access) ────────────────
+# ── Data Endpoints ───────────────────────────────────────────
 
 @app.get("/api/leads")
 async def list_leads(status: str = "", limit: int = 50):
@@ -807,6 +291,26 @@ async def add_knowledge(question: str, answer: str, category: str = "general"):
         await db.close()
 
 
+# ── Inventory Endpoints ──────────────────────────────────────
+
+def save_uploaded_image(upload: UploadFile, prefix: str) -> str:
+    """Save uploaded image, converting HEIC/HEIF to JPEG automatically."""
+    filename_base = f"{prefix}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    save_dir = Path(__file__).parent / "static" / "products"
+
+    ext = Path(upload.filename).suffix.lower()
+    if ext in ('.heic', '.heif'):
+        img = Image.open(upload.file)
+        filename = f"{filename_base}.jpg"
+        img.save(save_dir / filename, "JPEG", quality=85)
+    else:
+        filename = f"{filename_base}{ext}"
+        with open(save_dir / filename, "wb") as f:
+            shutil.copyfileobj(upload.file, f)
+
+    return f"/static/products/{filename}"
+
+
 @app.get("/api/inventory")
 async def list_inventory():
     db = await get_db()
@@ -884,18 +388,30 @@ async def upload_product_image(item_id: int, image: UploadFile = File(...)):
         await db.close()
 
 
+@app.post("/api/inventory/{item_id}/image_back")
+async def upload_back_image(item_id: int, image: UploadFile = File(...)):
+    image_url = save_uploaded_image(image, f"product_{item_id}_back")
+    db = await get_db()
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        await db.execute("UPDATE inventory SET image_url_back = ?, updated_at = ? WHERE id = ?", (image_url, now, item_id))
+        await db.commit()
+        return {"image_url": image_url}
+    finally:
+        await db.close()
+
+
 @app.post("/api/inventory/swap-images")
 async def swap_images(request: Request):
     """Swap images between two inventory slots (drag & drop support)."""
     data = await request.json()
     from_id = data["from_id"]
-    from_side = data["from_side"]  # "front" or "back"
+    from_side = data["from_side"]
     to_id = data["to_id"]
     to_side = data["to_side"]
 
     db = await get_db()
     try:
-        # Get current URLs
         c1 = await db.execute("SELECT image_url, image_url_back FROM inventory WHERE id = ?", (from_id,))
         r1 = await c1.fetchone()
         c2 = await db.execute("SELECT image_url, image_url_back FROM inventory WHERE id = ?", (to_id,))
@@ -914,19 +430,6 @@ async def swap_images(request: Request):
         await db.execute(f"UPDATE inventory SET {to_col} = ?, updated_at = ? WHERE id = ?", (from_url, now, to_id))
         await db.commit()
         return {"message": "Images swapped"}
-    finally:
-        await db.close()
-
-
-@app.post("/api/inventory/{item_id}/image_back")
-async def upload_back_image(item_id: int, image: UploadFile = File(...)):
-    image_url = save_uploaded_image(image, f"product_{item_id}_back")
-    db = await get_db()
-    try:
-        now = datetime.now(timezone.utc).isoformat()
-        await db.execute("UPDATE inventory SET image_url_back = ?, updated_at = ? WHERE id = ?", (image_url, now, item_id))
-        await db.commit()
-        return {"image_url": image_url}
     finally:
         await db.close()
 
@@ -966,6 +469,8 @@ async def delete_inventory(item_id: int):
     finally:
         await db.close()
 
+
+# ── Orders ───────────────────────────────────────────────────
 
 @app.get("/api/orders")
 async def list_orders(status: str = "", limit: int = 50):
@@ -1021,7 +526,6 @@ async def decrease_stock_for_order(order_id: int):
         if not order:
             raise HTTPException(status_code=404)
         item_code = order["items"].strip().upper()
-        # Find product by code and decrease stock
         await db.execute(
             "UPDATE inventory SET stock = MAX(0, stock - 1), updated_at = ? WHERE UPPER(code) = ? AND stock > 0",
             (datetime.now(timezone.utc).isoformat(), item_code),
@@ -1034,10 +538,10 @@ async def decrease_stock_for_order(order_id: int):
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok", "agents": ["support_sales", "marketing"], "version": "0.1.0"}
+    return {"status": "ok", "agents": ["support_sales", "marketing"], "version": "0.2.0"}
 
 
-# ── Seed Data ─────────────────────────────────────────────────
+# ── Seed Data ────────────────────────────────────────────────
 
 async def seed_knowledge_base():
     """Seed Tissu Shop knowledge base and starter inventory."""
@@ -1050,7 +554,6 @@ async def seed_knowledge_base():
 
         now = datetime.now(timezone.utc).isoformat()
 
-        # Knowledge base — real Tissu Shop info
         articles = [
             ("რა ფასია?", "პატარა ზომა (33x25 სმ) — 69 ლარი. დიდი ზომა (37x27 სმ) — 74 ლარი.", "pricing"),
             ("რა ზომები გაქვთ?", "გვაქვს 2 ზომა: პატარა (33x25 სმ, 13-14 ინჩი ლეპტოპისთვის) და დიდი (37x27 სმ, 15-16 ინჩი ლეპტოპისთვის).", "products"),
@@ -1066,11 +569,9 @@ async def seed_knowledge_base():
                 (q, a, cat, now),
             )
 
-        # Load real inventory from seed_inventory.json
         seed_file = Path(__file__).parent / "seed_inventory.json"
         if seed_file.exists():
-            import json as _json
-            items = _json.loads(seed_file.read_text())
+            items = json.loads(seed_file.read_text())
             for item in items:
                 await db.execute(
                     "INSERT INTO inventory (product_name, model, size, color, style, code, tags, price, stock, image_url, image_url_back, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
