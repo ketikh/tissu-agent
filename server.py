@@ -187,9 +187,28 @@ async def _process_message(sender_id: str, text: str, conversation_id: str, chan
                                           "type": "image", "image": {"id": _media_id, "caption": f"📷 {_cname} — გადახდის ქვითარი\n\nვადასტურებ / არ ვადასტურებ"}},
                                 )
                     else:
-                        # Product photo — analyze and find similar in our inventory
+                        # Product photo — forward to WA + tell bot
                         text = text.replace(f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
-                            f"[კლიენტმა პროდუქტის ფოტო გამოგზავნა. Gemini-ს ანალიზი: {_analysis_text[:200]}. ეძებს მსგავს ქეისს. check_inventory(search=...) გამოიძახე აღწერის მიხედვით და თუ იპოვე, აჩვენე. თუ ვერ იპოვე, უთხარი 'სამწუხაროდ ზუსტად ასეთი არ გვაქვს, მაგრამ სხვა ლამაზი მოდელები გვაქვს ✨']")
+                            f"[კლიენტმა პროდუქტის ფოტო გამოგზავნა (არა ქვითარი). ეძებს მსგავს ქეისს. უთხარი 'გადავამოწმებ და მოგწერთ ✨' და გამოიძახე notify_owner 'კლიენტი ეძებს კონკრეტულ მოდელს, ფოტო გამოგზავნა']")
+                        # Forward photo to WA owner
+                        _wa_phone_id = os.getenv("WA_PHONE_ID", "")
+                        _wa_token = os.getenv("WA_TOKEN", "")
+                        _owner = os.getenv("OWNER_WHATSAPP", "")
+                        if _wa_phone_id and _wa_token and _owner:
+                            _upload = await _c.post(
+                                f"https://graph.facebook.com/v21.0/{_wa_phone_id}/media",
+                                headers={"Authorization": f"Bearer {_wa_token}"},
+                                data={"messaging_product": "whatsapp", "type": "image/jpeg"},
+                                files={"file": ("photo.jpg", _img_bytes, "image/jpeg")},
+                            )
+                            _media_id = _upload.json().get("id", "")
+                            if _media_id:
+                                await _c.post(
+                                    f"https://graph.facebook.com/v21.0/{_wa_phone_id}/messages",
+                                    headers={"Authorization": f"Bearer {_wa_token}", "Content-Type": "application/json"},
+                                    json={"messaging_product": "whatsapp", "to": _owner,
+                                          "type": "image", "image": {"id": _media_id, "caption": f"📷 {_cname} ეძებს ამ მოდელს"}},
+                                )
         except Exception as e:
             logger.error(f"Image analysis failed: {e}", exc_info=True)
             text = text.replace(f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
@@ -440,8 +459,12 @@ async def wa_webhook_receive(request: Request):
                     # Owner dictates reply — send directly
                     reply = text.replace("უპასუხე:", "").replace("უპასუხე ", "").strip()
                 else:
-                    # Other text from owner — ignore, don't forward to customer
-                    continue
+                    # Other text from owner — forward as instruction to bot
+                    agent = get_support_sales_agent()
+                    result = await run_agent(agent, f"[მფლობელის ინსტრუქცია: {text}]", conv_id)
+                    reply = result["reply"].strip()
+                    if not reply:
+                        continue
 
                 async with httpx.AsyncClient(timeout=30) as client:
                     await client.post(
