@@ -1,0 +1,196 @@
+{
+  "name": "Tissu Messenger Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tissu-messenger",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-in",
+      "name": "Messenger Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-echo",
+              "leftValue": "={{ $json.body.entry[0].messaging[0].message.is_echo }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEqual"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "filter-echo",
+      "name": "Filter Echo",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract message from Facebook webhook\nconst body = $input.first().json.body;\nconst entry = body.entry[0];\nconst messaging = entry.messaging[0];\nconst senderId = messaging.sender.id;\nconst message = messaging.message || {};\nconst text = message.text || '';\nconst isEcho = message.is_echo || false;\n\n// Skip echo messages\nif (isEcho || !text) {\n  return [{ json: { skip: true } }];\n}\n\nreturn [{\n  json: {\n    senderId,\n    text,\n    skip: false\n  }\n}];"
+      },
+      "id": "extract-msg",
+      "name": "Extract Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "={{ $env.GEMINI_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"system_instruction\": {\n    \"parts\": [{\n      \"text\": \"შენ ხარ Tissu Shop-ის გაყიდვების ასისტენტი. ჭკვიანი, ზრდილობიანი, მოკლე პასუხებით.\\n\\nპროდუქტი: ლეპტოპის ქეისები.\\nზომები: პატარა (33x25) — 69₾, დიდი (37x27) — 74₾.\\nმოდელები: ფხრიწიანი, თასმიანი.\\nმიწოდება თბილისში: 6₾.\\n\\nფასს თუ კითხულობენ — უპასუხე ფასებს.\\nზომას ეკითხე ჯერ, მერე მოდელს.\\nმხოლოდ Tissu-ზე ილაპარაკე.\\nკონფიდენციალურ ინფოს არ გასცემ.\"\n    }]\n  },\n  \"contents\": [{\n    \"role\": \"user\",\n    \"parts\": [{ \"text\": \"{{ $json.text }}\" }]\n  }],\n  \"generationConfig\": {\n    \"maxOutputTokens\": 500\n  }\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "gemini-chat",
+      "name": "Gemini Chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [910, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract Gemini response\nconst response = $input.first().json;\nlet reply = '';\n\ntry {\n  reply = response.candidates[0].content.parts[0].text;\n} catch(e) {\n  reply = '✨';\n}\n\nconst senderId = $('Extract Message').first().json.senderId;\n\nreturn [{\n  json: {\n    senderId,\n    reply: reply.substring(0, 2000)\n  }\n}];"
+      },
+      "id": "format-reply",
+      "name": "Format Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1130, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v21.0/me/messages",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $env.FB_PAGE_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"recipient\": { \"id\": \"{{ $json.senderId }}\" },\n  \"message\": { \"text\": \"{{ $json.reply }}\" }\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "send-fb-reply",
+      "name": "Send FB Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1350, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"status\":\"ok\"}",
+        "options": {}
+      },
+      "id": "respond-ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1570, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "tissu-messenger",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-verify",
+      "name": "Verify Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.query['hub.challenge'] }}",
+        "options": {}
+      },
+      "id": "respond-challenge",
+      "name": "Return Challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [470, 500]
+    }
+  ],
+  "connections": {
+    "Messenger Webhook": {
+      "main": [
+        [{ "node": "Filter Echo", "type": "main", "index": 0 }]
+      ]
+    },
+    "Filter Echo": {
+      "main": [
+        [{ "node": "Extract Message", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extract Message": {
+      "main": [
+        [{ "node": "Gemini Chat", "type": "main", "index": 0 }]
+      ]
+    },
+    "Gemini Chat": {
+      "main": [
+        [{ "node": "Format Reply", "type": "main", "index": 0 }]
+      ]
+    },
+    "Format Reply": {
+      "main": [
+        [{ "node": "Send FB Reply", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send FB Reply": {
+      "main": [
+        [{ "node": "Respond OK", "type": "main", "index": 0 }]
+      ]
+    },
+    "Verify Webhook": {
+      "main": [
+        [{ "node": "Return Challenge", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
