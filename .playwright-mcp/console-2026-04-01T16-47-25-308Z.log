@@ -1,0 +1,43 @@
+[    1857ms] [LOG] 
+%cStop! font-family:helvetica; font-size:20px; font-size:50px; font-weight:bold; color:red; -webkit-text-stroke:1px black; @ https://static.xx.fbcdn.net/rsrc.php/v4i2_t4/y9/l/en_US-j/kfCu4EUp8ZD4K6P_J1UcLbWTdqOi183E0mYqubscFUPXxGMVw88P3EBGtPSeatGe6DmEbiO3b4rbiCF71sI3dtJy8PrcqHXMHXmViTclsl7XynntrsDmGi8V11uZ7IpSL9Ghi5KJsNfTa-W0HLhXXhar81_vrtRJz4zQg-JKrQsBQklYZxmGj0KBIzsAdW8DJFA3qpMHcY40-_fHA7cfcJKZbZMIxE7nOyOjcYRKTXALsHhOLz.js:2026
+[    1857ms] [LOG] 
+%cThis is a browser feature intended for developers. If someone told you to copy-paste something here to enable a Facebook feature or "hack" someone's account, it's a scam and will give them access to your Facebook account. font-family:helvetica; font-size:20px;  @ https://static.xx.fbcdn.net/rsrc.php/v4i2_t4/y9/l/en_US-j/kfCu4EUp8ZD4K6P_J1UcLbWTdqOi183E0mYqubscFUPXxGMVw88P3EBGtPSeatGe6DmEbiO3b4rbiCF71sI3dtJy8PrcqHXMHXmViTclsl7XynntrsDmGi8V11uZ7IpSL9Ghi5KJsNfTa-W0HLhXXhar81_vrtRJz4zQg-JKrQsBQklYZxmGj0KBIzsAdW8DJFA3qpMHcY40-_fHA7cfcJKZbZMIxE7nOyOjcYRKTXALsHhOLz.js:2026
+[    1857ms] [LOG] 
+%cSee https://www.facebook.com/selfxss for more information. font-family:helvetica; font-size:20px;  @ https://static.xx.fbcdn.net/rsrc.php/v4i2_t4/y9/l/en_US-j/kfCu4EUp8ZD4K6P_J1UcLbWTdqOi183E0mYqubscFUPXxGMVw88P3EBGtPSeatGe6DmEbiO3b4rbiCF71sI3dtJy8PrcqHXMHXmViTclsl7XynntrsDmGi8V11uZ7IpSL9Ghi5KJsNfTa-W0HLhXXhar81_vrtRJz4zQg-JKrQsBQklYZxmGj0KBIzsAdW8DJFA3qpMHcY40-_fHA7cfcJKZbZMIxE7nOyOjcYRKTXALsHhOLz.js:2026
+[    1857ms] [LOG] 
+%c  @ https://static.xx.fbcdn.net/rsrc.php/v4i2_t4/y9/l/en_US-j/kfCu4EUp8ZD4K6P_J1UcLbWTdqOi183E0mYqubscFUPXxGMVw88P3EBGtPSeatGe6DmEbiO3b4rbiCF71sI3dtJy8PrcqHXMHXmViTclsl7XynntrsDmGi8V11uZ7IpSL9Ghi5KJsNfTa-W0HLhXXhar81_vrtRJz4zQg-JKrQsBQklYZxmGj0KBIzsAdW8DJFA3qpMHcY40-_fHA7cfcJKZbZMIxE7nOyOjcYRKTXALsHhOLz.js:2026
+[  255538ms] [ERROR] ErrorUtils caught an error:
+
+Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings.
+
+Subsequent non-fatal errors won't be logged; see https://fburl.com/debugjs. {column: 28569, clientTime: 1775062300, componentStackFrames: Array(2), extra: Object, guardList: Array(2)} @ https://static.xx.fbcdn.net/rsrc.php/v4/yK/r/y3UASupc0mW.js:78
+[  255555ms] Error: Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings.
+    at cr (https://static.xx.fbcdn.net/rsrc.php/v4iVtA4/yt/l/en_US-j/txdNPJ2a0qjXd4usm-K-ZuQ2NnQApLYjDB2hu5Dkw-2QY_ko9chMPOs2uGvCMwE14pWXDrgEx3ZOSlODQoXGfBKOPPlbl0gwqy3xJTbmeBtcS1gmR8U6JH-0eUS_zbinZcJjGntFO5jNNr7V98cCWHwfz5ckxsGIPr3ExpKuoqobUF9jWP5RHuQM1-48F1fbTkc6yK5gJlcY6G8v4hWm66FDncqeo7QNU5IiuxMzLYt0k4Yn3v.js:210:28569)
+    at Ul (https://static.xx.fbcdn.net/rsrc.php/v4iVtA4/yt/l/en_US-j/txdNPJ2a0qjXd4usm-K-ZuQ2NnQApLYjDB2hu5Dkw-2QY_ko9chMPOs2uGvCMwE14pWXDrgEx3ZOSlODQoXGfBKOPPlbl0gwqy3xJTbmeBtcS1gmR8U6JH-0eUS_zbinZcJjGntFO5jNNr7V98cCWHwfz5ckxsGIPr3ExpKuoqobUF9jWP5RHuQM1-48F1fbTkc6yK5gJlcY6G8v4hWm66FDncqeo7QNU5IiuxMzLYt0k4Yn3v.js:210:80274)
+    at ns (https://static.xx.fbcdn.net/rsrc.php/v4iVtA4/yt/l/en_US-j/txdNPJ2a0qjXd4usm-K-ZuQ2NnQApLYjDB2hu5Dkw-2QY_ko9chMPOs2uGvCMwE14pWXDrgEx3ZOSlODQoXGfBKOPPlbl0gwqy3xJTbmeBtcS1gmR8U6JH-0eUS_zbinZcJjGntFO5jNNr7V98cCWHwfz5ckxsGIPr3ExpKuoqobUF9jWP5RHuQM1-48F1fbTkc6yK5gJlcY6G8v4hWm66FDncqeo7QNU5IiuxMzLYt0k4Yn3v.js:210:89010)
+    at vd (https://static.xx.fbcdn.net/rsrc.php/v4iVtA4/yt/l/en_US-j/txdNPJ2a0qjXd4usm-K-ZuQ2NnQApLYjDB2hu5Dkw-2QY_ko9chMPOs2uGvCMwE14pWXDrgEx3ZOSlODQoXGfBKOPPlbl0gwqy3xJTbmeBtcS1gmR8U6JH-0eUS_zbinZcJjGntFO5jNNr7V98cCWHwfz5ckxsGIPr3ExpKuoqobUF9jWP5RHuQM1-48F1fbTkc6yK5gJlcY6G8v4hWm66FDncqeo7QNU5IiuxMzLYt0k4Yn3v.js:210:141030)
+    at yd (https://static.xx.fbcdn.net/rsrc.php/v4iVtA4/yt/l/en_US-j/txdNPJ2a0qjXd4usm-K-ZuQ2NnQApLYjDB2hu5Dkw-2QY_ko9chMPOs2uGvCMwE14pWXDrgEx3ZOSlODQoXGfBKOPPlbl0gwqy3xJTbmeBtcS1gmR8U6JH-0eUS_zbinZcJjGntFO5jNNr7V98cCWHwfz5ckxsGIPr3ExpKuoqobUF9jWP5RHuQM1-48F1fbTkc6yK5gJlcY6G8v4hWm66FDncqeo7QNU5IiuxMzLYt0k4Yn3v.js:210:140074)
+    at hd (https://static.xx.fbcdn.net/rsrc.php/v4iVtA4/yt/l/en_US-j/txdNPJ2a0qjXd4usm-K-ZuQ2NnQApLYjDB2hu5Dkw-2QY_ko9chMPOs2uGvCMwE14pWXDrgEx3ZOSlODQoXGfBKOPPlbl0gwqy3xJTbmeBtcS1gmR8U6JH-0eUS_zbinZcJjGntFO5jNNr7V98cCWHwfz5ckxsGIPr3ExpKuoqobUF9jWP5RHuQM1-48F1fbTkc6yK5gJlcY6G8v4hWm66FDncqeo7QNU5IiuxMzLYt0k4Yn3v.js:210:139906)
+    at od (https://static.xx.fbcdn.net/rsrc.php/v4iVtA4/yt/l/en_US-j/txdNPJ2a0qjXd4usm-K-ZuQ2NnQApLYjDB2hu5Dkw-2QY_ko9chMPOs2uGvCMwE14pWXDrgEx3ZOSlODQoXGfBKOPPlbl0gwqy3xJTbmeBtcS1gmR8U6JH-0eUS_zbinZcJjGntFO5jNNr7V98cCWHwfz5ckxsGIPr3ExpKuoqobUF9jWP5RHuQM1-48F1fbTkc6yK5gJlcY6G8v4hWm66FDncqeo7QNU5IiuxMzLYt0k4Yn3v.js:210:136034)
+    at Xr (https://static.xx.fbcdn.net/rsrc.php/v4iVtA4/yt/l/en_US-j/txdNPJ2a0qjXd4usm-K-ZuQ2NnQApLYjDB2hu5Dkw-2QY_ko9chMPOs2uGvCMwE14pWXDrgEx3ZOSlODQoXGfBKOPPlbl0gwqy3xJTbmeBtcS1gmR8U6JH-0eUS_zbinZcJjGntFO5jNNr7V98cCWHwfz5ckxsGIPr3ExpKuoqobUF9jWP5RHuQM1-48F1fbTkc6yK5gJlcY6G8v4hWm66FDncqeo7QNU5IiuxMzLYt0k4Yn3v.js:210:35484)
+    at Object.applyWithGuard (https://static.xx.fbcdn.net/rsrc.php/v4/yK/r/y3UASupc0mW.js:79:10303)
+    at e (https://static.xx.fbcdn.net/rsrc.php/v4/yK/r/y3UASupc0mW.js:79:11000)
+    at MessagePort.N (https://static.xx.fbcdn.net/rsrc.php/v4/yK/r/y3UASupc0mW.js:245:1878)
+[  256058ms] [LOG] 
+%cStop! font-family:helvetica; font-size:20px; font-size:50px; font-weight:bold; color:red; -webkit-text-stroke:1px black; @ https://static.xx.fbcdn.net/rsrc.php/v4/yK/r/y3UASupc0mW.js:255
+[  256058ms] [LOG] 
+%cThis is a browser feature intended for developers. If someone told you to copy-paste something here to enable a Facebook feature or "hack" someone's account, it's a scam and will give them access to your Facebook account. font-family:helvetica; font-size:20px;  @ https://static.xx.fbcdn.net/rsrc.php/v4/yK/r/y3UASupc0mW.js:255
+[  256058ms] [LOG] 
+%cSee https://www.facebook.com/selfxss for more information. font-family:helvetica; font-size:20px;  @ https://static.xx.fbcdn.net/rsrc.php/v4/yK/r/y3UASupc0mW.js:255
+[  256058ms] [LOG] 
+%c  @ https://static.xx.fbcdn.net/rsrc.php/v4/yK/r/y3UASupc0mW.js:255
+[  363940ms] [INFO] Slow network is detected. See https://www.chromestatus.com/feature/5636954674692096 for more details. Fallback font will be used while loading: https://static.xx.fbcdn.net/rsrc.php/yQ/r/-pkMfchyeAZ.woff2 @ https://www.facebook.com/:128
+[  364071ms] [LOG] 
+%cStop! font-family:helvetica; font-size:20px; font-size:50px; font-weight:bold; color:red; -webkit-text-stroke:1px black; @ https://static.xx.fbcdn.net/rsrc.php/v4/ya/r/R1pEz0OuWy4.js:255
+[  364071ms] [LOG] 
+%cThis is a browser feature intended for developers. If someone told you to copy-paste something here to enable a Facebook feature or "hack" someone's account, it's a scam and will give them access to your Facebook account. font-family:helvetica; font-size:20px;  @ https://static.xx.fbcdn.net/rsrc.php/v4/ya/r/R1pEz0OuWy4.js:255
+[  364071ms] [LOG] 
+%cSee https://www.facebook.com/selfxss for more information. font-family:helvetica; font-size:20px;  @ https://static.xx.fbcdn.net/rsrc.php/v4/ya/r/R1pEz0OuWy4.js:255
+[  364071ms] [LOG] 
+%c  @ https://static.xx.fbcdn.net/rsrc.php/v4/ya/r/R1pEz0OuWy4.js:255
+[  365342ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "new-password"): (More info: https://goo.gl/9p2vKq) %o @ https://www.facebook.com/:0

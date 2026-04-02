@@ -32,9 +32,7 @@ async def check_inventory(model: str = "", size: str = "", search: str = "") -> 
         for r in rows:
             row = dict(r)
             item = {
-                "id": row["id"],
                 "code": row.get("code", ""),
-                "style": row.get("style", ""),
                 "model": row["model"],
                 "size": row["size"],
                 "price": row["price"],

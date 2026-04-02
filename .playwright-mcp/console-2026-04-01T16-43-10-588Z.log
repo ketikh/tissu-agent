@@ -1,0 +1,16 @@
+[     700ms] [LOG] 
+%cStop! font-family:helvetica; font-size:20px; font-size:50px; font-weight:bold; color:red; -webkit-text-stroke:1px black; @ :0
+[     701ms] [LOG] 
+%cThis is a browser feature intended for developers. If someone told you to copy-paste something here to enable a Facebook feature or "hack" someone's account, it's a scam and will give them access to your Facebook account. font-family:helvetica; font-size:20px;  @ :0
+[     701ms] [LOG] 
+%cSee https://www.facebook.com/selfxss for more information. font-family:helvetica; font-size:20px;  @ :0
+[     701ms] [LOG] 
+%c  @ :0
+[   75968ms] [LOG] 
+%cStop! font-family:helvetica; font-size:20px; font-size:50px; font-weight:bold; color:red; -webkit-text-stroke:1px black; @ https://static.xx.fbcdn.net/rsrc.php/v4i2_t4/y9/l/en_US-j/kfCu4EUp8ZD4K6P_J1UcLbWTdqOi183E0mYqubscFUPXxGMVw88P3EBGtPSeatGe6DmEbiO3b4rbiCF71sI3dtJy8PrcqHXMHXmViTclsl7XynntrsDmGi8V11uZ7IpSL9Ghi5KJsNfTa-W0HLhXXhar81_vrtRJz4zQg-JKrQsBQklYZxmGj0KBIzsAdW8DJFA3qpMHcY40-_fHA7cfcJKZbZMIxE7nOyOjcYRKTXALsHhOLz.js:2026
+[   75968ms] [LOG] 
+%cThis is a browser feature intended for developers. If someone told you to copy-paste something here to enable a Facebook feature or "hack" someone's account, it's a scam and will give them access to your Facebook account. font-family:helvetica; font-size:20px;  @ https://static.xx.fbcdn.net/rsrc.php/v4i2_t4/y9/l/en_US-j/kfCu4EUp8ZD4K6P_J1UcLbWTdqOi183E0mYqubscFUPXxGMVw88P3EBGtPSeatGe6DmEbiO3b4rbiCF71sI3dtJy8PrcqHXMHXmViTclsl7XynntrsDmGi8V11uZ7IpSL9Ghi5KJsNfTa-W0HLhXXhar81_vrtRJz4zQg-JKrQsBQklYZxmGj0KBIzsAdW8DJFA3qpMHcY40-_fHA7cfcJKZbZMIxE7nOyOjcYRKTXALsHhOLz.js:2026
+[   75968ms] [LOG] 
+%cSee https://www.facebook.com/selfxss for more information. font-family:helvetica; font-size:20px;  @ https://static.xx.fbcdn.net/rsrc.php/v4i2_t4/y9/l/en_US-j/kfCu4EUp8ZD4K6P_J1UcLbWTdqOi183E0mYqubscFUPXxGMVw88P3EBGtPSeatGe6DmEbiO3b4rbiCF71sI3dtJy8PrcqHXMHXmViTclsl7XynntrsDmGi8V11uZ7IpSL9Ghi5KJsNfTa-W0HLhXXhar81_vrtRJz4zQg-JKrQsBQklYZxmGj0KBIzsAdW8DJFA3qpMHcY40-_fHA7cfcJKZbZMIxE7nOyOjcYRKTXALsHhOLz.js:2026
+[   75968ms] [LOG] 
+%c  @ https://static.xx.fbcdn.net/rsrc.php/v4i2_t4/y9/l/en_US-j/kfCu4EUp8ZD4K6P_J1UcLbWTdqOi183E0mYqubscFUPXxGMVw88P3EBGtPSeatGe6DmEbiO3b4rbiCF71sI3dtJy8PrcqHXMHXmViTclsl7XynntrsDmGi8V11uZ7IpSL9Ghi5KJsNfTa-W0HLhXXhar81_vrtRJz4zQg-JKrQsBQklYZxmGj0KBIzsAdW8DJFA3qpMHcY40-_fHA7cfcJKZbZMIxE7nOyOjcYRKTXALsHhOLz.js:2026

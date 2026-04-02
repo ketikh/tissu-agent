@@ -1,0 +1,73 @@
+- generic [ref=e4]:
+  - generic [ref=e9]:
+    - generic [ref=e15]:
+      - img "Meta symbol" [ref=e20]
+      - generic [ref=e30]:
+        - generic [ref=e35]:
+          - text: Get started with
+          - generic [ref=e36]: business tools from Meta
+        - generic [ref=e40]: By logging in, you can navigate to all business tools like Ads Manager, Meta Business Suite, Commerce Manager and more to help you connect with your customers and get better business results.
+        - generic [ref=e44]: "Our business tools can help you:"
+        - list [ref=e50]:
+          - listitem [ref=e51]:
+            - generic [ref=e52]: •
+            - generic [ref=e53]: Spread the word about your business to increase brand awareness
+          - listitem [ref=e54]:
+            - generic [ref=e55]: •
+            - generic [ref=e56]: Attract new customers, grow your client base and build customer relationships
+          - listitem [ref=e57]:
+            - generic [ref=e58]: •
+            - generic [ref=e59]: Increase your online sales by reaching new audiences
+    - generic [ref=e65]:
+      - generic [ref=e68]: Log into business tools from Meta
+      - button "Log in with Facebook" [ref=e71] [cursor=pointer]:
+        - generic [ref=e72]:
+          - img [ref=e74]
+          - generic [ref=e77]: Log in with Facebook
+      - button "Create new account" [ref=e80] [cursor=pointer]:
+        - generic [ref=e83]: Create new account
+      - separator [ref=e85]
+      - button "Log in with a managed Meta account" [ref=e88] [cursor=pointer]:
+        - generic [ref=e91]: Log in with a managed Meta account
+      - img "Meta logo" [ref=e93]
+  - generic [ref=e104]:
+    - generic [ref=e105]:
+      - link "© 2026 Meta" [ref=e106] [cursor=pointer]:
+        - /url: https://www.facebook.com/
+      - generic [ref=e107]:
+        - link "Follow Meta for Business (ex Facebook for Business) Facebook Page Social Media Channel" [ref=e113] [cursor=pointer]:
+          - /url: /MetaforBusiness?ref=fbb_footer
+          - img "Follow Meta for Business (ex Facebook for Business) Facebook Page Social Media Channel" [ref=e114]
+        - link "Follow Meta for Business (ex Facebook for Business) Twitter Social Media Channel" [ref=e121] [cursor=pointer]:
+          - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fwww.twitter.com%2FMetaforBusiness&h=AT6qvIdyJvAbDQ3ya_TI3_jrHx3KC-b6b_LDzw94QSmB10LVWtBRRV4SyXGPU2WAGfWYEnCLSS58XDYk5Ah8Mwzr3mMyGZ_2RO6Lg_yKWUHs2Db1pF224Er-mQ-1JavYu62sriOJzFSRmKFGy7tf9j-fMOUg7YgEcvgPuCL9
+          - img "Follow Meta for Business (ex Facebook for Business) Twitter Social Media Channel" [ref=e122]
+    - generic [ref=e124]:
+      - generic [ref=e125]:
+        - link "About" [ref=e126] [cursor=pointer]:
+          - /url: https://www.meta.com/about/
+        - link "Developers" [ref=e127] [cursor=pointer]:
+          - /url: https://developers.meta.com/
+        - link "Careers" [ref=e128] [cursor=pointer]:
+          - /url: https://l.facebook.com/l.php?u=https%3A%2F%2Fwww.metacareers.com%2F&h=AT7J6z2aII3iUmobfJEMuh6_jiKLGpuSn5e8G7cRPehNbQDefPtXH6l5ptXBNUOXpvW8rgzTOAcRKVbF6dbhOj8yi-dgTdb2aq5FH0GMxgT-uImRlzcNgAM5EVp6JNB-bPZGLdslO4dwMzoqrebBYb3vbDM
+        - link "Privacy" [ref=e129] [cursor=pointer]:
+          - /url: https://www.facebook.com/privacy/explanation
+        - link "Cookies" [ref=e130] [cursor=pointer]:
+          - /url: https://www.facebook.com/help/cookies
+        - link "Terms" [ref=e131] [cursor=pointer]:
+          - /url: https://www.facebook.com/policies/
+        - link "Help Center" [ref=e132] [cursor=pointer]:
+          - /url: https://www.facebook.com/business/help/
+      - generic [ref=e133]:
+        - link "English (US)" [ref=e134] [cursor=pointer]:
+          - /url: https://business.facebook.com/business/loginpage/?next=https%3A%2F%2Fbusiness.facebook.com%2Fsettings%2Fsystem-users
+        - link "English (UK)" [ref=e135] [cursor=pointer]:
+          - /url: https://business.facebook.com/business/loginpage/?next=https%3A%2F%2Fbusiness.facebook.com%2Fsettings%2Fsystem-users
+        - link "Español" [ref=e136] [cursor=pointer]:
+          - /url: https://business.facebook.com/business/loginpage/?next=https%3A%2F%2Fbusiness.facebook.com%2Fsettings%2Fsystem-users
+        - link "Português (Brasil)" [ref=e137] [cursor=pointer]:
+          - /url: https://business.facebook.com/business/loginpage/?next=https%3A%2F%2Fbusiness.facebook.com%2Fsettings%2Fsystem-users
+        - link "Français (France)" [ref=e138] [cursor=pointer]:
+          - /url: https://business.facebook.com/business/loginpage/?next=https%3A%2F%2Fbusiness.facebook.com%2Fsettings%2Fsystem-users
+        - link "Español (España)" [ref=e139] [cursor=pointer]:
+          - /url: https://business.facebook.com/business/loginpage/?next=https%3A%2F%2Fbusiness.facebook.com%2Fsettings%2Fsystem-users
+        - button "More languages" [ref=e140] [cursor=pointer]: More languages

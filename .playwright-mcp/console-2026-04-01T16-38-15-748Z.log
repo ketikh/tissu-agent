@@ -1,0 +1,24 @@
+[     224ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ https://www.facebook.com/login/?next=https%3A%2F%2Fbusiness.facebook.com%2Fbusiness%2Funifiedfblogin%2Fcallback%2F%3Fnext%3Dhttps%253A%252F%252Fbusiness.facebook.com%252Fsettings%252Fsystem-users%253Fbiz_login_source%253Dbiz_unified_f3_fb_login_button%2526join_id%253Daf604b38-b7ad-4e40-aa9f-1eeb56a7de0e%26f3_request_id%3Dfbineigngjapibkncjmddlpojgafnpfpplgaomia%26full_page_redirect%3D0&request_id=fbineigngjapibkncjmddlpojgafnpfpplgaomia:0
+[     638ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ https://www.facebook.com/login/?next=https%3A%2F%2Fbusiness.facebook.com%2Fbusiness%2Funifiedfblogin%2Fcallback%2F%3Fnext%3Dhttps%253A%252F%252Fbusiness.facebook.com%252Fsettings%252Fsystem-users%253Fbiz_login_source%253Dbiz_unified_f3_fb_login_button%2526join_id%253Daf604b38-b7ad-4e40-aa9f-1eeb56a7de0e%26f3_request_id%3Dfbineigngjapibkncjmddlpojgafnpfpplgaomia%26full_page_redirect%3D0&request_id=fbineigngjapibkncjmddlpojgafnpfpplgaomia:0
+[     711ms] [LOG] 
+%cStop! font-family:helvetica; font-size:20px; font-size:50px; font-weight:bold; color:red; -webkit-text-stroke:1px black; @ https://static.xx.fbcdn.net/rsrc.php/v4/ya/r/R1pEz0OuWy4.js:255
+[     712ms] [LOG] 
+%cThis is a browser feature intended for developers. If someone told you to copy-paste something here to enable a Facebook feature or "hack" someone's account, it's a scam and will give them access to your Facebook account. font-family:helvetica; font-size:20px;  @ https://static.xx.fbcdn.net/rsrc.php/v4/ya/r/R1pEz0OuWy4.js:255
+[     712ms] [LOG] 
+%cSee https://www.facebook.com/selfxss for more information. font-family:helvetica; font-size:20px;  @ https://static.xx.fbcdn.net/rsrc.php/v4/ya/r/R1pEz0OuWy4.js:255
+[     712ms] [LOG] 
+%c  @ https://static.xx.fbcdn.net/rsrc.php/v4/ya/r/R1pEz0OuWy4.js:255
+[   62914ms] [LOG] 
+%cStop! font-family:helvetica; font-size:20px; font-size:50px; font-weight:bold; color:red; -webkit-text-stroke:1px black; @ https://static.xx.fbcdn.net/rsrc.php/v4/ya/r/R1pEz0OuWy4.js:255
+[   62914ms] [LOG] 
+%cThis is a browser feature intended for developers. If someone told you to copy-paste something here to enable a Facebook feature or "hack" someone's account, it's a scam and will give them access to your Facebook account. font-family:helvetica; font-size:20px;  @ https://static.xx.fbcdn.net/rsrc.php/v4/ya/r/R1pEz0OuWy4.js:255
+[   62914ms] [LOG] 
+%cSee https://www.facebook.com/selfxss for more information. font-family:helvetica; font-size:20px;  @ https://static.xx.fbcdn.net/rsrc.php/v4/ya/r/R1pEz0OuWy4.js:255
+[   62914ms] [LOG] 
+%c  @ https://static.xx.fbcdn.net/rsrc.php/v4/ya/r/R1pEz0OuWy4.js:255
+[   63578ms] [ERROR] ErrorUtils caught an error:
+
+terminate stream because StartStreamFailure with msg : UNAUTHENTICATED [Caught in: Subscription error in preprocessResponse]
+
+Subsequent non-fatal errors won't be logged; see https://fburl.com/debugjs. {column: 180, clientTime: 1775061559, extra: Object, guardList: Array(0), hash: kwhvnm} @ https://static.xx.fbcdn.net/rsrc.php/v4/ya/r/R1pEz0OuWy4.js:78
+[   78196ms] [ERROR] Permissions policy violation: unload is not allowed in this document. @ https://static.xx.fbcdn.net/rsrc.php/v4/yO/r/pWC1mcrxhju.js:335
