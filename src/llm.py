@@ -86,7 +86,6 @@ async def chat_with_tools(
     config = types.GenerateContentConfig(
         system_instruction=system_prompt,
         max_output_tokens=max_tokens,
-        thinking_config=types.ThinkingConfig(thinking_budget=0),
     )
     if gemini_tools:
         config.tools = [gemini_tools]
