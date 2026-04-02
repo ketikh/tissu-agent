@@ -166,7 +166,7 @@
                             ondragover="event.preventDefault()" ondragenter="slotEnter(event)" ondragleave="slotLeave(event)"
                             ondrop="dropPhoto(event,${i.id},'front')">
                             ${i.image_url
-                                ? `<img src="${API}${i.image_url}" draggable="true" ondragstart="dragPhoto(event,${i.id},'front')">
+                                ? `<img src="${i.image_url.startsWith('http') ? i.image_url : API + i.image_url}" draggable="true" ondragstart="dragPhoto(event,${i.id},'front')">
                                    <button class="remove-btn" onclick="clearSlot(${i.id},'front')">&times;</button>`
                                 : `<div class="empty-slot" onclick="clickUpload(${i.id},'front')"
                                     ondragover="event.preventDefault()" ondragenter="this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')"
@@ -179,7 +179,7 @@
                             ondragover="event.preventDefault()" ondragenter="slotEnter(event)" ondragleave="slotLeave(event)"
                             ondrop="dropPhoto(event,${i.id},'back')">
                             ${hasBack
-                                ? `<img src="${API}${i.image_url_back}" draggable="true" ondragstart="dragPhoto(event,${i.id},'back')">
+                                ? `<img src="${i.image_url_back.startsWith('http') ? i.image_url_back : API + i.image_url_back}" draggable="true" ondragstart="dragPhoto(event,${i.id},'back')">
                                    <button class="remove-btn" onclick="clearSlot(${i.id},'back')">&times;</button>`
                                 : `<div class="empty-slot" onclick="clickUpload(${i.id},'back')"
                                     ondragover="event.preventDefault()" ondragenter="this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')"
