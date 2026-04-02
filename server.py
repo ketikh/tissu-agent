@@ -152,12 +152,30 @@ async def _process_message(sender_id: str, text: str, conversation_id: str, chan
                     _img_bytes = _img_resp.content
                     _cname = customer_name or sender_id
 
+                    # Check conversation context — expecting receipt?
+                    from src.db import get_db as _get_db2
+                    _db_ctx = await _get_db2()
+                    _expecting_receipt = False
+                    try:
+                        _last_msgs = await (await _db_ctx.execute(
+                            "SELECT content FROM messages WHERE conversation_id = ? AND role = 'assistant' ORDER BY created_at DESC LIMIT 3",
+                            (conversation_id,)
+                        )).fetchall()
+                        for _lm in _last_msgs:
+                            _lm_text = _lm["content"] or ""
+                            if "სქრინ" in _lm_text or "ჩარიცხ" in _lm_text or "გადარიცხ" in _lm_text or "გადასახდელი" in _lm_text:
+                                _expecting_receipt = True
+                                break
+                    finally:
+                        await _db_ctx.close()
+
                     # Analyze: payment receipt or product photo?
+                    _ctx_hint = "კლიენტმა გადახდის სქრინი/ქვითარი უნდა გამოეგზავნა." if _expecting_receipt else "კლიენტი ჩანთას ეძებს."
                     _analysis = _vision_client.models.generate_content(
                         model="gemini-2.5-flash",
                         contents=[_types.Content(role="user", parts=[
                             _types.Part.from_bytes(data=_img_bytes, mime_type="image/jpeg"),
-                            _types.Part(text='ეს ფოტო რა არის? უპასუხე JSON: {"type": "payment_receipt" ან "product" ან "other", "description": "მოკლე აღწერა"}'),
+                            _types.Part(text=f'კონტექსტი: {_ctx_hint}\nეს ფოტო რა არის? თუ ბანკის ტრანზაქცია, გადარიცხვა, check icon, თანხა — payment_receipt. თუ ჩანთა/ქეისი — product. JSON: {{"type": "payment_receipt" ან "product", "description": "მოკლე აღწერა"}}'),
                         ])],
                     )
                     _analysis_text = _analysis.text.strip() if _analysis.text else ""
@@ -166,7 +184,7 @@ async def _process_message(sender_id: str, text: str, conversation_id: str, chan
                     if _is_receipt:
                         # Payment receipt — forward to WhatsApp for confirmation
                         text = text.replace(f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
-                            "[კლიენტმა გადახდის ქვითარი გამოგზავნა. უთხარი 'მადლობა, გადავამოწმებ ✨' და ᲒᲐᲩᲔᲠᲓᲘ!]")
+                            "[კლიენტმა გადახდის ქვითარი გამოგზავნა. უთხარი 'მადლობა, გადავამოწმებ ✨' და ᲒᲐᲩᲔᲠᲓᲘ! notify_owner ᲐᲠ გამოიძახო!]")
                         # Forward receipt to WA
                         _wa_phone_id = os.getenv("WA_PHONE_ID", "")
                         _wa_token = os.getenv("WA_TOKEN", "")
@@ -222,7 +240,7 @@ async def _process_message(sender_id: str, text: str, conversation_id: str, chan
                             # Found similar — tell bot to show them
                             _codes_str = ", ".join(_similar_codes[:5])
                             text = text.replace(f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
-                                f"[კლიენტმა ფოტო გამოგზავნა. მსგავსი მოდელები ვიპოვეთ: {_codes_str}. check_inventory გამოიძახე და ეს კოდები აჩვენე კლიენტს. უთხარი 'თქვენი ფოტოს მიხედვით ეს ვიპოვე ✨']")
+                                f"[კლიენტმა ფოტო გამოგზავნა. მსგავსი მოდელები ვიპოვეთ: {_codes_str}. check_inventory გამოიძახე და ეს კოდები აჩვენე კლიენტს. უთხარი 'თქვენი ფოტოს მიხედვით ეს ვიპოვე ✨'. notify_owner ᲐᲠ გამოიძახო!]")
                         else:
                             # Not found — notify owner
                             text = text.replace(f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
@@ -273,6 +291,10 @@ async def _process_message(sender_id: str, text: str, conversation_id: str, chan
             fb_params = {"access_token": FB_PAGE_TOKEN}
 
             reply_text = result["reply"].strip()
+            # Clean internal instructions from reply
+            import re as _re2
+            reply_text = _re2.sub(r'\(აქ ავტომატურად[^)]*\)', '', reply_text).strip()
+            reply_text = _re2.sub(r'\[SYSTEM:[^\]]*\]', '', reply_text).strip()
             if not reply_text:
                 if image_url:
                     reply_text = "მადლობა, გადავამოწმებ ✨"
@@ -366,8 +388,12 @@ async def webhook_receive(request: Request):
 
             # If customer sent image — analyze with Gemini Vision
             if image_url:
-                # Will be analyzed in _process_message
                 text = (text or "") + f"\n[კლიენტმა გამოგზავნა ფოტო: {image_url}]"
+
+            # If customer sent a link (not a photo)
+            import re as _re
+            if not image_url and text and _re.search(r'https?://', text):
+                text = text + "\n[კლიენტმა ლინკი გამოგზავნა. უთხარი: 'სამწუხაროდ ლინკის გახსნა ვერ შემიძლია, თუ შეგიძლიათ ფოტო გამომიგზავნეთ ✨'. notify_owner ᲐᲠ გამოიძახო!]"
 
             if mid and mid in _processed_mids:
                 continue
