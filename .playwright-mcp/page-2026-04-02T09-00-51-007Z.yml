@@ -34,7 +34,7 @@
                   - button:
                     - generic:
                       - paragraph:
-                        - generic: 30 days or $5.00 left
+                        - generic: 29 days or $4.88 left
                   - button:
                     - generic:
                       - img
@@ -80,73 +80,73 @@
                                   - generic:
                                     - generic:
                                       - img
-                                      - button [ref=e467]:
-                                        - link [ref=e468] [cursor=pointer]:
+                                      - button [ref=e479]:
+                                        - link [ref=e480] [cursor=pointer]:
                                           - /url: /project/698d220d-2e09-418e-97a6-1e26f5977e52/service/ef7779a7-22d8-4324-9f8b-351b1eeff8de/variables?environmentId=499b5cea-fa07-438a-950b-0f780c40a733
-                                          - generic [ref=e104]:
-                                            - img [ref=e106]
-                                            - generic [ref=e108]:
-                                              - paragraph [ref=e109]: tissu-agent
-                                              - paragraph [ref=e110]: tissu-agent-production.up.railway.app
-                                          - generic [ref=e112]:
-                                            - img [ref=e113]
-                                            - paragraph [ref=e116]: Online
-                                - toolbar [ref=e469]:
-                                  - button [ref=e470] [cursor=pointer]:
-                                    - img [ref=e121]
-                                  - group [ref=e471]:
-                                    - button [ref=e472] [cursor=pointer]:
-                                      - img [ref=e134]
-                                    - button [ref=e473] [cursor=pointer]:
-                                      - img [ref=e138]
-                                    - button [ref=e474] [cursor=pointer]:
-                                      - img [ref=e141]
-                                  - group [ref=e475]:
-                                    - button [ref=e476] [cursor=pointer]:
-                                      - img [ref=e149]
-                                    - button [ref=e477] [cursor=pointer]:
-                                      - img [ref=e154]
-                                  - button [ref=e478] [cursor=pointer]:
-                                    - img [ref=e159]
+                                          - generic [ref=e417]:
+                                            - img [ref=e419]
+                                            - generic [ref=e421]:
+                                              - paragraph [ref=e422]: tissu-agent
+                                              - paragraph [ref=e423]: tissu-agent-production.up.railway.app
+                                          - generic [ref=e425]:
+                                            - img [ref=e426]
+                                            - paragraph [ref=e429]: Online
+                                - toolbar [ref=e481]:
+                                  - button [ref=e482] [cursor=pointer]:
+                                    - img [ref=e434]
+                                  - group [ref=e483]:
+                                    - button [ref=e484] [cursor=pointer]:
+                                      - img [ref=e447]
+                                    - button [ref=e485] [cursor=pointer]:
+                                      - img [ref=e451]
+                                    - button [ref=e486] [cursor=pointer]:
+                                      - img [ref=e454]
+                                  - group [ref=e487]:
+                                    - button [ref=e488] [cursor=pointer]:
+                                      - img [ref=e462]
+                                    - button [ref=e489] [cursor=pointer]:
+                                      - img [ref=e467]
+                                  - button [ref=e490] [cursor=pointer]:
+                                    - img [ref=e472]
                                 - img
-                      - generic [ref=e166]:
-                        - generic [ref=e167]:
-                          - generic [ref=e168]:
-                            - generic [ref=e170]:
-                              - button [ref=e171] [cursor=pointer]:
-                                - img [ref=e173]
-                              - heading [level=1] [ref=e479]:
-                                - button [ref=e480] [cursor=pointer]: tissu-agent
-                            - link [ref=e178] [cursor=pointer]:
+                      - generic [ref=e106]:
+                        - generic [ref=e107]:
+                          - generic [ref=e108]:
+                            - generic [ref=e110]:
+                              - button [ref=e111] [cursor=pointer]:
+                                - img [ref=e113]
+                              - heading [level=1] [ref=e491]:
+                                - button [ref=e492] [cursor=pointer]: tissu-agent
+                            - link [ref=e118] [cursor=pointer]:
                               - /url: /project/698d220d-2e09-418e-97a6-1e26f5977e52?
-                              - img [ref=e180]
-                          - generic [ref=e182]:
-                            - link [ref=e481] [cursor=pointer]:
+                              - img [ref=e120]
+                          - generic [ref=e122]:
+                            - link [ref=e493] [cursor=pointer]:
                               - /url: /project/698d220d-2e09-418e-97a6-1e26f5977e52/service/ef7779a7-22d8-4324-9f8b-351b1eeff8de?environmentId=499b5cea-fa07-438a-950b-0f780c40a733
-                              - generic [ref=e184]: Deployments
-                            - link [ref=e482] [cursor=pointer]:
+                              - generic [ref=e124]: Deployments
+                            - link [ref=e494] [cursor=pointer]:
                               - /url: /project/698d220d-2e09-418e-97a6-1e26f5977e52/service/ef7779a7-22d8-4324-9f8b-351b1eeff8de/variables?environmentId=499b5cea-fa07-438a-950b-0f780c40a733
-                              - generic [ref=e186]: Variables
-                            - link [ref=e483] [cursor=pointer]:
+                              - generic [ref=e126]: Variables
+                            - link [ref=e495] [cursor=pointer]:
                               - /url: /project/698d220d-2e09-418e-97a6-1e26f5977e52/service/ef7779a7-22d8-4324-9f8b-351b1eeff8de/metrics?environmentId=499b5cea-fa07-438a-950b-0f780c40a733
-                              - generic [ref=e189]: Metrics
-                            - link [ref=e484] [cursor=pointer]:
+                              - generic [ref=e129]: Metrics
+                            - link [ref=e496] [cursor=pointer]:
                               - /url: /project/698d220d-2e09-418e-97a6-1e26f5977e52/service/ef7779a7-22d8-4324-9f8b-351b1eeff8de/settings?environmentId=499b5cea-fa07-438a-950b-0f780c40a733
-                              - generic [ref=e191]: Settings
-                        - generic [ref=e194]:
-                          - generic [ref=e195]:
-                            - generic [ref=e196]:
-                              - generic [ref=e197]: 8 Service Variables
-                              - generic [ref=e198]:
-                                - button [ref=e485] [cursor=pointer]:
-                                  - img [ref=e201]
-                                  - generic [ref=e204]: Shared Variable
-                                - button [ref=e486] [cursor=pointer]:
-                                  - img [ref=e207]
-                                  - generic [ref=e209]: Raw Editor
-                                - button [ref=e487] [cursor=pointer]:
-                                  - img [ref=e212]
-                                  - generic [ref=e214]: New Variable
+                              - generic [ref=e131]: Settings
+                        - generic [ref=e134]:
+                          - generic [ref=e135]:
+                            - generic [ref=e136]:
+                              - generic [ref=e137]: 8 Service Variables
+                              - generic [ref=e138]:
+                                - button [ref=e497] [cursor=pointer]:
+                                  - img [ref=e141]
+                                  - generic [ref=e144]: Shared Variable
+                                - button [ref=e498] [cursor=pointer]:
+                                  - img [ref=e147]
+                                  - generic [ref=e149]: Raw Editor
+                                - button [ref=e499] [cursor=pointer]:
+                                  - img [ref=e152]
+                                  - generic [ref=e154]: New Variable
                             - generic:
                               - button:
                                 - generic:
@@ -171,129 +171,129 @@
                                     - link:
                                       - /url: https://docs.railway.com/develop/variables#shared-variables
                                       - generic: View Docs
-                          - generic [ref=e215]:
-                            - generic [ref=e216]:
+                          - generic [ref=e155]:
+                            - generic [ref=e156]:
+                              - generic [ref=e158]:
+                                - generic [ref=e159]:
+                                  - img [ref=e161]
+                                  - generic [ref=e500]: GEMINI_API_KEY
+                                - generic [ref=e165]:
+                                  - generic [ref=e167]: "*******"
+                                  - generic [ref=e168]:
+                                    - button [ref=e501] [cursor=pointer]:
+                                      - img [ref=e171]
+                                    - button [ref=e502] [cursor=pointer]:
+                                      - img [ref=e176]
+                                - button [ref=e503] [cursor=pointer]:
+                                  - img [ref=e183]
+                              - generic [ref=e188]:
+                                - generic [ref=e189]:
+                                  - img [ref=e191]
+                                  - generic [ref=e504]: FB_PAGE_TOKEN
+                                - generic [ref=e195]:
+                                  - generic [ref=e197]: "*******"
+                                  - generic [ref=e198]:
+                                    - button [ref=e505] [cursor=pointer]:
+                                      - img [ref=e201]
+                                    - button [ref=e506] [cursor=pointer]:
+                                      - img [ref=e206]
+                                - button [ref=e507] [cursor=pointer]:
+                                  - img [ref=e213]
                               - generic [ref=e218]:
                                 - generic [ref=e219]:
                                   - img [ref=e221]
-                                  - generic [ref=e488]: GEMINI_API_KEY
+                                  - generic [ref=e508]: WA_PHONE_ID
                                 - generic [ref=e225]:
                                   - generic [ref=e227]: "*******"
                                   - generic [ref=e228]:
-                                    - button [ref=e489] [cursor=pointer]:
+                                    - button [ref=e509] [cursor=pointer]:
                                       - img [ref=e231]
-                                    - button [ref=e490] [cursor=pointer]:
+                                    - button [ref=e510] [cursor=pointer]:
                                       - img [ref=e236]
-                                - button [ref=e491] [cursor=pointer]:
+                                - button [ref=e511] [cursor=pointer]:
                                   - img [ref=e243]
                               - generic [ref=e248]:
                                 - generic [ref=e249]:
                                   - img [ref=e251]
-                                  - generic [ref=e492]: FB_PAGE_TOKEN
+                                  - generic [ref=e512]: WA_TOKEN
                                 - generic [ref=e255]:
                                   - generic [ref=e257]: "*******"
                                   - generic [ref=e258]:
-                                    - button [ref=e493] [cursor=pointer]:
+                                    - button [ref=e513] [cursor=pointer]:
                                       - img [ref=e261]
-                                    - button [ref=e494] [cursor=pointer]:
+                                    - button [ref=e514] [cursor=pointer]:
                                       - img [ref=e266]
-                                - button [ref=e495] [cursor=pointer]:
+                                - button [ref=e515] [cursor=pointer]:
                                   - img [ref=e273]
                               - generic [ref=e278]:
                                 - generic [ref=e279]:
                                   - img [ref=e281]
-                                  - generic [ref=e496]: WA_PHONE_ID
+                                  - generic [ref=e516]: OWNER_WHATSAPP
                                 - generic [ref=e285]:
                                   - generic [ref=e287]: "*******"
                                   - generic [ref=e288]:
-                                    - button [ref=e497] [cursor=pointer]:
+                                    - button [ref=e517] [cursor=pointer]:
                                       - img [ref=e291]
-                                    - button [ref=e498] [cursor=pointer]:
+                                    - button [ref=e518] [cursor=pointer]:
                                       - img [ref=e296]
-                                - button [ref=e499] [cursor=pointer]:
+                                - button [ref=e519] [cursor=pointer]:
                                   - img [ref=e303]
                               - generic [ref=e308]:
                                 - generic [ref=e309]:
                                   - img [ref=e311]
-                                  - generic [ref=e500]: WA_TOKEN
+                                  - generic [ref=e520]: LLM_PROVIDER
                                 - generic [ref=e315]:
                                   - generic [ref=e317]: "*******"
                                   - generic [ref=e318]:
-                                    - button [ref=e501] [cursor=pointer]:
+                                    - button [ref=e521] [cursor=pointer]:
                                       - img [ref=e321]
-                                    - button [ref=e502] [cursor=pointer]:
+                                    - button [ref=e522] [cursor=pointer]:
                                       - img [ref=e326]
-                                - button [expanded] [ref=e503] [cursor=pointer]:
+                                - button [ref=e523] [cursor=pointer]:
                                   - img [ref=e333]
                               - generic [ref=e338]:
                                 - generic [ref=e339]:
                                   - img [ref=e341]
-                                  - generic [ref=e504]: OWNER_WHATSAPP
+                                  - generic [ref=e524]: LLM_MODEL
                                 - generic [ref=e345]:
                                   - generic [ref=e347]: "*******"
                                   - generic [ref=e348]:
-                                    - button [ref=e505] [cursor=pointer]:
+                                    - button [ref=e525] [cursor=pointer]:
                                       - img [ref=e351]
-                                    - button [ref=e506] [cursor=pointer]:
+                                    - button [ref=e526] [cursor=pointer]:
                                       - img [ref=e356]
-                                - button [ref=e507] [cursor=pointer]:
+                                - button [expanded] [ref=e527] [cursor=pointer]:
                                   - img [ref=e363]
                               - generic [ref=e368]:
                                 - generic [ref=e369]:
                                   - img [ref=e371]
-                                  - generic [ref=e508]: LLM_PROVIDER
+                                  - generic [ref=e528]: PUBLIC_URL
                                 - generic [ref=e375]:
                                   - generic [ref=e377]: "*******"
                                   - generic [ref=e378]:
-                                    - button [ref=e509] [cursor=pointer]:
+                                    - button [ref=e529] [cursor=pointer]:
                                       - img [ref=e381]
-                                    - button [ref=e510] [cursor=pointer]:
+                                    - button [ref=e530] [cursor=pointer]:
                                       - img [ref=e386]
-                                - button [ref=e511] [cursor=pointer]:
+                                - button [ref=e531] [cursor=pointer]:
                                   - img [ref=e393]
-                              - generic [ref=e398]:
-                                - generic [ref=e399]:
-                                  - img [ref=e401]
-                                  - generic [ref=e512]: LLM_MODEL
-                                - generic [ref=e405]:
-                                  - generic [ref=e407]: "*******"
-                                  - generic [ref=e408]:
-                                    - button [ref=e513] [cursor=pointer]:
-                                      - img [ref=e411]
-                                    - button [ref=e514] [cursor=pointer]:
-                                      - img [ref=e416]
-                                - button [ref=e515] [cursor=pointer]:
-                                  - img [ref=e423]
-                              - generic [ref=e428]:
-                                - generic [ref=e429]:
-                                  - img [ref=e431]
-                                  - generic [ref=e516]: PUBLIC_URL
-                                - generic [ref=e435]:
-                                  - generic [ref=e437]: "*******"
-                                  - generic [ref=e438]:
-                                    - button [ref=e517] [cursor=pointer]:
-                                      - img [ref=e441]
-                                    - button [ref=e518] [cursor=pointer]:
-                                      - img [ref=e446]
-                                - button [ref=e519] [cursor=pointer]:
-                                  - img [ref=e453]
-                            - button [ref=e520] [cursor=pointer]:
-                              - img [ref=e462]
-                              - paragraph [ref=e464]: 8 variables added by Railway
-  - menu [active] [ref=e521]:
-    - menuitem "Edit" [ref=e522] [cursor=pointer]:
-      - img [ref=e524]
+                            - button [ref=e532] [cursor=pointer]:
+                              - img [ref=e402]
+                              - paragraph [ref=e478]: 8 variables added by Railway
+  - menu [active] [ref=e533]:
+    - menuitem "Edit" [ref=e534] [cursor=pointer]:
+      - img [ref=e536]
       - text: Edit
-    - menuitem "Seal Beta" [ref=e527] [cursor=pointer]:
-      - img [ref=e529]
+    - menuitem "Seal Beta" [ref=e539] [cursor=pointer]:
+      - img [ref=e541]
       - text: Seal
-      - paragraph [ref=e531]: Beta
-    - menuitem "Promote" [ref=e532] [cursor=pointer]:
-      - img [ref=e534]
+      - paragraph [ref=e543]: Beta
+    - menuitem "Promote" [ref=e544] [cursor=pointer]:
+      - img [ref=e546]
       - text: Promote
-    - menuitem "Generator" [ref=e537] [cursor=pointer]:
-      - img [ref=e539]
+    - menuitem "Generator" [ref=e549] [cursor=pointer]:
+      - img [ref=e551]
       - text: Generator
-    - menuitem "Delete" [ref=e542] [cursor=pointer]:
-      - img [ref=e544]
+    - menuitem "Delete" [ref=e554] [cursor=pointer]:
+      - img [ref=e556]
       - text: Delete

@@ -1,0 +1,222 @@
+- generic [ref=e4]:
+  - banner [ref=e6]:
+    - generic [ref=e7]:
+      - link "Railway Logo" [ref=e8] [cursor=pointer]:
+        - /url: /dashboard
+        - img "Railway Logo" [ref=e10]
+      - generic [ref=e13]:
+        - button "attractive-eagerness" [ref=e16] [cursor=pointer]:
+          - generic "ketikh's Projects" [ref=e17]
+          - generic [ref=e19]: attractive-eagerness
+          - img [ref=e21]
+        - button "production" [ref=e25] [cursor=pointer]:
+          - generic [ref=e26]: production
+          - img [ref=e28]
+    - navigation [ref=e30]:
+      - generic [ref=e32]:
+        - button "Toggle activity" [ref=e34] [cursor=pointer]:
+          - img [ref=e36]
+        - button [ref=e38] [cursor=pointer]:
+          - img [ref=e41]
+        - button "29 days or $4.88 left" [ref=e44] [cursor=pointer]:
+          - paragraph [ref=e46]:
+            - generic [ref=e47]: 29 days or $4.88 left
+        - button "Agent" [ref=e49] [cursor=pointer]:
+          - img [ref=e51]
+          - text: Agent
+  - generic [ref=e53]:
+    - navigation "Project navigation" [ref=e54]:
+      - generic [ref=e55]:
+        - link "Architecture" [ref=e58] [cursor=pointer]:
+          - /url: /project/698d220d-2e09-418e-97a6-1e26f5977e52?environmentId=499b5cea-fa07-438a-950b-0f780c40a733
+          - img [ref=e60]
+        - link "Observability" [ref=e66] [cursor=pointer]:
+          - /url: /project/698d220d-2e09-418e-97a6-1e26f5977e52/observability?environmentId=499b5cea-fa07-438a-950b-0f780c40a733
+          - img [ref=e68]
+        - link "Logs" [ref=e71] [cursor=pointer]:
+          - /url: /project/698d220d-2e09-418e-97a6-1e26f5977e52/logs?environmentId=499b5cea-fa07-438a-950b-0f780c40a733
+          - img [ref=e73]
+        - link "Settings" [ref=e77] [cursor=pointer]:
+          - /url: /project/698d220d-2e09-418e-97a6-1e26f5977e52/settings?environmentId=499b5cea-fa07-438a-950b-0f780c40a733
+          - img [ref=e79]
+      - button [ref=e82] [cursor=pointer]:
+        - generic "ketikh" [ref=e84]
+    - region [ref=e90]:
+      - generic [ref=e91]:
+        - generic [ref=e97] [cursor=pointer]:
+          - img [ref=e99]
+          - generic [ref=e101]:
+            - img "Loading..." [ref=e102]
+            - img "Loading..." [ref=e103]
+        - generic [ref=e106]:
+          - generic [ref=e107]:
+            - generic [ref=e108]:
+              - generic [ref=e110]:
+                - button [ref=e111] [cursor=pointer]:
+                  - img [ref=e113]
+                - heading "tissu-agent" [level=1] [ref=e115]:
+                  - button "tissu-agent" [ref=e116] [cursor=pointer]
+              - link [ref=e118] [cursor=pointer]:
+                - /url: /project/698d220d-2e09-418e-97a6-1e26f5977e52?
+                - img [ref=e120]
+            - generic [ref=e122]:
+              - link "Deployments" [ref=e123] [cursor=pointer]:
+                - /url: /project/698d220d-2e09-418e-97a6-1e26f5977e52/service/ef7779a7-22d8-4324-9f8b-351b1eeff8de?environmentId=499b5cea-fa07-438a-950b-0f780c40a733
+                - generic [ref=e124]: Deployments
+              - link "Variables" [ref=e125] [cursor=pointer]:
+                - /url: /project/698d220d-2e09-418e-97a6-1e26f5977e52/service/ef7779a7-22d8-4324-9f8b-351b1eeff8de/variables?environmentId=499b5cea-fa07-438a-950b-0f780c40a733
+                - generic [ref=e126]: Variables
+              - link "Metrics" [ref=e128] [cursor=pointer]:
+                - /url: /project/698d220d-2e09-418e-97a6-1e26f5977e52/service/ef7779a7-22d8-4324-9f8b-351b1eeff8de/metrics?environmentId=499b5cea-fa07-438a-950b-0f780c40a733
+                - generic [ref=e129]: Metrics
+              - link "Settings" [ref=e130] [cursor=pointer]:
+                - /url: /project/698d220d-2e09-418e-97a6-1e26f5977e52/service/ef7779a7-22d8-4324-9f8b-351b1eeff8de/settings?environmentId=499b5cea-fa07-438a-950b-0f780c40a733
+                - generic [ref=e131]: Settings
+          - generic [ref=e134]:
+            - generic [ref=e135]:
+              - generic [ref=e136]:
+                - generic [ref=e137]: 8 Service Variables
+                - generic [ref=e138]:
+                  - button "Shared Variable" [ref=e139] [cursor=pointer]:
+                    - img [ref=e141]
+                    - generic [ref=e144]: Shared Variable
+                  - button "Raw Editor" [disabled] [ref=e145]:
+                    - img [ref=e147]
+                    - generic [ref=e149]: Raw Editor
+                  - button "New Variable" [ref=e150] [cursor=pointer]:
+                    - img [ref=e152]
+                    - generic [ref=e154]: New Variable
+              - generic:
+                - generic:
+                  - generic:
+                    - button "Close":
+                      - generic:
+                        - img
+                    - generic:
+                      - generic:
+                        - img "graph of shared variable pointed to multiple services"
+                      - generic:
+                        - paragraph: Keep variables in sync across services
+                        - paragraph:
+                          - text: Create a shared variable in
+                          - link "Project Settings":
+                            - /url: /project/698d220d-2e09-418e-97a6-1e26f5977e52/settings/variables?
+                          - text: or promote an existing service variable to a shared variable via the
+                          - generic: "`⋮`"
+                          - text: icon.
+                        - generic:
+                          - link "Configure Shared Variables":
+                            - /url: /project/698d220d-2e09-418e-97a6-1e26f5977e52/settings/variables?
+                            - generic: Configure Shared Variables
+                          - link "View Docs":
+                            - /url: https://docs.railway.com/develop/variables#shared-variables
+                            - generic: View Docs
+            - generic [ref=e155]:
+              - generic [ref=e156]:
+                - generic [ref=e158]:
+                  - generic [ref=e159]:
+                    - img [ref=e161]
+                    - generic "GEMINI_API_KEY" [ref=e163]
+                  - generic [ref=e165]:
+                    - generic [ref=e167]: "*******"
+                    - generic [ref=e168]:
+                      - button "Show value" [ref=e169] [cursor=pointer]:
+                        - img [ref=e171]
+                      - button "Copy value" [ref=e174] [cursor=pointer]:
+                        - img [ref=e176]
+                  - button "Variable actions" [ref=e181] [cursor=pointer]:
+                    - img [ref=e183]
+                - generic [ref=e188]:
+                  - generic [ref=e189]:
+                    - img [ref=e191]
+                    - generic "FB_PAGE_TOKEN" [ref=e193]
+                  - generic [ref=e195]:
+                    - generic [ref=e197]: "*******"
+                    - generic [ref=e198]:
+                      - button "Show value" [ref=e199] [cursor=pointer]:
+                        - img [ref=e201]
+                      - button "Copy value" [ref=e204] [cursor=pointer]:
+                        - img [ref=e206]
+                  - button "Variable actions" [ref=e211] [cursor=pointer]:
+                    - img [ref=e213]
+                - generic [ref=e218]:
+                  - generic [ref=e219]:
+                    - img [ref=e221]
+                    - generic "WA_PHONE_ID" [ref=e223]
+                  - generic [ref=e225]:
+                    - generic [ref=e227]: "*******"
+                    - generic [ref=e228]:
+                      - button "Show value" [ref=e229] [cursor=pointer]:
+                        - img [ref=e231]
+                      - button "Copy value" [ref=e234] [cursor=pointer]:
+                        - img [ref=e236]
+                  - button "Variable actions" [ref=e241] [cursor=pointer]:
+                    - img [ref=e243]
+                - generic [ref=e248]:
+                  - generic [ref=e249]:
+                    - img [ref=e251]
+                    - generic "WA_TOKEN" [ref=e253]
+                  - generic [ref=e255]:
+                    - generic [ref=e257]: "*******"
+                    - generic [ref=e258]:
+                      - button "Show value" [ref=e259] [cursor=pointer]:
+                        - img [ref=e261]
+                      - button "Copy value" [ref=e264] [cursor=pointer]:
+                        - img [ref=e266]
+                  - button "Variable actions" [ref=e271] [cursor=pointer]:
+                    - img [ref=e273]
+                - generic [ref=e278]:
+                  - generic [ref=e279]:
+                    - img [ref=e281]
+                    - generic "OWNER_WHATSAPP" [ref=e283]
+                  - generic [ref=e285]:
+                    - generic [ref=e287]: "*******"
+                    - generic [ref=e288]:
+                      - button "Show value" [ref=e289] [cursor=pointer]:
+                        - img [ref=e291]
+                      - button "Copy value" [ref=e294] [cursor=pointer]:
+                        - img [ref=e296]
+                  - button "Variable actions" [ref=e301] [cursor=pointer]:
+                    - img [ref=e303]
+                - generic [ref=e308]:
+                  - generic [ref=e309]:
+                    - img [ref=e311]
+                    - generic "LLM_PROVIDER" [ref=e313]
+                  - generic [ref=e315]:
+                    - generic [ref=e317]: "*******"
+                    - generic [ref=e318]:
+                      - button "Show value" [ref=e319] [cursor=pointer]:
+                        - img [ref=e321]
+                      - button "Copy value" [ref=e324] [cursor=pointer]:
+                        - img [ref=e326]
+                  - button "Variable actions" [ref=e331] [cursor=pointer]:
+                    - img [ref=e333]
+                - generic [ref=e338]:
+                  - generic [ref=e339]:
+                    - img [ref=e341]
+                    - generic "LLM_MODEL" [ref=e343]
+                  - generic [ref=e345]:
+                    - generic [ref=e347]: "*******"
+                    - generic [ref=e348]:
+                      - button "Show value" [ref=e349] [cursor=pointer]:
+                        - img [ref=e351]
+                      - button "Copy value" [ref=e354] [cursor=pointer]:
+                        - img [ref=e356]
+                  - button "Variable actions" [ref=e361] [cursor=pointer]:
+                    - img [ref=e363]
+                - generic [ref=e368]:
+                  - generic [ref=e369]:
+                    - img [ref=e371]
+                    - generic "PUBLIC_URL" [ref=e373]
+                  - generic [ref=e375]:
+                    - generic [ref=e377]: "*******"
+                    - generic [ref=e378]:
+                      - button "Show value" [ref=e379] [cursor=pointer]:
+                        - img [ref=e381]
+                      - button "Copy value" [ref=e384] [cursor=pointer]:
+                        - img [ref=e386]
+                  - button "Variable actions" [ref=e391] [cursor=pointer]:
+                    - img [ref=e393]
+              - button "Loading..." [disabled] [ref=e400]:
+                - img [ref=e402]
+                - img "Loading..." [ref=e404]
