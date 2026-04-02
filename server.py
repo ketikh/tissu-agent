@@ -187,28 +187,65 @@ async def _process_message(sender_id: str, text: str, conversation_id: str, chan
                                           "type": "image", "image": {"id": _media_id, "caption": f"📷 {_cname} — გადახდის ქვითარი\n\nვადასტურებ / არ ვადასტურებ"}},
                                 )
                     else:
-                        # Product photo — forward to WA + tell bot (NO notify_owner needed, WA already sent)
-                        text = text.replace(f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
-                            "[კლიენტმა პროდუქტის ფოტო გამოგზავნა. მფლობელს უკვე ეცნობა. უთხარი 'გადავამოწმებ და მოგწერთ ✨'. notify_owner ᲐᲠ გამოიძახო!]")
-                        # Forward photo to WA owner (once only, no confirmation needed)
-                        _wa_phone_id = os.getenv("WA_PHONE_ID", "")
-                        _wa_token = os.getenv("WA_TOKEN", "")
-                        _owner = os.getenv("OWNER_WHATSAPP", "")
-                        if _wa_phone_id and _wa_token and _owner:
-                            _upload = await _c.post(
-                                f"https://graph.facebook.com/v21.0/{_wa_phone_id}/media",
-                                headers={"Authorization": f"Bearer {_wa_token}"},
-                                data={"messaging_product": "whatsapp", "type": "image/jpeg"},
-                                files={"file": ("photo.jpg", _img_bytes, "image/jpeg")},
+                        # Product photo — compare with our inventory using Vision
+                        from src.db import get_db as _get_db
+                        _db = await _get_db()
+                        try:
+                            _cursor = await _db.execute(
+                                "SELECT code, image_url, model, size, price FROM inventory WHERE stock > 0 AND image_url IS NOT NULL AND image_url != ''"
                             )
-                            _media_id = _upload.json().get("id", "")
-                            if _media_id:
-                                await _c.post(
-                                    f"https://graph.facebook.com/v21.0/{_wa_phone_id}/messages",
-                                    headers={"Authorization": f"Bearer {_wa_token}", "Content-Type": "application/json"},
-                                    json={"messaging_product": "whatsapp", "to": _owner,
-                                          "type": "image", "image": {"id": _media_id, "caption": f"📷 {_cname} ეძებს ამ მოდელს. მიწერე რა უპასუხო."}},
+                            _products = [dict(r) for r in await _cursor.fetchall()]
+                        finally:
+                            await _db.close()
+
+                        # Build comparison prompt
+                        _product_list = "\n".join([f"- {p['code']}: {p['model']}, {p['size']}, {p['price']}₾" for p in _products])
+                        _compare = _vision_client.models.generate_content(
+                            model="gemini-2.5-flash",
+                            contents=[_types.Content(role="user", parts=[
+                                _types.Part.from_bytes(data=_img_bytes, mime_type="image/jpeg"),
+                                _types.Part(text=f"კლიენტის ფოტოზე ჩანთა/ქეისია. ჩვენ მარაგში ეს პროდუქტები გვაქვს:\n{_product_list}\n\nრომელი კოდ(ებ)ი ჰგავს ყველაზე მეტად? უპასუხე JSON: {{\"similar_codes\": [\"FD1\",\"FP3\"], \"found\": true}} ან {{\"similar_codes\": [], \"found\": false}}"),
+                            ])],
+                        )
+                        _compare_text = _compare.text.strip() if _compare.text else ""
+
+                        import json as _json
+                        _similar_codes = []
+                        try:
+                            if "{" in _compare_text:
+                                _parsed = _json.loads(_compare_text[_compare_text.index("{"):_compare_text.rindex("}")+1])
+                                _similar_codes = _parsed.get("similar_codes", [])
+                        except Exception:
+                            pass
+
+                        if _similar_codes:
+                            # Found similar — tell bot to show them
+                            _codes_str = ", ".join(_similar_codes[:5])
+                            text = text.replace(f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
+                                f"[კლიენტმა ფოტო გამოგზავნა. მსგავსი მოდელები ვიპოვეთ: {_codes_str}. check_inventory გამოიძახე და ეს კოდები აჩვენე კლიენტს. უთხარი 'თქვენი ფოტოს მიხედვით ეს ვიპოვე ✨']")
+                        else:
+                            # Not found — notify owner
+                            text = text.replace(f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
+                                "[კლიენტმა ფოტო გამოგზავნა. მსგავსი მოდელი ვერ ვიპოვეთ. მფლობელს უკვე ეცნობა. უთხარი 'სამწუხაროდ ზუსტად ასეთი ამჟამად არ გვაქვს, მაგრამ სხვა ლამაზი მოდელები გვაქვს ✨ გაჩვენოთ?'. notify_owner ᲐᲠ გამოიძახო!]")
+                            # Forward to WA only if not found
+                            _wa_phone_id = os.getenv("WA_PHONE_ID", "")
+                            _wa_token = os.getenv("WA_TOKEN", "")
+                            _owner = os.getenv("OWNER_WHATSAPP", "")
+                            if _wa_phone_id and _wa_token and _owner:
+                                _upload = await _c.post(
+                                    f"https://graph.facebook.com/v21.0/{_wa_phone_id}/media",
+                                    headers={"Authorization": f"Bearer {_wa_token}"},
+                                    data={"messaging_product": "whatsapp", "type": "image/jpeg"},
+                                    files={"file": ("photo.jpg", _img_bytes, "image/jpeg")},
                                 )
+                                _media_id = _upload.json().get("id", "")
+                                if _media_id:
+                                    await _c.post(
+                                        f"https://graph.facebook.com/v21.0/{_wa_phone_id}/messages",
+                                        headers={"Authorization": f"Bearer {_wa_token}", "Content-Type": "application/json"},
+                                        json={"messaging_product": "whatsapp", "to": _owner,
+                                              "type": "image", "image": {"id": _media_id, "caption": f"📷 {_cname} ეძებს ამ მოდელს. მარაგში ვერ ვიპოვეთ."}},
+                                    )
         except Exception as e:
             logger.error(f"Image analysis failed: {e}", exc_info=True)
             text = text.replace(f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
