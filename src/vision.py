@@ -1,12 +1,9 @@
 """Gemini Vision AI — image analysis for Tissu Shop.
 
 Analyzes customer photos:
-- Payment receipt detection (bank transfers, screenshots)
-- Product comparison with inventory (color + pattern matching)
-
-Product images are analyzed ONCE at startup and descriptions cached in DB.
-Customer photo comparison uses cached descriptions for fast text matching,
-then visual confirmation only for top candidates.
+- Payment receipt detection
+- Product comparison: downloads all product images at startup,
+  then sends customer photo + product photos to Gemini for direct visual comparison.
 """
 from __future__ import annotations
 
@@ -23,11 +20,9 @@ from src.db import get_db
 
 logger = logging.getLogger(__name__)
 
-# In-memory cache for downloaded product images
-_image_cache: dict[str, bytes] = {}
-
-# Cached product descriptions (populated at startup)
-_product_descriptions: dict[str, dict] = {}  # code -> {colors, pattern, description}
+# Cached product images: code -> (image_bytes, model, size)
+_product_images: dict[str, tuple[bytes, str, str]] = {}
+_images_loaded = False
 
 
 def _get_vision_client() -> genai.Client:
@@ -38,28 +33,51 @@ def _get_vision_client() -> genai.Client:
 class ImageAnalysisResult:
     image_type: str  # "payment_receipt" | "product" | "unknown"
     description: str
-    similar_codes: list[str]  # product codes if type == "product"
-    raw_text: str  # original analysis text
+    similar_codes: list[str]
+    raw_text: str
 
 
 async def download_image(url: str) -> bytes | None:
-    """Download image from URL, return bytes or None on failure."""
-    if url in _image_cache:
-        return _image_cache[url]
-
+    """Download image from URL."""
     try:
         async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             resp = await client.get(url)
             if resp.status_code == 200:
-                _image_cache[url] = resp.content
                 return resp.content
     except Exception as e:
         logger.error(f"Image download failed: {e}")
     return None
 
 
+async def preload_product_images() -> None:
+    """Download all product images at startup and cache in memory."""
+    global _product_images, _images_loaded
+
+    if _images_loaded:
+        return
+
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT code, model, size, image_url FROM inventory WHERE stock > 0 AND image_url IS NOT NULL AND image_url != ''"
+        )
+        products = [dict(r) for r in await cursor.fetchall()]
+    finally:
+        await db.close()
+
+    count = 0
+    for p in products:
+        img = await download_image(p["image_url"])
+        if img:
+            _product_images[p["code"]] = (img, p["model"], p["size"])
+            count += 1
+
+    _images_loaded = True
+    logger.info(f"Preloaded {count}/{len(products)} product images")
+
+
 async def is_expecting_receipt(conversation_id: str) -> bool:
-    """Check recent bot messages to see if we asked for a payment screenshot."""
+    """Check if we recently asked for a payment screenshot."""
     db = await get_db()
     try:
         cursor = await db.execute(
@@ -77,90 +95,8 @@ async def is_expecting_receipt(conversation_id: str) -> bool:
         await db.close()
 
 
-async def preload_product_descriptions() -> None:
-    """Analyze all product images with Gemini and cache color/pattern descriptions.
-
-    Runs at startup. Skips products that already have tags in DB.
-    Updates DB with color/tags for future use.
-    """
-    global _product_descriptions
-
-    db = await get_db()
-    try:
-        cursor = await db.execute(
-            "SELECT id, code, model, size, color, tags, image_url FROM inventory WHERE stock > 0 AND image_url IS NOT NULL AND image_url != ''"
-        )
-        products = [dict(r) for r in await cursor.fetchall()]
-    finally:
-        await db.close()
-
-    if not products:
-        return
-
-    client = _get_vision_client()
-    updated_count = 0
-
-    for product in products:
-        code = product["code"]
-        existing_tags = (product.get("tags") or "").strip()
-
-        # If tags already populated, use cached data
-        if existing_tags:
-            try:
-                desc = json.loads(existing_tags)
-                _product_descriptions[code] = desc
-                continue
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        # Download and analyze image
-        img_bytes = await download_image(product["image_url"])
-        if not img_bytes:
-            continue
-
-        try:
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=[types.Content(role="user", parts=[
-                    types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
-                    types.Part(text=(
-                        'ეს ლეპტოპის ქეისია. აღწერე მოკლედ:\n'
-                        '1. ძირითადი ფერ(ებ)ი ქართულად (მაგ: ნარინჯისფერი, ლურჯი, ვარდისფერი, შავი, თეთრი, ყავისფერი, მწვანე, წითელი, იისფერი, ყვითელი, ტურქუაზი, ბეჟი)\n'
-                        '2. ნახატის ტიპი (ყვავილები, ზოლები, კლეტკა, გეომეტრიული, აბსტრაქტული, ერთფეროვანი, ფოთლები, ცხოველები)\n'
-                        '3. ფონის ფერი (მუქი/ღია/საშუალო)\n'
-                        'JSON: {"colors": ["ფერი1", "ფერი2"], "pattern": "ნახატის ტიპი", "background": "მუქი/ღია", "description": "1 წინადადება"}'
-                    )),
-                ])],
-            )
-            resp_text = response.text.strip() if response.text else ""
-
-            if "{" in resp_text:
-                desc = json.loads(resp_text[resp_text.index("{"):resp_text.rindex("}") + 1])
-                _product_descriptions[code] = desc
-
-                # Save to DB for future startups
-                db = await get_db()
-                try:
-                    color_str = ", ".join(desc.get("colors", []))
-                    tags_json = json.dumps(desc, ensure_ascii=False)
-                    await db.execute(
-                        "UPDATE inventory SET color = ?, tags = ? WHERE id = ?",
-                        (color_str, tags_json, product["id"]),
-                    )
-                    await db.commit()
-                    updated_count += 1
-                finally:
-                    await db.close()
-
-        except Exception as e:
-            logger.error(f"Failed to analyze {code}: {e}")
-            continue
-
-    logger.info(f"Product descriptions: {len(_product_descriptions)} cached, {updated_count} newly analyzed")
-
-
 async def analyze_image(image_bytes: bytes, conversation_id: str) -> ImageAnalysisResult:
-    """Analyze customer image — detect receipt vs product photo."""
+    """Analyze customer image — receipt or product."""
     client = _get_vision_client()
     expecting_receipt = await is_expecting_receipt(conversation_id)
 
@@ -176,183 +112,76 @@ async def analyze_image(image_bytes: bytes, conversation_id: str) -> ImageAnalys
             types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
             types.Part(text=(
                 f'კონტექსტი: {ctx_hint}\n'
-                'ეს ფოტო რა არის? თუ ბანკის ტრანზაქცია, გადარიცხვა, check icon, თანხა — payment_receipt. '
+                'ეს ფოტო რა არის? თუ ბანკის ტრანზაქცია/გადარიცხვა/check — payment_receipt. '
                 'თუ ჩანთა/ქეისი — product. '
-                'JSON: {"type": "payment_receipt" ან "product", "description": "მოკლე აღწერა"}'
+                'JSON: {"type": "payment_receipt" ან "product", "description": "მოკლე"}'
             )),
         ])],
     )
 
     analysis_text = analysis.text.strip() if analysis.text else ""
-    is_receipt = "payment_receipt" in analysis_text
 
-    if is_receipt:
-        return ImageAnalysisResult(
-            image_type="payment_receipt",
-            description=analysis_text,
-            similar_codes=[],
-            raw_text=analysis_text,
-        )
+    if "payment_receipt" in analysis_text:
+        return ImageAnalysisResult("payment_receipt", analysis_text, [], analysis_text)
 
-    # Product photo — find similar by color/pattern matching
     similar_codes = await _find_similar_products(client, image_bytes)
-
-    return ImageAnalysisResult(
-        image_type="product",
-        description=analysis_text,
-        similar_codes=similar_codes,
-        raw_text=analysis_text,
-    )
+    return ImageAnalysisResult("product", analysis_text, similar_codes, analysis_text)
 
 
 async def _find_similar_products(client: genai.Client, image_bytes: bytes) -> list[str]:
-    """Find similar products using cached color descriptions + visual confirmation."""
+    """Send customer photo + all product photos to Gemini for direct visual comparison."""
 
-    # Step 1: Extract features from customer photo
-    feature_response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=[types.Content(role="user", parts=[
-            types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
-            types.Part(text=(
-                'ეს ლეპტოპის ქეისია. აღწერე:\n'
-                '1. ძირითადი ფერ(ებ)ი ქართულად\n'
-                '2. ნახატის ტიპი\n'
-                '3. ფონი მუქი/ღია\n'
-                '4. ტიპი: ფხრიწიანი (zipper ჩანს) / თასმიანი (ღილი/თასმა) / გაურკვეველი\n'
-                'JSON: {"colors": ["ფერი1"], "pattern": "ტიპი", "background": "მუქი/ღია", "type": "ფხრიწიანი/თასმიანი/გაურკვეველი"}'
-            )),
-        ])],
-    )
+    # Ensure images are loaded
+    if not _images_loaded:
+        await preload_product_images()
 
-    customer_features = {}
-    feature_text = feature_response.text.strip() if feature_response.text else ""
-    try:
-        if "{" in feature_text:
-            customer_features = json.loads(feature_text[feature_text.index("{"):feature_text.rindex("}") + 1])
-    except Exception:
-        pass
-
-    customer_colors = set(c.lower().strip() for c in customer_features.get("colors", []))
-    customer_pattern = customer_features.get("pattern", "").lower()
-    customer_bg = customer_features.get("background", "").lower()
-    customer_type = customer_features.get("type", "")
-
-    # Step 2: Score each product by text-matching cached descriptions
-    if not _product_descriptions:
-        # Fallback: if descriptions not loaded, try DB
-        await _load_descriptions_from_db()
-
-    scored: list[tuple[str, float]] = []
-
-    for code, desc in _product_descriptions.items():
-        score = 0.0
-        prod_colors = set(c.lower().strip() for c in desc.get("colors", []))
-        prod_pattern = desc.get("pattern", "").lower()
-        prod_bg = desc.get("background", "").lower()
-
-        # Color match (most important — 60% weight)
-        if customer_colors and prod_colors:
-            overlap = customer_colors & prod_colors
-            if overlap:
-                score += 0.6 * (len(overlap) / max(len(customer_colors), len(prod_colors)))
-
-        # Pattern match (25% weight)
-        if customer_pattern and prod_pattern:
-            if customer_pattern in prod_pattern or prod_pattern in customer_pattern:
-                score += 0.25
-            elif any(w in prod_pattern for w in customer_pattern.split()):
-                score += 0.12
-
-        # Background match (15% weight)
-        if customer_bg and prod_bg and customer_bg == prod_bg:
-            score += 0.15
-
-        # Type filter: penalize wrong type
-        if customer_type in ("ფხრიწიანი", "თასმიანი"):
-            # Check if code matches type (FP/FD = ფხრიწიანი, TP/TD = თასმიანი)
-            is_zipper = code.startswith("F")
-            if (customer_type == "ფხრიწიანი" and not is_zipper) or \
-               (customer_type == "თასმიანი" and is_zipper):
-                score *= 0.3  # Heavy penalty for wrong type
-
-        if score > 0.2:
-            scored.append((code, score))
-
-    # Sort by score, take top 5 candidates
-    scored.sort(key=lambda x: x[1], reverse=True)
-    top_candidates = [code for code, _ in scored[:5]]
-
-    if not top_candidates:
+    if not _product_images:
         return []
 
-    # Step 3: Visual confirmation — send customer photo + top candidate images to Gemini
-    confirmation_parts: list[types.Part] = [
-        types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
-        types.Part(text="ეს კლიენტის ფოტოა. ქვემოთ ჩვენი კანდიდატებია:\n"),
-    ]
+    # Split into batches of 10 products per API call
+    codes = list(_product_images.keys())
+    batch_size = 10
+    all_matches: list[str] = []
 
-    loaded_codes: list[str] = []
-    db = await get_db()
-    try:
-        for code in top_candidates:
-            cursor = await db.execute("SELECT image_url FROM inventory WHERE code = ? AND stock > 0", (code,))
-            row = await cursor.fetchone()
-            if not row or not row["image_url"]:
-                continue
-            img = await download_image(row["image_url"])
-            if not img:
-                continue
-            loaded_codes.append(code)
-            confirmation_parts.append(types.Part.from_bytes(data=img, mime_type="image/jpeg"))
-            confirmation_parts.append(types.Part(text=f"ეს არის {code}.\n"))
-    finally:
-        await db.close()
+    for i in range(0, len(codes), batch_size):
+        batch_codes = codes[i:i + batch_size]
 
-    if not loaded_codes:
-        return top_candidates[:3]
+        parts: list[types.Part] = [
+            types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+            types.Part(text="⬆️ კლიენტის ფოტო. ქვემოთ ჩვენი პროდუქტები:\n\n"),
+        ]
 
-    codes_str = ", ".join(loaded_codes)
-    confirmation_parts.append(types.Part(text=(
-        f'\nშეადარე კლიენტის ფოტო (პირველი) კანდიდატებს ({codes_str}).\n'
-        'მხოლოდ ფერით და ნახატით ნამდვილად მსგავსი დატოვე.\n'
-        'თუ არცერთი ფერით არ ჰგავს — ცარიელი.\n'
-        'JSON: {"confirmed": ["კოდი1", "კოდი2"]}'
-    )))
+        for code in batch_codes:
+            img_data, model, size = _product_images[code]
+            parts.append(types.Part.from_bytes(data=img_data, mime_type="image/jpeg"))
+            parts.append(types.Part(text=f"⬆️ {code}\n"))
 
-    try:
-        confirm_resp = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[types.Content(role="user", parts=confirmation_parts)],
-        )
-        confirm_text = confirm_resp.text.strip() if confirm_resp.text else ""
+        parts.append(types.Part(text=(
+            '\nრომელი პროდუქტი ჰგავს კლიენტის ფოტოს ფერით და ნახატით?\n'
+            'მნიშვნელოვანია: ფერი უნდა ემთხვეოდეს! ნარინჯისფერი ≠ წითელი, ლურჯი ≠ იისფერი.\n'
+            'თუ არცერთი ფერით არ ჰგავს — ცარიელი სია.\n'
+            'JSON: {"matches": ["CODE1", "CODE2"]} ან {"matches": []}'
+        )))
 
-        if "{" in confirm_text:
-            parsed = json.loads(confirm_text[confirm_text.index("{"):confirm_text.rindex("}") + 1])
-            confirmed = parsed.get("confirmed", [])
-            if confirmed:
-                return confirmed[:3]
-    except Exception as e:
-        logger.error(f"Visual confirmation failed: {e}")
+        try:
+            resp = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[types.Content(role="user", parts=parts)],
+            )
+            resp_text = resp.text.strip() if resp.text else ""
 
-    # Fallback to text-matched results
-    return top_candidates[:3]
+            if "{" in resp_text:
+                parsed = json.loads(resp_text[resp_text.index("{"):resp_text.rindex("}") + 1])
+                all_matches.extend(parsed.get("matches", []))
+        except Exception as e:
+            logger.error(f"Vision comparison batch failed: {e}")
+            continue
 
-
-async def _load_descriptions_from_db() -> None:
-    """Load cached product descriptions from DB tags field."""
-    global _product_descriptions
-
-    db = await get_db()
-    try:
-        cursor = await db.execute(
-            "SELECT code, tags FROM inventory WHERE stock > 0 AND tags IS NOT NULL AND tags != ''"
-        )
-        for row in await cursor.fetchall():
-            try:
-                desc = json.loads(row["tags"])
-                if isinstance(desc, dict) and "colors" in desc:
-                    _product_descriptions[row["code"]] = desc
-            except (json.JSONDecodeError, TypeError):
-                pass
-    finally:
-        await db.close()
+    # Deduplicate and limit to 3
+    seen = set()
+    unique: list[str] = []
+    for code in all_matches:
+        if code not in seen and code in _product_images:
+            seen.add(code)
+            unique.append(code)
+    return unique[:3]
