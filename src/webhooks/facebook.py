@@ -2,6 +2,11 @@
 
 Receives messages from Facebook, processes them through the agent,
 and sends replies back via the Facebook Send API.
+
+Key feature: Message buffering — when customer sends "ეს გაქვთ?" (text),
+Facebook often delivers the photo as a separate message 1-3 seconds later.
+We buffer text messages that look like "photo incoming" for 3 seconds
+before processing, so text + photo get combined.
 """
 from __future__ import annotations
 
@@ -31,6 +36,19 @@ PAGE_ID = "447377388462459"
 # Anti-duplicate: track recently processed message IDs
 _processed_mids: dict[str, float] = {}
 
+# Message buffer: holds text messages waiting for a potential photo
+# sender_id -> {text, mid, conversation_id, channel, customer_name, timestamp}
+_pending_text: dict[str, dict] = {}
+
+# Patterns that suggest a photo is coming next
+_PHOTO_INCOMING_PATTERNS = re.compile(
+    r'(ეს\s*(გაქვთ|მოდელი|ჩანთა)|გაქვთ\s*ეს|ნახეთ|მაქვს\s*ეს|ასეთი|მსგავსი|'
+    r'ეს\s*არის|ამას|ამისთანა|ესეთი|have\s*this|do\s*you\s*have|like\s*this)',
+    re.IGNORECASE,
+)
+
+BUFFER_WAIT_SECONDS = 3
+
 
 def _cleanup_old_mids() -> None:
     """Remove message IDs older than 5 minutes."""
@@ -40,15 +58,28 @@ def _cleanup_old_mids() -> None:
             del _processed_mids[key]
 
 
+async def _send_typing_on(sender_id: str) -> None:
+    """Show 'typing...' indicator to customer."""
+    if not FB_PAGE_TOKEN:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(
+                "https://graph.facebook.com/v21.0/me/messages",
+                params={"access_token": FB_PAGE_TOKEN},
+                json={"recipient": {"id": sender_id}, "sender_action": "typing_on"},
+            )
+    except Exception:
+        pass
+
+
 def _build_image_context(image_url: str, analysis: ImageAnalysisResult) -> str:
     """Build context string for the agent based on image analysis result."""
-    original_tag = f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]"
-
     if analysis.image_type == "payment_receipt":
         return "[კლიენტმა გადახდის ქვითარი/სქრინი გამოგზავნა. უთხარი 'მადლობა, გადავამოწმებ ✨' და ᲒᲐᲩᲔᲠᲓᲘ! მისამართს ᲐᲠ ეკითხო! notify_owner ᲐᲠ გამოიძახო!]"
 
     if analysis.similar_codes:
-        codes_str = ", ".join(analysis.similar_codes[:5])
+        codes_str = ", ".join(analysis.similar_codes[:3])
         return f"[კლიენტმა ფოტო გამოგზავნა. მსგავსი მოდელები ვიპოვეთ: {codes_str}. check_inventory გამოიძახე და ეს კოდები აჩვენე. უთხარი 'თქვენი ფოტოს მიხედვით ეს ვიპოვე ✨'. კოდებს და URL-ებს ტექსტში ᲐᲠ ჩადო! notify_owner ᲐᲠ გამოიძახო!]"
 
     return "[კლიენტმა ფოტო გამოგზავნა. მსგავსი მოდელი ვერ ვიპოვეთ. მფლობელს უკვე ეცნობა. უთხარი 'სამწუხაროდ ზუსტად ასეთი ამჟამად არ გვაქვს, სხვა ლამაზი მოდელები გაჩვენოთ? ✨'. notify_owner ᲐᲠ გამოიძახო!]"
@@ -60,20 +91,16 @@ async def _handle_image(
     """Analyze customer image and update message text with context."""
     image_bytes = await download_image(image_url)
     if not image_bytes:
-        return text.replace(
-            f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
-            "[კლიენტმა ფოტო გამოგზავნა. ვერ დამუშავდა. უთხარი 'გადავამოწმებ და მოგწერთ ✨' და გამოიძახე notify_owner]",
-        )
+        return "[კლიენტმა ფოტო გამოგზავნა. ვერ დამუშავდა. უთხარი 'გადავამოწმებ და მოგწერთ ✨' და გამოიძახე notify_owner]"
 
     try:
         analysis = await analyze_image(image_bytes, conversation_id)
         cname = customer_name or "კლიენტი"
 
         if analysis.image_type == "payment_receipt":
-            # Forward receipt to owner via WhatsApp
-            public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
-            confirm_url = f"{public_url}/api/owner-confirm/{conversation_id}"
-            deny_url = f"{public_url}/api/owner-deny/{conversation_id}"
+            # Forward receipt to owner via WhatsApp with clickable confirm/deny links
+            confirm_url = f"{PUBLIC_URL}/api/owner-confirm/{conversation_id}"
+            deny_url = f"{PUBLIC_URL}/api/owner-deny/{conversation_id}"
             await send_whatsapp_image(
                 image_bytes,
                 caption=f"📷 {cname} — გადახდის ქვითარი\n\n✅ ვადასტურებ:\n{confirm_url}\n\n❌ არ ვადასტურებ:\n{deny_url}",
@@ -90,10 +117,7 @@ async def _handle_image(
 
     except Exception as e:
         logger.error(f"Image analysis failed: {e}", exc_info=True)
-        return text.replace(
-            f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
-            "[კლიენტმა ფოტო გამოგზავნა. ვერ დამუშავდა. უთხარი 'გადავამოწმებ და მოგწერთ ✨' და გამოიძახე notify_owner]",
-        )
+        return "[კლიენტმა ფოტო გამოგზავნა. ვერ დამუშავდა. უთხარი 'გადავამოწმებ და მოგწერთ ✨' და გამოიძახე notify_owner]"
 
 
 async def _process_message(
@@ -101,9 +125,14 @@ async def _process_message(
     channel: str, customer_name: str = "", image_url: str = "",
 ) -> None:
     """Process a message in the background — agent + reply + images."""
+    # Show typing indicator while processing
+    await _send_typing_on(sender_id)
+
     # Handle image analysis
     if image_url:
         text = await _handle_image(text, image_url, conversation_id, customer_name)
+        # Refresh typing after long image processing
+        await _send_typing_on(sender_id)
 
     # Add customer name as hidden context
     if customer_name:
@@ -183,14 +212,13 @@ async def _send_product_images(
         sent_codes.add(code)
 
         # Send product code
-        if code:
-            try:
-                await client.post(fb_api, params=fb_params, json={
-                    "recipient": {"id": sender_id},
-                    "message": {"text": f"📌 {code}"},
-                })
-            except Exception:
-                pass
+        try:
+            await client.post(fb_api, params=fb_params, json={
+                "recipient": {"id": sender_id},
+                "message": {"text": f"📌 {code}"},
+            })
+        except Exception:
+            pass
 
         # Send front photo
         try:
@@ -214,6 +242,17 @@ async def _send_product_images(
                 pass
 
 
+async def _process_buffered_text(sender_id: str, buffered: dict) -> None:
+    """Process a buffered text message after waiting for a photo that never came."""
+    asyncio.create_task(_process_message(
+        sender_id,
+        buffered["text"],
+        buffered["conversation_id"],
+        buffered["channel"],
+        buffered["customer_name"],
+    ))
+
+
 @router.get("/webhook")
 async def webhook_verify(request: Request):
     """Facebook webhook verification (GET request)."""
@@ -229,7 +268,11 @@ async def webhook_verify(request: Request):
 
 @router.post("/webhook")
 async def webhook_receive(request: Request):
-    """Receive messages from Facebook Messenger / Instagram DM."""
+    """Receive messages from Facebook Messenger / Instagram DM.
+
+    Implements message buffering: if customer sends "ეს გაქვთ?" (text only),
+    we wait 3 seconds for a potential photo before processing.
+    """
     body = await request.json()
 
     if body.get("object") not in ("page", "instagram"):
@@ -258,14 +301,6 @@ async def webhook_receive(request: Request):
             if not text and not image_url:
                 continue
 
-            # Add image context tag
-            if image_url:
-                text = (text or "") + f"\n[კლიენტმა გამოგზავნა ფოტო: {image_url}]"
-
-            # Link detection (not a photo)
-            if not image_url and text and re.search(r'https?://', text):
-                text += "\n[კლიენტმა ბმული/ლინკი გამოგზავნა. უთხარი: 'ბმულებს სამწუხაროდ ვერ ვხსნი 😊 თუ შეგიძლიათ, ფოტო გამომიგზავნეთ და გადავამოწმებ ✨'. notify_owner ᲐᲠ გამოიძახო!]"
-
             # Anti-duplicate check
             if mid and mid in _processed_mids:
                 continue
@@ -290,7 +325,48 @@ async def webhook_receive(request: Request):
                 except Exception:
                     pass
 
-            # Process in background — return 200 to Facebook immediately
-            asyncio.create_task(_process_message(sender_id, text, conversation_id, channel, customer_name, image_url))
+            # === MESSAGE BUFFERING LOGIC ===
+
+            # Case 1: Photo arrived — check if there's buffered text from same sender
+            if image_url:
+                combined_text = text or ""
+                if sender_id in _pending_text:
+                    buffered = _pending_text.pop(sender_id)
+                    combined_text = buffered["text"] + ("\n" + text if text else "")
+
+                combined_text = combined_text + f"\n[კლიენტმა გამოგზავნა ფოტო: {image_url}]"
+                asyncio.create_task(_process_message(
+                    sender_id, combined_text, conversation_id, channel, customer_name, image_url,
+                ))
+                continue
+
+            # Case 2: Text only — check if it looks like "photo is coming"
+            if text and _PHOTO_INCOMING_PATTERNS.search(text):
+                # Buffer this text and wait for photo
+                _pending_text[sender_id] = {
+                    "text": text,
+                    "mid": mid,
+                    "conversation_id": conversation_id,
+                    "channel": channel,
+                    "customer_name": customer_name,
+                }
+
+                async def _wait_and_process(sid: str, stored_mid: str):
+                    await asyncio.sleep(BUFFER_WAIT_SECONDS)
+                    # If still pending (no photo arrived), process text alone
+                    if sid in _pending_text and _pending_text[sid]["mid"] == stored_mid:
+                        buffered = _pending_text.pop(sid)
+                        await _process_buffered_text(sid, buffered)
+
+                asyncio.create_task(_wait_and_process(sender_id, mid))
+                continue
+
+            # Case 3: Regular text — check for links, then process immediately
+            if re.search(r'https?://', text):
+                text += "\n[კლიენტმა ბმული/ლინკი გამოგზავნა. უთხარი: 'ბმულებს სამწუხაროდ ვერ ვხსნი 😊 თუ შეგიძლიათ, ფოტო გამომიგზავნეთ და გადავამოწმებ ✨'. notify_owner ᲐᲠ გამოიძახო!]"
+
+            asyncio.create_task(_process_message(
+                sender_id, text, conversation_id, channel, customer_name, image_url,
+            ))
 
     return {"status": "ok"}

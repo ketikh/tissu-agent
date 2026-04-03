@@ -192,10 +192,16 @@ async def _find_similar_products(client: genai.Client, image_bytes: bytes) -> li
 
         codes_str = ", ".join(loaded_codes)
         batch_parts.append(types.Part(text=(
-            f'\nშეადარე კლიენტის ფოტო (პირველი) ჩვენს პროდუქტებს ({codes_str}).\n'
-            'ყურადღება მიაქციე: ფერს, ნახატს/პატერნს, მატერიას, სტილს.\n'
-            'მხოლოდ ნამდვილად მსგავსი პროდუქტები დააბრუნე (ფერი და სტილი უნდა ემთხვეოდეს).\n'
-            'თუ არცერთი არ ჰგავს — ცარიელი სია დააბრუნე.\n'
+            f'\nშეადარე კლიენტის ფოტო (პირველი სურათი) ჩვენს პროდუქტებს ({codes_str}).\n'
+            '\nᲛᲗᲐᲕᲐᲠᲘ: ფერი ყველაზე მნიშვნელოვანია! ჩვენი ქეისები ყველა ერთი ფორმისაა, განსხვავება მხოლოდ ფერში და ნახატშია.\n'
+            'შეადარე:\n'
+            '1. ძირითადი ფერი — ზუსტად იგივე უნდა იყოს (ნარინჯისფერი ≠ წითელი, ლურჯი ≠ იისფერი)\n'
+            '2. ნახატი/პატერნი — ყვავილები, ზოლები, გეომეტრიული, აბსტრაქტული\n'
+            '3. ფონის ფერი — მუქი თუ ღია\n'
+            '\nმხოლოდ ფერით და ნახატით ნამდვილად მსგავსი დააბრუნე. თუ არცერთი არ ჰგავს ფერით — ცარიელი სია.\n'
+            'similarity 0.7+ = ფერი და ნახატი თითქმის იგივე\n'
+            'similarity 0.5-0.7 = მსგავსი ფერი, სხვა ნახატი\n'
+            'similarity <0.5 = არ ჰგავს, ᲐᲠ ჩართო\n'
             'JSON: {"matches": [{"code": "XX1", "similarity": 0.0-1.0, "reason": "მოკლედ რატომ"}]}'
         )))
 
@@ -209,7 +215,7 @@ async def _find_similar_products(client: genai.Client, image_bytes: bytes) -> li
             if "{" in compare_text:
                 parsed = json.loads(compare_text[compare_text.index("{"):compare_text.rindex("}") + 1])
                 for match in parsed.get("matches", []):
-                    if match.get("similarity", 0) >= 0.5:
+                    if match.get("similarity", 0) >= 0.6:
                         all_matches.append(match)
         except Exception as e:
             logger.error(f"Vision comparison failed for batch: {e}")
