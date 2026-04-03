@@ -135,22 +135,89 @@ async def wa_webhook_receive(request: Request):
 
                 # Determine action based on owner's message
                 text_lower = text.lower()
+                text_upper = text.strip().upper()
+
                 if "ვადასტურებ" in text_lower and "არ" not in text_lower:
                     reply = await _handle_confirmation(conv_id)
+                    await _send_to_customer(sender_id, reply)
+
                 elif "არ ვადასტურებ" in text_lower or ("არ" in text_lower and "ვადასტურებ" in text_lower):
                     reply = await _handle_denial(conv_id)
+                    await _send_to_customer(sender_id, reply)
+
+                elif "არ გვაქვს" in text_lower or "არა" == text_lower.strip():
+                    # Owner says product not available
+                    agent = get_support_sales_agent()
+                    result = await run_agent(agent, "[მფლობელის ინსტრუქცია: ეს მოდელი არ გვაქვს, შესთავაზე სხვა]", conv_id)
+                    reply = result["reply"].strip() or "სამწუხაროდ ეს მოდელი ამჟამად არ გვაქვს. სხვა ლამაზი მოდელები გაჩვენოთ? ✨"
+                    await _send_to_customer(sender_id, reply)
+
+                elif len(text_upper) <= 5 and any(text_upper.startswith(p) for p in ("FP", "TP", "FD", "TD")):
+                    # Owner sent a product code (e.g., "FP3") — send that product to customer
+                    code = text_upper
+                    db = await get_db()
+                    try:
+                        cursor = await db.execute(
+                            "SELECT code, model, size, price, image_url, image_url_back FROM inventory WHERE UPPER(code) = ? AND stock > 0",
+                            (code,),
+                        )
+                        row = await cursor.fetchone()
+                    finally:
+                        await db.close()
+
+                    if row:
+                        product = dict(row)
+                        # Tell agent the owner found the product
+                        agent = get_support_sales_agent()
+                        result = await run_agent(
+                            agent,
+                            f"[მფლობელის ინსტრუქცია: კლიენტის ფოტოს {code} ემთხვევა. აჩვენე ეს პროდუქტი და ეკითხე მოეწონა თუ არა]",
+                            conv_id,
+                        )
+                        reply = result["reply"].strip() or f"თქვენი ფოტოს მიხედვით ეს ვიპოვე ✨ მოგეწონებათ?"
+                        await _send_to_customer(sender_id, reply)
+
+                        # Send product photos
+                        public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
+                        async with httpx.AsyncClient(timeout=30) as client:
+                            fb_api = "https://graph.facebook.com/v21.0/me/messages"
+                            fb_params = {"access_token": FB_PAGE_TOKEN}
+
+                            await client.post(fb_api, params=fb_params, json={
+                                "recipient": {"id": sender_id},
+                                "message": {"text": f"📌 {code}"},
+                            })
+
+                            img_url = product["image_url"]
+                            if not img_url.startswith("http"):
+                                img_url = public_url + img_url
+                            await client.post(fb_api, params=fb_params, json={
+                                "recipient": {"id": sender_id},
+                                "message": {"attachment": {"type": "image", "payload": {"url": img_url, "is_reusable": True}}},
+                            })
+
+                            if product.get("image_url_back"):
+                                back_url = product["image_url_back"]
+                                if not back_url.startswith("http"):
+                                    back_url = public_url + back_url
+                                await client.post(fb_api, params=fb_params, json={
+                                    "recipient": {"id": sender_id},
+                                    "message": {"attachment": {"type": "image", "payload": {"url": back_url, "is_reusable": True}}},
+                                })
+                    else:
+                        await _send_to_customer(sender_id, "სამწუხაროდ ეს მოდელი ამჟამად არ არის მარაგში ✨")
+
                 elif text.startswith("უპასუხე:") or text.startswith("უპასუხე "):
-                    # Owner dictates reply — send directly
                     reply = text.replace("უპასუხე:", "").replace("უპასუხე ", "").strip()
+                    await _send_to_customer(sender_id, reply)
+
                 else:
                     # Other text — forward as instruction to bot
                     agent = get_support_sales_agent()
                     result = await run_agent(agent, f"[მფლობელის ინსტრუქცია: {text}]", conv_id)
                     reply = result["reply"].strip()
-                    if not reply:
-                        continue
-
-                await _send_to_customer(sender_id, reply)
+                    if reply:
+                        await _send_to_customer(sender_id, reply)
 
     return {"status": "ok"}
 

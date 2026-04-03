@@ -112,6 +112,13 @@ async def _handle_image(
             )
             return "[კლიენტმა გადახდის ქვითარი/სქრინი გამოგზავნა. უთხარი 'მადლობა, გადავამოწმებ ✨' და ᲒᲐᲩᲔᲠᲓᲘ! მისამართს ᲐᲠ ეკითხო! notify_owner ᲐᲠ გამოიძახო!]", None
 
+        # Always forward customer photo to owner via WhatsApp
+        # Owner sees photo and can respond with correct code
+        await send_whatsapp_image(
+            image_bytes,
+            caption=f"📷 {cname} ეძებს ამ მოდელს.\nუპასუხე კოდით (მაგ: FP3) ან 'არ გვაქვს'",
+        )
+
         if analysis.similar_codes:
             # Fetch matched products directly by code from DB
             db = await get_db()
@@ -130,12 +137,8 @@ async def _handle_image(
 
             return "[კლიენტმა ფოტო გამოგზავნა. მსგავსი მოდელები ვიპოვეთ და ფოტოებს ავტომატურად ვუგზავნით. უთხარი 'თქვენი ფოტოს მიხედვით ეს ვიპოვე ✨ მოგეწონებათ რომელიმე?' კოდებს ტექსტში ᲐᲠ ჩადო! ზომას ᲐᲠ ეკითხო! notify_owner ᲐᲠ გამოიძახო!]", inventory_data
 
-        # Not found
-        await send_whatsapp_image(
-            image_bytes,
-            caption=f"📷 {cname} ეძებს ამ მოდელს. მარაგში ვერ ვიპოვეთ.",
-        )
-        return "[კლიენტმა ფოტო გამოგზავნა. მსგავსი მოდელი ვერ ვიპოვეთ. მფლობელს უკვე ეცნობა. უთხარი 'სამწუხაროდ ზუსტად ასეთი ამჟამად არ გვაქვს, სხვა ლამაზი მოდელები გაჩვენოთ? ✨'. notify_owner ᲐᲠ გამოიძახო!]", None
+        # Not found by AI — owner already has the photo on WhatsApp
+        return "[კლიენტმა ფოტო გამოგზავნა. მფლობელს გადაეგზავნა. უთხარი 'გადავამოწმებ და მოგწერთ ✨']", None
 
     except Exception as e:
         logger.error(f"Image analysis failed: {e}", exc_info=True)
