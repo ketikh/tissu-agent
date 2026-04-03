@@ -1,21 +1,18 @@
 """Tissu Shop — Image Analysis.
 
-Two functions:
-1. Receipt detection (Gemini Vision)
-2. Product color matching (Pillow color histogram — no AI needed)
+1. Receipt detection: Gemini Vision
+2. Product matching: Google Cloud Vision API (dominant color extraction + comparison)
 """
 from __future__ import annotations
 
-import io
+import base64
 import json
 import logging
 import math
 import os
-from collections import Counter
 from dataclasses import dataclass
 
 import httpx
-from PIL import Image
 from google import genai
 from google.genai import types
 
@@ -23,12 +20,19 @@ from src.db import get_db
 
 logger = logging.getLogger(__name__)
 
-# Cached product color profiles: code -> list of (r, g, b, percentage)
-_product_colors: dict[str, list[tuple[int, int, int, float]]] = {}
+VISION_API_URL = "https://vision.googleapis.com/v1/images:annotate"
+
+# Cached product colors: code -> list of {r, g, b, score, pixelFraction}
+_product_colors: dict[str, list[dict]] = {}
 _colors_loaded = False
 
 
-def _get_vision_client() -> genai.Client:
+def _get_api_key() -> str:
+    """Get API key for Cloud Vision API."""
+    return os.getenv("GOOGLE_VISION_API_KEY", "") or os.getenv("GEMINI_API_KEY", "")
+
+
+def _get_gemini_client() -> genai.Client:
     return genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
 
 
@@ -40,90 +44,178 @@ class ImageAnalysisResult:
     raw_text: str
 
 
-# ── Color Extraction (Pillow) ──────────────────────────────────
+# ── Cloud Vision API ───────────────────────────────────────────
 
-def extract_color_profile(image_bytes: bytes) -> list[tuple[int, int, int, float]]:
-    """Extract dominant colors from image using Pillow quantization.
-
-    Returns list of (R, G, B, percentage) sorted by percentage descending.
-    """
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    # Resize to speed up processing
-    img = img.resize((80, 80), Image.Resampling.LANCZOS)
-    # Quantize to 8 dominant colors
-    quantized = img.quantize(colors=8, method=Image.Quantize.MEDIANCUT)
-    palette = quantized.getpalette()
-    if not palette:
+async def _extract_colors_from_bytes(image_bytes: bytes) -> list[dict]:
+    """Extract dominant colors from image bytes via Cloud Vision API."""
+    api_key = _get_api_key()
+    if not api_key:
         return []
 
-    pixel_counts = Counter(quantized.getdata())
-    total_pixels = sum(pixel_counts.values())
+    b64 = base64.b64encode(image_bytes).decode()
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{VISION_API_URL}?key={api_key}",
+                json={
+                    "requests": [{
+                        "image": {"content": b64},
+                        "features": [{"type": "IMAGE_PROPERTIES", "maxResults": 10}],
+                    }],
+                },
+            )
+        data = resp.json()
+        response = data.get("responses", [{}])[0]
+        colors = (
+            response.get("imagePropertiesAnnotation", {})
+            .get("dominantColors", {})
+            .get("colors", [])
+        )
+        return [
+            {
+                "r": int(c.get("color", {}).get("red", 0)),
+                "g": int(c.get("color", {}).get("green", 0)),
+                "b": int(c.get("color", {}).get("blue", 0)),
+                "score": c.get("score", 0),
+                "pixelFraction": c.get("pixelFraction", 0),
+            }
+            for c in colors
+        ]
+    except Exception as e:
+        logger.error(f"Cloud Vision API failed: {e}")
+        return []
 
-    colors = []
-    for color_idx, count in pixel_counts.most_common(8):
-        r = palette[color_idx * 3]
-        g = palette[color_idx * 3 + 1]
-        b = palette[color_idx * 3 + 2]
-        pct = count / total_pixels
-        colors.append((r, g, b, pct))
 
-    return colors
+async def _extract_colors_batch(image_urls: list[tuple[str, str]]) -> dict[str, list[dict]]:
+    """Extract colors for multiple product images via batch API call.
+
+    Args: list of (code, image_url) tuples. Max 16 per batch.
+    Returns: {code: [color_data]}
+    """
+    api_key = _get_api_key()
+    if not api_key:
+        return {}
+
+    results: dict[str, list[dict]] = {}
+
+    # Cloud Vision API supports up to 16 images per request
+    batch_size = 16
+    for i in range(0, len(image_urls), batch_size):
+        batch = image_urls[i:i + batch_size]
+        requests_body = {
+            "requests": [
+                {
+                    "image": {"source": {"imageUri": url}},
+                    "features": [{"type": "IMAGE_PROPERTIES", "maxResults": 10}],
+                }
+                for _code, url in batch
+            ],
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.post(
+                    f"{VISION_API_URL}?key={api_key}",
+                    json=requests_body,
+                )
+            data = resp.json()
+
+            for idx, (code, _url) in enumerate(batch):
+                response = data.get("responses", [])[idx] if idx < len(data.get("responses", [])) else {}
+                if "error" in response:
+                    logger.error(f"Vision API error for {code}: {response['error']}")
+                    continue
+                colors = (
+                    response.get("imagePropertiesAnnotation", {})
+                    .get("dominantColors", {})
+                    .get("colors", [])
+                )
+                results[code] = [
+                    {
+                        "r": int(c.get("color", {}).get("red", 0)),
+                        "g": int(c.get("color", {}).get("green", 0)),
+                        "b": int(c.get("color", {}).get("blue", 0)),
+                        "score": c.get("score", 0),
+                        "pixelFraction": c.get("pixelFraction", 0),
+                    }
+                    for c in colors
+                ]
+        except Exception as e:
+            logger.error(f"Vision API batch failed: {e}")
+
+    return results
 
 
-def _color_distance(c1: tuple[int, int, int], c2: tuple[int, int, int]) -> float:
-    """Weighted Euclidean distance in RGB space (human-perception weighted)."""
-    # Human eyes are more sensitive to green, less to blue
-    dr = c1[0] - c2[0]
-    dg = c1[1] - c2[1]
-    db = c1[2] - c2[2]
+# ── Color Comparison ───────────────────────────────────────────
+
+def _color_distance(c1: dict, c2: dict) -> float:
+    """Weighted Euclidean distance (human-perception adjusted)."""
+    dr = c1["r"] - c2["r"]
+    dg = c1["g"] - c2["g"]
+    db = c1["b"] - c2["b"]
     return math.sqrt(2 * dr * dr + 4 * dg * dg + 3 * db * db)
 
 
-def compare_color_profiles(
-    profile1: list[tuple[int, int, int, float]],
-    profile2: list[tuple[int, int, int, float]],
-) -> float:
-    """Compare two color profiles, return similarity 0.0–1.0.
+def _is_background_color(c: dict) -> bool:
+    """Filter out near-black, near-white, and gray background colors."""
+    r, g, b = c["r"], c["g"], c["b"]
+    # Near-black
+    if r < 45 and g < 45 and b < 45:
+        return True
+    # Near-white
+    if r > 215 and g > 215 and b > 215:
+        return True
+    # Gray (all channels similar, low saturation)
+    avg = (r + g + b) / 3
+    if avg > 30 and max(abs(r - avg), abs(g - avg), abs(b - avg)) < 20:
+        return True
+    return False
 
-    For each dominant color in profile1, find the closest color in profile2
-    and weight by the color's percentage.
+
+def compare_colors(profile1: list[dict], profile2: list[dict]) -> float:
+    """Compare two color profiles from Cloud Vision API. Returns 0.0–1.0.
+
+    Ignores background colors (black, white, gray) and focuses on
+    the colorful/distinctive colors that differentiate products.
     """
     if not profile1 or not profile2:
         return 0.0
 
-    max_distance = 765.0  # max weighted RGB distance
-    score = 0.0
+    # Filter out background colors
+    filtered1 = [c for c in profile1 if not _is_background_color(c)]
+    filtered2 = [c for c in profile2 if not _is_background_color(c)]
 
-    for r1, g1, b1, pct1 in profile1:
-        min_dist = max_distance
-        for r2, g2, b2, _pct2 in profile2:
-            d = _color_distance((r1, g1, b1), (r2, g2, b2))
+    # If all colors were filtered, use originals
+    if not filtered1:
+        filtered1 = profile1
+    if not filtered2:
+        filtered2 = profile2
+
+    max_dist = 765.0
+    score = 0.0
+    total_weight = 0.0
+
+    for c1 in filtered1:
+        # Use Vision API's score (color importance) as weight
+        weight = c1.get("score", 0.1)
+        if weight < 0.01:
+            continue
+        min_dist = max_dist
+        for c2 in filtered2:
+            d = _color_distance(c1, c2)
             if d < min_dist:
                 min_dist = d
-        similarity = 1.0 - (min_dist / max_distance)
-        score += similarity * pct1
+        similarity = 1.0 - (min_dist / max_dist)
+        score += similarity * weight
+        total_weight += weight
 
-    return score
-
-
-# ── Image Download ─────────────────────────────────────────────
-
-async def download_image(url: str) -> bytes | None:
-    """Download image from URL."""
-    try:
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                return resp.content
-    except Exception as e:
-        logger.error(f"Image download failed: {e}")
-    return None
+    return score / total_weight if total_weight > 0 else 0.0
 
 
-# ── Startup: Pre-compute product colors ────────────────────────
+# ── Product Color Loading (lazy) ──────────────────────────────
 
-async def preload_product_images() -> None:
-    """Download all product images and extract color profiles at startup."""
+async def _ensure_product_colors() -> None:
+    """Load product colors from Cloud Vision API (lazy, cached in memory)."""
     global _product_colors, _colors_loaded
 
     if _colors_loaded:
@@ -134,24 +226,18 @@ async def preload_product_images() -> None:
         cursor = await db.execute(
             "SELECT code, image_url FROM inventory WHERE stock > 0 AND image_url IS NOT NULL AND image_url != ''"
         )
-        products = [dict(r) for r in await cursor.fetchall()]
+        products = [(dict(r)["code"], dict(r)["image_url"]) for r in await cursor.fetchall()]
     finally:
         await db.close()
 
-    count = 0
-    for p in products:
-        img = await download_image(p["image_url"])
-        if img:
-            try:
-                profile = extract_color_profile(img)
-                if profile:
-                    _product_colors[p["code"]] = profile
-                    count += 1
-            except Exception as e:
-                logger.error(f"Color extraction failed for {p['code']}: {e}")
+    if not products:
+        _colors_loaded = True
+        return
 
+    logger.info(f"Extracting colors for {len(products)} products via Cloud Vision API...")
+    _product_colors = await _extract_colors_batch(products)
     _colors_loaded = True
-    logger.info(f"Color profiles: {count}/{len(products)} products loaded")
+    logger.info(f"Color profiles loaded: {len(_product_colors)} products")
 
 
 # ── Receipt Detection (Gemini) ─────────────────────────────────
@@ -177,9 +263,8 @@ async def is_expecting_receipt(conversation_id: str) -> bool:
 
 async def _is_payment_receipt(image_bytes: bytes, conversation_id: str) -> bool:
     """Use Gemini to detect if image is a payment receipt."""
-    client = _get_vision_client()
+    client = _get_gemini_client()
     expecting = await is_expecting_receipt(conversation_id)
-
     ctx = "კლიენტმა გადახდის სქრინი უნდა გამოეგზავნა." if expecting else "კლიენტი ჩანთას ეძებს."
 
     try:
@@ -189,7 +274,7 @@ async def _is_payment_receipt(image_bytes: bytes, conversation_id: str) -> bool:
                 types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
                 types.Part(text=(
                     f'კონტექსტი: {ctx}\n'
-                    'ეს ფოტო payment_receipt (ბანკის ტრანზაქცია/გადარიცხვა/check) თუ product (ჩანთა/ქეისი)?\n'
+                    'ეს ფოტო payment_receipt (ბანკის ტრანზაქცია/გადარიცხვა) თუ product (ჩანთა/ქეისი)?\n'
                     'უპასუხე მხოლოდ: payment_receipt ან product'
                 )),
             ])],
@@ -205,33 +290,45 @@ async def _is_payment_receipt(image_bytes: bytes, conversation_id: str) -> bool:
 async def analyze_image(image_bytes: bytes, conversation_id: str) -> ImageAnalysisResult:
     """Analyze customer image — receipt or product color match."""
 
-    # Step 1: Check if it's a payment receipt (Gemini)
+    # Step 1: Receipt check (Gemini)
     if await _is_payment_receipt(image_bytes, conversation_id):
         return ImageAnalysisResult("payment_receipt", "გადახდის ქვითარი", [], "")
 
-    # Step 2: Color comparison with inventory (Pillow — no AI)
-    if not _colors_loaded:
-        await preload_product_images()
-
-    customer_profile = extract_color_profile(image_bytes)
-    if not customer_profile or not _product_colors:
+    # Step 2: Extract customer photo colors (Cloud Vision API)
+    customer_colors = await _extract_colors_from_bytes(image_bytes)
+    if not customer_colors:
         return ImageAnalysisResult("product", "ფერების ამოცნობა ვერ მოხერხდა", [], "")
 
-    # Compare with every product
+    # Step 3: Ensure product colors are loaded
+    await _ensure_product_colors()
+    if not _product_colors:
+        return ImageAnalysisResult("product", "პროდუქტების ფერები ვერ ჩაიტვირთა", [], "")
+
+    # Step 4: Compare colors
     scores: list[tuple[str, float]] = []
     for code, product_profile in _product_colors.items():
-        similarity = compare_color_profiles(customer_profile, product_profile)
+        similarity = compare_colors(customer_colors, product_profile)
         scores.append((code, similarity))
 
-    # Sort by similarity
     scores.sort(key=lambda x: x[1], reverse=True)
 
-    # Top matches with minimum threshold 0.75
-    matches = [code for code, score in scores if score >= 0.75][:3]
+    # Always return top 3 (customer's phone photo will differ from product photo)
+    # Minimum threshold 0.50 to avoid totally wrong matches
+    matches = [code for code, score in scores[:3] if score >= 0.50]
 
-    # If no strong matches, take top 2 if above 0.65
-    if not matches:
-        matches = [code for code, score in scores if score >= 0.65][:2]
+    top_info = ", ".join(f"{c}={s:.2f}" for c, s in scores[:5])
+    return ImageAnalysisResult("product", f"ტოპ: {top_info}", matches, str(scores[:5]))
 
-    desc = f"ფერის შედარება: ტოპ={scores[0][1]:.2f}" if scores else ""
-    return ImageAnalysisResult("product", desc, matches, str(scores[:5]))
+
+# ── Download helper (used by facebook.py) ──────────────────────
+
+async def download_image(url: str) -> bytes | None:
+    """Download image from URL."""
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                return resp.content
+    except Exception as e:
+        logger.error(f"Image download failed: {e}")
+    return None
