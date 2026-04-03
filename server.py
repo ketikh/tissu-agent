@@ -28,12 +28,15 @@ from src.agents.marketing import get_marketing_agent
 from src.channels import get_adapter, ADAPTERS
 from src.webhooks.facebook import router as fb_router
 from src.webhooks.whatsapp import router as wa_router
+from src.vision import preload_product_descriptions
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     await seed_knowledge_base()
+    # Pre-analyze product images for fast color matching (runs once, caches in DB)
+    await preload_product_descriptions()
     yield
 
 
