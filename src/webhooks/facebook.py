@@ -45,22 +45,13 @@ def _build_image_context(image_url: str, analysis: ImageAnalysisResult) -> str:
     original_tag = f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]"
 
     if analysis.image_type == "payment_receipt":
-        return original_tag.replace(
-            f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
-            "[კლიენტმა გადახდის ქვითარი გამოგზავნა. უთხარი 'მადლობა, გადავამოწმებ ✨' და ᲒᲐᲩᲔᲠᲓᲘ! notify_owner ᲐᲠ გამოიძახო!]",
-        )
+        return "[კლიენტმა გადახდის ქვითარი/სქრინი გამოგზავნა. უთხარი 'მადლობა, გადავამოწმებ ✨' და ᲒᲐᲩᲔᲠᲓᲘ! მისამართს ᲐᲠ ეკითხო! notify_owner ᲐᲠ გამოიძახო!]"
 
     if analysis.similar_codes:
         codes_str = ", ".join(analysis.similar_codes[:5])
-        return original_tag.replace(
-            f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
-            f"[კლიენტმა ფოტო გამოგზავნა. მსგავსი მოდელები ვიპოვეთ: {codes_str}. check_inventory გამოიძახე და ეს კოდები აჩვენე კლიენტს. უთხარი 'თქვენი ფოტოს მიხედვით ეს ვიპოვე ✨'. notify_owner ᲐᲠ გამოიძახო!]",
-        )
+        return f"[კლიენტმა ფოტო გამოგზავნა. მსგავსი მოდელები ვიპოვეთ: {codes_str}. check_inventory გამოიძახე და ეს კოდები აჩვენე. უთხარი 'თქვენი ფოტოს მიხედვით ეს ვიპოვე ✨'. კოდებს და URL-ებს ტექსტში ᲐᲠ ჩადო! notify_owner ᲐᲠ გამოიძახო!]"
 
-    return original_tag.replace(
-        f"[კლიენტმა გამოგზავნა ფოტო: {image_url}]",
-        "[კლიენტმა ფოტო გამოგზავნა. მსგავსი მოდელი ვერ ვიპოვეთ. მფლობელს უკვე ეცნობა. უთხარი 'სამწუხაროდ ზუსტად ასეთი ამჟამად არ გვაქვს, მაგრამ სხვა ლამაზი მოდელები გვაქვს ✨ გაჩვენოთ?'. notify_owner ᲐᲠ გამოიძახო!]",
-    )
+    return "[კლიენტმა ფოტო გამოგზავნა. მსგავსი მოდელი ვერ ვიპოვეთ. მფლობელს უკვე ეცნობა. უთხარი 'სამწუხაროდ ზუსტად ასეთი ამჟამად არ გვაქვს, სხვა ლამაზი მოდელები გაჩვენოთ? ✨'. notify_owner ᲐᲠ გამოიძახო!]"
 
 
 async def _handle_image(
@@ -80,9 +71,12 @@ async def _handle_image(
 
         if analysis.image_type == "payment_receipt":
             # Forward receipt to owner via WhatsApp
+            public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
+            confirm_url = f"{public_url}/api/owner-confirm/{conversation_id}"
+            deny_url = f"{public_url}/api/owner-deny/{conversation_id}"
             await send_whatsapp_image(
                 image_bytes,
-                caption=f"📷 {cname} — გადახდის ქვითარი\n\nვადასტურებ / არ ვადასტურებ",
+                caption=f"📷 {cname} — გადახდის ქვითარი\n\n✅ ვადასტურებ:\n{confirm_url}\n\n❌ არ ვადასტურებ:\n{deny_url}",
                 filename="receipt.jpg",
             )
         elif not analysis.similar_codes:
@@ -137,6 +131,13 @@ async def _process_message(
             # Clean internal instructions from reply
             reply_text = re.sub(r'\(აქ ავტომატურად[^)]*\)', '', reply_text).strip()
             reply_text = re.sub(r'\[SYSTEM:[^\]]*\]', '', reply_text).strip()
+            # Clean URLs, image references, file paths from reply
+            reply_text = re.sub(r'https?://\S+', '', reply_text).strip()
+            reply_text = re.sub(r'\[Image[^\]]*\]', '', reply_text).strip()
+            reply_text = re.sub(r'\[Photo[^\]]*\]', '', reply_text).strip()
+            reply_text = re.sub(r'/static/\S+', '', reply_text).strip()
+            # Clean leftover empty lines and brackets
+            reply_text = re.sub(r'\n{3,}', '\n\n', reply_text).strip()
             if not reply_text:
                 if image_url:
                     reply_text = "მადლობა, გადავამოწმებ ✨"
@@ -257,7 +258,7 @@ async def webhook_receive(request: Request):
 
             # Link detection (not a photo)
             if not image_url and text and re.search(r'https?://', text):
-                text += "\n[კლიენტმა ლინკი გამოგზავნა. უთხარი: 'სამწუხაროდ ლინკის გახსნა ვერ შემიძლია, თუ შეგიძლიათ ფოტო გამომიგზავნეთ ✨'. notify_owner ᲐᲠ გამოიძახო!]"
+                text += "\n[კლიენტმა ბმული/ლინკი გამოგზავნა. უთხარი: 'ბმულებს სამწუხაროდ ვერ ვხსნი 😊 თუ შეგიძლიათ, ფოტო გამომიგზავნეთ და გადავამოწმებ ✨'. notify_owner ᲐᲠ გამოიძახო!]"
 
             # Anti-duplicate check
             if mid and mid in _processed_mids:
