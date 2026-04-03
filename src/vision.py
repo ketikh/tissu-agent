@@ -186,17 +186,17 @@ def _is_background_color(c: dict) -> bool:
 def compare_colors(profile1: list[dict], profile2: list[dict]) -> float:
     """Compare two color profiles from Cloud Vision API. Returns 0.0–1.0.
 
-    Ignores background colors (black, white, gray) and focuses on
-    the colorful/distinctive colors that differentiate products.
+    Focuses on BACKGROUND/FABRIC color (high pixelFraction = many pixels).
+    De-weights small accent colors (flowers, patterns) that are shared
+    across many products.
     """
     if not profile1 or not profile2:
         return 0.0
 
-    # Filter out background colors
+    # Filter out near-black and near-white (photo edges, shadows)
     filtered1 = [c for c in profile1 if not _is_background_color(c)]
     filtered2 = [c for c in profile2 if not _is_background_color(c)]
 
-    # If all colors were filtered, use originals
     if not filtered1:
         filtered1 = profile1
     if not filtered2:
@@ -207,10 +207,14 @@ def compare_colors(profile1: list[dict], profile2: list[dict]) -> float:
     total_weight = 0.0
 
     for c1 in filtered1:
-        # Use Vision API's score (color importance) as weight
-        weight = c1.get("score", 0.1)
-        if weight < 0.01:
+        px_frac = c1.get("pixelFraction", 0.01)
+        # Weight = pixelFraction SQUARED — heavily favors background fabric color
+        # Small accent colors (flowers: ~2-5% pixels) get very low weight
+        # Background fabric (30-60% pixels) gets dominant weight
+        weight = px_frac * px_frac
+        if weight < 0.0001:
             continue
+
         min_dist = max_dist
         for c2 in filtered2:
             d = _color_distance(c1, c2)
