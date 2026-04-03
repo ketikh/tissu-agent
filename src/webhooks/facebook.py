@@ -22,6 +22,7 @@ from fastapi import APIRouter, HTTPException, Request
 from src.agents.support_sales import get_support_sales_agent
 from src.engine import run_agent
 from src.notifications import send_whatsapp_image, send_whatsapp_text
+from src.tools.support import check_inventory
 from src.vision import ImageAnalysisResult, analyze_image, download_image
 
 logger = logging.getLogger(__name__)
@@ -87,18 +88,21 @@ def _build_image_context(image_url: str, analysis: ImageAnalysisResult) -> str:
 
 async def _handle_image(
     text: str, image_url: str, conversation_id: str, customer_name: str,
-) -> str:
-    """Analyze customer image and update message text with context."""
+) -> tuple[str, dict | None]:
+    """Analyze customer image. Returns (agent_context, inventory_data_or_None).
+
+    When products are found, inventory_data is returned so _process_message
+    can send photos DIRECTLY without the agent needing to call check_inventory.
+    """
     image_bytes = await download_image(image_url)
     if not image_bytes:
-        return "[კლიენტმა ფოტო გამოგზავნა. ვერ დამუშავდა. უთხარი 'გადავამოწმებ და მოგწერთ ✨' და გამოიძახე notify_owner]"
+        return "[კლიენტმა ფოტო გამოგზავნა. ვერ დამუშავდა. უთხარი 'გადავამოწმებ და მოგწერთ ✨' და გამოიძახე notify_owner]", None
 
     try:
         analysis = await analyze_image(image_bytes, conversation_id)
         cname = customer_name or "კლიენტი"
 
         if analysis.image_type == "payment_receipt":
-            # Forward receipt to owner via WhatsApp with clickable confirm/deny links
             confirm_url = f"{PUBLIC_URL}/api/owner-confirm/{conversation_id}"
             deny_url = f"{PUBLIC_URL}/api/owner-deny/{conversation_id}"
             await send_whatsapp_image(
@@ -106,18 +110,32 @@ async def _handle_image(
                 caption=f"📷 {cname} — გადახდის ქვითარი\n\n✅ ვადასტურებ:\n{confirm_url}\n\n❌ არ ვადასტურებ:\n{deny_url}",
                 filename="receipt.jpg",
             )
-        elif not analysis.similar_codes:
-            # Product not found — notify owner with photo
-            await send_whatsapp_image(
-                image_bytes,
-                caption=f"📷 {cname} ეძებს ამ მოდელს. მარაგში ვერ ვიპოვეთ.",
-            )
+            return "[კლიენტმა გადახდის ქვითარი/სქრინი გამოგზავნა. უთხარი 'მადლობა, გადავამოწმებ ✨' და ᲒᲐᲩᲔᲠᲓᲘ! მისამართს ᲐᲠ ეკითხო! notify_owner ᲐᲠ გამოიძახო!]", None
 
-        return _build_image_context(image_url, analysis)
+        if analysis.similar_codes:
+            # Fetch matched products directly — bypass agent
+            codes_search = " ".join(analysis.similar_codes)
+            inventory_data = await check_inventory(search=codes_search)
+            # Filter to only matched codes
+            if inventory_data.get("found"):
+                matched_items = [
+                    item for item in inventory_data["items"]
+                    if item.get("code") in analysis.similar_codes
+                ]
+                inventory_data = {"found": bool(matched_items), "items": matched_items, "count": len(matched_items)}
+
+            return "[კლიენტმა ფოტო გამოგზავნა. მსგავსი მოდელები ვიპოვეთ და ფოტოებს ავტომატურად ვუგზავნით. უთხარი 'თქვენი ფოტოს მიხედვით ეს ვიპოვე ✨ მოგეწონებათ რომელიმე?' კოდებს ტექსტში ᲐᲠ ჩადო! ზომას ᲐᲠ ეკითხო! notify_owner ᲐᲠ გამოიძახო!]", inventory_data
+
+        # Not found
+        await send_whatsapp_image(
+            image_bytes,
+            caption=f"📷 {cname} ეძებს ამ მოდელს. მარაგში ვერ ვიპოვეთ.",
+        )
+        return "[კლიენტმა ფოტო გამოგზავნა. მსგავსი მოდელი ვერ ვიპოვეთ. მფლობელს უკვე ეცნობა. უთხარი 'სამწუხაროდ ზუსტად ასეთი ამჟამად არ გვაქვს, სხვა ლამაზი მოდელები გაჩვენოთ? ✨'. notify_owner ᲐᲠ გამოიძახო!]", None
 
     except Exception as e:
         logger.error(f"Image analysis failed: {e}", exc_info=True)
-        return "[კლიენტმა ფოტო გამოგზავნა. ვერ დამუშავდა. უთხარი 'გადავამოწმებ და მოგწერთ ✨' და გამოიძახე notify_owner]"
+        return "[კლიენტმა ფოტო გამოგზავნა. ვერ დამუშავდა. უთხარი 'გადავამოწმებ და მოგწერთ ✨' და გამოიძახე notify_owner]", None
 
 
 async def _process_message(
@@ -128,10 +146,10 @@ async def _process_message(
     # Show typing indicator while processing
     await _send_typing_on(sender_id)
 
-    # Handle image analysis
+    # Handle image analysis — may return inventory data for direct photo sending
+    photo_inventory_data = None
     if image_url:
-        text = await _handle_image(text, image_url, conversation_id, customer_name)
-        # Refresh typing after long image processing
+        text, photo_inventory_data = await _handle_image(text, image_url, conversation_id, customer_name)
         await _send_typing_on(sender_id)
 
     # Add customer name as hidden context
@@ -146,6 +164,12 @@ async def _process_message(
         logger.error(f"Agent error: {e}", exc_info=True)
         await send_whatsapp_text(f"🚨 აგენტის შეცდომა!\nკლიენტის მესიჯი: {text[:200]}\nშეცდომა: {str(e)[:300]}")
         result = {"reply": "გადავამოწმებ და მოგწერთ ✨", "tool_calls_made": [], "tool_results_data": {}}
+
+    # Inject photo-matched inventory data (bypasses agent's check_inventory call)
+    if photo_inventory_data:
+        if "tool_results_data" not in result:
+            result["tool_results_data"] = {}
+        result["tool_results_data"]["check_inventory"] = photo_inventory_data
 
     # Send reply back via Facebook/Instagram API
     if not FB_PAGE_TOKEN:

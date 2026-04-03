@@ -1,18 +1,21 @@
-"""Gemini Vision AI — image analysis for Tissu Shop.
+"""Tissu Shop — Image Analysis.
 
-Analyzes customer photos:
-- Payment receipt detection
-- Product comparison: downloads all product images at startup,
-  then sends customer photo + product photos to Gemini for direct visual comparison.
+Two functions:
+1. Receipt detection (Gemini Vision)
+2. Product color matching (Pillow color histogram — no AI needed)
 """
 from __future__ import annotations
 
+import io
 import json
 import logging
+import math
 import os
+from collections import Counter
 from dataclasses import dataclass
 
 import httpx
+from PIL import Image
 from google import genai
 from google.genai import types
 
@@ -20,9 +23,9 @@ from src.db import get_db
 
 logger = logging.getLogger(__name__)
 
-# Cached product images: code -> (image_bytes, model, size)
-_product_images: dict[str, tuple[bytes, str, str]] = {}
-_images_loaded = False
+# Cached product color profiles: code -> list of (r, g, b, percentage)
+_product_colors: dict[str, list[tuple[int, int, int, float]]] = {}
+_colors_loaded = False
 
 
 def _get_vision_client() -> genai.Client:
@@ -31,11 +34,79 @@ def _get_vision_client() -> genai.Client:
 
 @dataclass
 class ImageAnalysisResult:
-    image_type: str  # "payment_receipt" | "product" | "unknown"
+    image_type: str  # "payment_receipt" | "product"
     description: str
     similar_codes: list[str]
     raw_text: str
 
+
+# ── Color Extraction (Pillow) ──────────────────────────────────
+
+def extract_color_profile(image_bytes: bytes) -> list[tuple[int, int, int, float]]:
+    """Extract dominant colors from image using Pillow quantization.
+
+    Returns list of (R, G, B, percentage) sorted by percentage descending.
+    """
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    # Resize to speed up processing
+    img = img.resize((80, 80), Image.Resampling.LANCZOS)
+    # Quantize to 8 dominant colors
+    quantized = img.quantize(colors=8, method=Image.Quantize.MEDIANCUT)
+    palette = quantized.getpalette()
+    if not palette:
+        return []
+
+    pixel_counts = Counter(quantized.getdata())
+    total_pixels = sum(pixel_counts.values())
+
+    colors = []
+    for color_idx, count in pixel_counts.most_common(8):
+        r = palette[color_idx * 3]
+        g = palette[color_idx * 3 + 1]
+        b = palette[color_idx * 3 + 2]
+        pct = count / total_pixels
+        colors.append((r, g, b, pct))
+
+    return colors
+
+
+def _color_distance(c1: tuple[int, int, int], c2: tuple[int, int, int]) -> float:
+    """Weighted Euclidean distance in RGB space (human-perception weighted)."""
+    # Human eyes are more sensitive to green, less to blue
+    dr = c1[0] - c2[0]
+    dg = c1[1] - c2[1]
+    db = c1[2] - c2[2]
+    return math.sqrt(2 * dr * dr + 4 * dg * dg + 3 * db * db)
+
+
+def compare_color_profiles(
+    profile1: list[tuple[int, int, int, float]],
+    profile2: list[tuple[int, int, int, float]],
+) -> float:
+    """Compare two color profiles, return similarity 0.0–1.0.
+
+    For each dominant color in profile1, find the closest color in profile2
+    and weight by the color's percentage.
+    """
+    if not profile1 or not profile2:
+        return 0.0
+
+    max_distance = 765.0  # max weighted RGB distance
+    score = 0.0
+
+    for r1, g1, b1, pct1 in profile1:
+        min_dist = max_distance
+        for r2, g2, b2, _pct2 in profile2:
+            d = _color_distance((r1, g1, b1), (r2, g2, b2))
+            if d < min_dist:
+                min_dist = d
+        similarity = 1.0 - (min_dist / max_distance)
+        score += similarity * pct1
+
+    return score
+
+
+# ── Image Download ─────────────────────────────────────────────
 
 async def download_image(url: str) -> bytes | None:
     """Download image from URL."""
@@ -49,17 +120,19 @@ async def download_image(url: str) -> bytes | None:
     return None
 
 
-async def preload_product_images() -> None:
-    """Download all product images at startup and cache in memory."""
-    global _product_images, _images_loaded
+# ── Startup: Pre-compute product colors ────────────────────────
 
-    if _images_loaded:
+async def preload_product_images() -> None:
+    """Download all product images and extract color profiles at startup."""
+    global _product_colors, _colors_loaded
+
+    if _colors_loaded:
         return
 
     db = await get_db()
     try:
         cursor = await db.execute(
-            "SELECT code, model, size, image_url FROM inventory WHERE stock > 0 AND image_url IS NOT NULL AND image_url != ''"
+            "SELECT code, image_url FROM inventory WHERE stock > 0 AND image_url IS NOT NULL AND image_url != ''"
         )
         products = [dict(r) for r in await cursor.fetchall()]
     finally:
@@ -69,12 +142,19 @@ async def preload_product_images() -> None:
     for p in products:
         img = await download_image(p["image_url"])
         if img:
-            _product_images[p["code"]] = (img, p["model"], p["size"])
-            count += 1
+            try:
+                profile = extract_color_profile(img)
+                if profile:
+                    _product_colors[p["code"]] = profile
+                    count += 1
+            except Exception as e:
+                logger.error(f"Color extraction failed for {p['code']}: {e}")
 
-    _images_loaded = True
-    logger.info(f"Preloaded {count}/{len(products)} product images")
+    _colors_loaded = True
+    logger.info(f"Color profiles: {count}/{len(products)} products loaded")
 
+
+# ── Receipt Detection (Gemini) ─────────────────────────────────
 
 async def is_expecting_receipt(conversation_id: str) -> bool:
     """Check if we recently asked for a payment screenshot."""
@@ -95,93 +175,63 @@ async def is_expecting_receipt(conversation_id: str) -> bool:
         await db.close()
 
 
-async def analyze_image(image_bytes: bytes, conversation_id: str) -> ImageAnalysisResult:
-    """Analyze customer image — receipt or product."""
+async def _is_payment_receipt(image_bytes: bytes, conversation_id: str) -> bool:
+    """Use Gemini to detect if image is a payment receipt."""
     client = _get_vision_client()
-    expecting_receipt = await is_expecting_receipt(conversation_id)
+    expecting = await is_expecting_receipt(conversation_id)
 
-    ctx_hint = (
-        "კლიენტმა გადახდის სქრინი/ქვითარი უნდა გამოეგზავნა."
-        if expecting_receipt
-        else "კლიენტი ჩანთას ეძებს."
-    )
+    ctx = "კლიენტმა გადახდის სქრინი უნდა გამოეგზავნა." if expecting else "კლიენტი ჩანთას ეძებს."
 
-    analysis = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=[types.Content(role="user", parts=[
-            types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
-            types.Part(text=(
-                f'კონტექსტი: {ctx_hint}\n'
-                'ეს ფოტო რა არის? თუ ბანკის ტრანზაქცია/გადარიცხვა/check — payment_receipt. '
-                'თუ ჩანთა/ქეისი — product. '
-                'JSON: {"type": "payment_receipt" ან "product", "description": "მოკლე"}'
-            )),
-        ])],
-    )
-
-    analysis_text = analysis.text.strip() if analysis.text else ""
-
-    if "payment_receipt" in analysis_text:
-        return ImageAnalysisResult("payment_receipt", analysis_text, [], analysis_text)
-
-    similar_codes = await _find_similar_products(client, image_bytes)
-    return ImageAnalysisResult("product", analysis_text, similar_codes, analysis_text)
+    try:
+        resp = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[types.Content(role="user", parts=[
+                types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+                types.Part(text=(
+                    f'კონტექსტი: {ctx}\n'
+                    'ეს ფოტო payment_receipt (ბანკის ტრანზაქცია/გადარიცხვა/check) თუ product (ჩანთა/ქეისი)?\n'
+                    'უპასუხე მხოლოდ: payment_receipt ან product'
+                )),
+            ])],
+        )
+        return "payment_receipt" in (resp.text or "").lower()
+    except Exception as e:
+        logger.error(f"Receipt detection failed: {e}")
+        return False
 
 
-async def _find_similar_products(client: genai.Client, image_bytes: bytes) -> list[str]:
-    """Send customer photo + all product photos to Gemini for direct visual comparison."""
+# ── Main Analysis Function ─────────────────────────────────────
 
-    # Ensure images are loaded
-    if not _images_loaded:
+async def analyze_image(image_bytes: bytes, conversation_id: str) -> ImageAnalysisResult:
+    """Analyze customer image — receipt or product color match."""
+
+    # Step 1: Check if it's a payment receipt (Gemini)
+    if await _is_payment_receipt(image_bytes, conversation_id):
+        return ImageAnalysisResult("payment_receipt", "გადახდის ქვითარი", [], "")
+
+    # Step 2: Color comparison with inventory (Pillow — no AI)
+    if not _colors_loaded:
         await preload_product_images()
 
-    if not _product_images:
-        return []
+    customer_profile = extract_color_profile(image_bytes)
+    if not customer_profile or not _product_colors:
+        return ImageAnalysisResult("product", "ფერების ამოცნობა ვერ მოხერხდა", [], "")
 
-    # Split into batches of 10 products per API call
-    codes = list(_product_images.keys())
-    batch_size = 10
-    all_matches: list[str] = []
+    # Compare with every product
+    scores: list[tuple[str, float]] = []
+    for code, product_profile in _product_colors.items():
+        similarity = compare_color_profiles(customer_profile, product_profile)
+        scores.append((code, similarity))
 
-    for i in range(0, len(codes), batch_size):
-        batch_codes = codes[i:i + batch_size]
+    # Sort by similarity
+    scores.sort(key=lambda x: x[1], reverse=True)
 
-        parts: list[types.Part] = [
-            types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
-            types.Part(text="⬆️ კლიენტის ფოტო. ქვემოთ ჩვენი პროდუქტები:\n\n"),
-        ]
+    # Top matches with minimum threshold 0.75
+    matches = [code for code, score in scores if score >= 0.75][:3]
 
-        for code in batch_codes:
-            img_data, model, size = _product_images[code]
-            parts.append(types.Part.from_bytes(data=img_data, mime_type="image/jpeg"))
-            parts.append(types.Part(text=f"⬆️ {code}\n"))
+    # If no strong matches, take top 2 if above 0.65
+    if not matches:
+        matches = [code for code, score in scores if score >= 0.65][:2]
 
-        parts.append(types.Part(text=(
-            '\nრომელი პროდუქტი ჰგავს კლიენტის ფოტოს ფერით და ნახატით?\n'
-            'მნიშვნელოვანია: ფერი უნდა ემთხვეოდეს! ნარინჯისფერი ≠ წითელი, ლურჯი ≠ იისფერი.\n'
-            'თუ არცერთი ფერით არ ჰგავს — ცარიელი სია.\n'
-            'JSON: {"matches": ["CODE1", "CODE2"]} ან {"matches": []}'
-        )))
-
-        try:
-            resp = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=[types.Content(role="user", parts=parts)],
-            )
-            resp_text = resp.text.strip() if resp.text else ""
-
-            if "{" in resp_text:
-                parsed = json.loads(resp_text[resp_text.index("{"):resp_text.rindex("}") + 1])
-                all_matches.extend(parsed.get("matches", []))
-        except Exception as e:
-            logger.error(f"Vision comparison batch failed: {e}")
-            continue
-
-    # Deduplicate and limit to 3
-    seen = set()
-    unique: list[str] = []
-    for code in all_matches:
-        if code not in seen and code in _product_images:
-            seen.add(code)
-            unique.append(code)
-    return unique[:3]
+    desc = f"ფერის შედარება: ტოპ={scores[0][1]:.2f}" if scores else ""
+    return ImageAnalysisResult("product", desc, matches, str(scores[:5]))
