@@ -163,18 +163,24 @@ async def _send_product_images(
     client: httpx.AsyncClient, fb_api: str, fb_params: dict,
     sender_id: str, result: dict,
 ) -> None:
-    """Send product images (code + front + back) after inventory check."""
+    """Send product images (code + front + back) after inventory check. No duplicates."""
     tool_data = result.get("tool_results_data", {})
     inventory_data = tool_data.get("check_inventory")
     if not inventory_data or not inventory_data.get("found"):
         return
 
+    sent_codes: set[str] = set()
     for item in inventory_data.get("items", []):
         code = item.get("code", "")
         front = item.get("image_url", "")
         back = item.get("image_url_back", "")
-        if not front:
+        if not front or not code:
             continue
+
+        # Skip duplicates
+        if code in sent_codes:
+            continue
+        sent_codes.add(code)
 
         # Send product code
         if code:
