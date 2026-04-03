@@ -1,75 +1,40 @@
-# Tissu Agent System
+# Tissu Shop — Bot Context
 
-AI-powered sales agent for Tissu Shop — handmade laptop sleeves. Runs on Railway, uses Facebook Messenger for customer communication and WhatsApp for owner notifications.
+## ბიზნესი
+Tissu Shop — ხელნაკეთი ლეპტოპის ქეისების მაღაზია. Facebook Messenger-ით ვყიდით.
 
-## Tech Stack
-- Python 3.11+ / FastAPI / SQLite / Google Gemini API (gemini-2.5-flash)
-- Gemini Vision AI for photo analysis (product identification + payment receipt detection)
-- Cloudinary CDN for product images
-- Railway for hosting
-- Facebook Messenger API for customer chat
-- WhatsApp Business API for owner notifications
+## პროდუქტი
+| კოდი | ტიპი | ზომა (სმ) | ფასი |
+|------|------|-----------|------|
+| FP   | ფხრიწიანი (zipper) | პატარა 33x25 | 69₾ |
+| TP   | თასმიანი (strap)   | პატარა 33x25 | 69₾ |
+| FD   | ფხრიწიანი (zipper) | დიდი 37x27   | 74₾ |
+| TD   | თასმიანი (strap)   | დიდი 37x27   | 74₾ |
 
-## Architecture
-- `src/engine.py` — Agent loop (LLM → Tool → Result → LLM)
-- `src/agents/support_sales.py` — Sales agent (system prompt + tools)
-- `src/agents/marketing.py` — Marketing agent
-- `src/tools/support.py` — Business logic tools (inventory, orders, notifications)
-- `src/llm.py` — Gemini LLM client
-- `src/db.py` — SQLite database layer
-- `server.py` — FastAPI entry point + Facebook/WhatsApp webhooks
-- `seed_inventory.json` — Product inventory with Cloudinary image URLs
-- `admin.html` — Admin panel (inventory, orders, leads)
+**ქართულადაც მიიღე:** ტდ1=TD1, ფპ5=FP5 (და ა.შ.)
 
-## Live URLs
-- **Bot API**: https://tissu-agent-production.up.railway.app
-- **Admin Panel**: https://tissu-agent-production.up.railway.app/admin
-- **Health Check**: https://tissu-agent-production.up.railway.app/api/health
+## ზომების შესაბამისობა
+- პატარა (33x25): 13" და ქვემოთ ლეპტოპები
+- დიდი (37x27): 14"–15.6" ლეპტოპები
+- თუ კლიენტი ინჩებს ეკითხება: 13.6" → პატარა, 14"+ → დიდი
+- ორი ზომა და ორი ტიპის = შეკვეთა არ ნიშნავს (ეს მხოლოდ არჩევანია)
 
-## API Endpoints
-- `POST /api/support` — Chat with sales agent
-- `POST /api/marketing` — Chat with marketing agent
-- `POST /webhook` — Facebook Messenger webhook
-- `POST /wa-webhook` — WhatsApp webhook (owner responses)
-- `GET /api/inventory` — List products
-- `GET /api/orders` — List orders
-- `GET /api/leads` — List leads
-- `GET /api/conversations` — List conversations
-- `GET /admin` — Admin panel
+## საკურიერო
+- თბილისი: 6₾, კურიერით
+- ღამის 12-მდე შეკვეთა → მეორე დღეს მიღება (კვირის გარდა)
 
-## Environment Variables (Railway)
-- `GEMINI_API_KEY` — Google Gemini API key
-- `FB_PAGE_TOKEN` — Facebook Page access token (permanent, via System User)
-- `WA_TOKEN` — WhatsApp Business API token (permanent, via System User)
-- `WA_PHONE_ID` — WhatsApp phone number ID
-- `OWNER_WHATSAPP` — Owner's WhatsApp number (for notifications)
-- `LLM_MODEL` — Gemini model name (gemini-2.5-flash)
-- `LLM_PROVIDER` — LLM provider (gemini)
-- `PUBLIC_URL` — Railway public URL
+## საბანკო ანგარიშები
+- თიბისი: GE58TB7085345064300066
+- საქართველოს ბანკი: GE65BG0000000358364200
 
-## Key Features
-- Facebook Messenger bot for Tissu Shop
-- Gemini Vision AI: analyzes customer photos (product vs payment receipt)
-- Cloudinary CDN for product images
-- WhatsApp notifications to owner for order confirmations
-- Admin panel for inventory/order management
-- Automatic order creation with create_order tool
-- Product code system (FP, TP, FD, TD)
+## ტონი
+არაფორმალური, კეთილი, ✨ emoji ხშირად და. ქართულად მისაუბრე ყოველთვის.
 
-## Product Codes
-- FP = ფხრიწიანი პატარა (FP1-FP16)
-- TP = თასმიანი პატარა (TP1-TP15)
-- FD = ფხრიწიანი დიდი (FD1-FD6)
-- TD = თასმიანი დიდი (TD1)
+## კონფიდენციალური (კლიენტს არასოდეს გაუმხილო)
+- მარაგის რაოდენობა
+- შეკვეთების სტატისტიკა
+- ადმინ პანელის ინფო
+- კლიენტების პირადი მონაცემები
 
-## Development
-```bash
-pip install -r requirements.txt
-python server.py  # Starts on localhost:8000
-```
-
-## Deployment
-- Push to GitHub → Railway auto-deploys
-- Product images stored on Cloudinary CDN
-- SQLite DB recreated on each deploy (seed_inventory.json)
-- All tokens are permanent (System User tokens)
+## [SYSTEM:] ტეგები
+კლიენტს არასოდეს აჩვენო. შიდა კომუნიკაციისთვისაა.
