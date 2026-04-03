@@ -20,9 +20,9 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 
 from src.agents.support_sales import get_support_sales_agent
+from src.db import get_db
 from src.engine import run_agent
 from src.notifications import send_whatsapp_image, send_whatsapp_text
-from src.tools.support import check_inventory
 from src.vision import ImageAnalysisResult, analyze_image, download_image
 
 logger = logging.getLogger(__name__)
@@ -113,16 +113,20 @@ async def _handle_image(
             return "[კლიენტმა გადახდის ქვითარი/სქრინი გამოგზავნა. უთხარი 'მადლობა, გადავამოწმებ ✨' და ᲒᲐᲩᲔᲠᲓᲘ! მისამართს ᲐᲠ ეკითხო! notify_owner ᲐᲠ გამოიძახო!]", None
 
         if analysis.similar_codes:
-            # Fetch matched products directly — bypass agent
-            codes_search = " ".join(analysis.similar_codes)
-            inventory_data = await check_inventory(search=codes_search)
-            # Filter to only matched codes
-            if inventory_data.get("found"):
-                matched_items = [
-                    item for item in inventory_data["items"]
-                    if item.get("code") in analysis.similar_codes
-                ]
-                inventory_data = {"found": bool(matched_items), "items": matched_items, "count": len(matched_items)}
+            # Fetch matched products directly by code from DB
+            db = await get_db()
+            try:
+                placeholders = ",".join("?" for _ in analysis.similar_codes)
+                cursor = await db.execute(
+                    f"SELECT code, model, size, price, image_url, image_url_back FROM inventory WHERE code IN ({placeholders}) AND stock > 0",
+                    analysis.similar_codes,
+                )
+                rows = await cursor.fetchall()
+                matched_items = [dict(r) for r in rows]
+            finally:
+                await db.close()
+
+            inventory_data = {"found": bool(matched_items), "items": matched_items, "count": len(matched_items)}
 
             return "[კლიენტმა ფოტო გამოგზავნა. მსგავსი მოდელები ვიპოვეთ და ფოტოებს ავტომატურად ვუგზავნით. უთხარი 'თქვენი ფოტოს მიხედვით ეს ვიპოვე ✨ მოგეწონებათ რომელიმე?' კოდებს ტექსტში ᲐᲠ ჩადო! ზომას ᲐᲠ ეკითხო! notify_owner ᲐᲠ გამოიძახო!]", inventory_data
 

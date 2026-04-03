@@ -87,10 +87,9 @@ async def _extract_colors_from_bytes(image_bytes: bytes) -> list[dict]:
 
 
 async def _extract_colors_batch(image_urls: list[tuple[str, str]]) -> dict[str, list[dict]]:
-    """Extract colors for multiple product images via batch API call.
+    """Extract colors for multiple product images via Cloud Vision API.
 
-    Args: list of (code, image_url) tuples. Max 16 per batch.
-    Returns: {code: [color_data]}
+    Downloads each image and sends as base64 (works with any URL type).
     """
     api_key = _get_api_key()
     if not api_key:
@@ -98,32 +97,44 @@ async def _extract_colors_batch(image_urls: list[tuple[str, str]]) -> dict[str, 
 
     results: dict[str, list[dict]] = {}
 
-    # Cloud Vision API supports up to 16 images per request
+    # Download all images first
+    downloaded: list[tuple[str, bytes]] = []
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+        for code, url in image_urls:
+            try:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    downloaded.append((code, resp.content))
+            except Exception as e:
+                logger.warning(f"Failed to download {code}: {e}")
+
+    if not downloaded:
+        return {}
+
+    # Send to Vision API in batches of 16 (base64)
     batch_size = 16
-    for i in range(0, len(image_urls), batch_size):
-        batch = image_urls[i:i + batch_size]
-        requests_body = {
-            "requests": [
-                {
-                    "image": {"source": {"imageUri": url}},
-                    "features": [{"type": "IMAGE_PROPERTIES", "maxResults": 10}],
-                }
-                for _code, url in batch
-            ],
-        }
+    for i in range(0, len(downloaded), batch_size):
+        batch = downloaded[i:i + batch_size]
+        requests_list = [
+            {
+                "image": {"content": base64.b64encode(img_bytes).decode()},
+                "features": [{"type": "IMAGE_PROPERTIES", "maxResults": 10}],
+            }
+            for _code, img_bytes in batch
+        ]
 
         try:
             async with httpx.AsyncClient(timeout=60) as client:
                 resp = await client.post(
                     f"{VISION_API_URL}?key={api_key}",
-                    json=requests_body,
+                    json={"requests": requests_list},
                 )
             data = resp.json()
 
-            for idx, (code, _url) in enumerate(batch):
+            for idx, (code, _img) in enumerate(batch):
                 response = data.get("responses", [])[idx] if idx < len(data.get("responses", [])) else {}
                 if "error" in response:
-                    logger.error(f"Vision API error for {code}: {response['error']}")
+                    logger.warning(f"Vision API error for {code}: {response['error'].get('message', '')[:100]}")
                     continue
                 colors = (
                     response.get("imagePropertiesAnnotation", {})
@@ -215,20 +226,43 @@ def compare_colors(profile1: list[dict], profile2: list[dict]) -> float:
 # ── Product Color Loading (lazy) ──────────────────────────────
 
 async def _ensure_product_colors() -> None:
-    """Load product colors from Cloud Vision API (lazy, cached in memory)."""
+    """Load product colors from Cloud Vision API (lazy, cached in memory).
+
+    Uses Cloudinary URLs from seed_inventory.json (always correct),
+    falling back to DB image_url if not found.
+    """
     global _product_colors, _colors_loaded
 
     if _colors_loaded:
         return
 
+    # Load Cloudinary URLs from seed_inventory.json
+    import json
+    from pathlib import Path
+    seed_file = Path(__file__).parent.parent / "seed_inventory.json"
+    cloudinary_urls: dict[str, str] = {}
+    if seed_file.exists():
+        for item in json.loads(seed_file.read_text()):
+            url = item.get("image_url", "")
+            if url.startswith("http"):
+                cloudinary_urls[item.get("code", "")] = url
+
+    # Get product codes from DB (only in-stock items)
     db = await get_db()
     try:
         cursor = await db.execute(
             "SELECT code, image_url FROM inventory WHERE stock > 0 AND image_url IS NOT NULL AND image_url != ''"
         )
-        products = [(dict(r)["code"], dict(r)["image_url"]) for r in await cursor.fetchall()]
+        db_products = {dict(r)["code"]: dict(r)["image_url"] for r in await cursor.fetchall()}
     finally:
         await db.close()
+
+    # Build URL list: prefer Cloudinary, fall back to DB
+    products: list[tuple[str, str]] = []
+    for code in db_products:
+        url = cloudinary_urls.get(code) or db_products[code]
+        if url.startswith("http"):
+            products.append((code, url))
 
     if not products:
         _colors_loaded = True
