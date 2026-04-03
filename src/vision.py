@@ -335,12 +335,14 @@ async def analyze_image(image_bytes: bytes, conversation_id: str) -> ImageAnalys
     # Step 2: Extract customer photo colors (Cloud Vision API)
     customer_colors = await _extract_colors_from_bytes(image_bytes)
     if not customer_colors:
-        return ImageAnalysisResult("product", "ფერების ამოცნობა ვერ მოხერხდა", [], "")
+        logger.warning("Cloud Vision API failed for customer photo")
+        return ImageAnalysisResult("product", "", [], "")
 
     # Step 3: Ensure product colors are loaded
     await _ensure_product_colors()
     if not _product_colors:
-        return ImageAnalysisResult("product", "პროდუქტების ფერები ვერ ჩაიტვირთა", [], "")
+        logger.warning("No product color data available")
+        return ImageAnalysisResult("product", "", [], "")
 
     # Step 4: Compare colors
     scores: list[tuple[str, float]] = []
@@ -350,9 +352,9 @@ async def analyze_image(image_bytes: bytes, conversation_id: str) -> ImageAnalys
 
     scores.sort(key=lambda x: x[1], reverse=True)
 
-    # Always return top 3 (customer's phone photo will differ from product photo)
-    # Minimum threshold 0.50 to avoid totally wrong matches
-    matches = [code for code, score in scores[:3] if score >= 0.50]
+    # Always return top 3 — customer's phone photo will look very different
+    # from product photo (lighting, angle, background). Trust the ranking.
+    matches = [code for code, _score in scores[:3]]
 
     top_info = ", ".join(f"{c}={s:.2f}" for c, s in scores[:5])
     return ImageAnalysisResult("product", f"ტოპ: {top_info}", matches, str(scores[:5]))

@@ -185,15 +185,12 @@ async def _process_message(
             fb_params = {"access_token": FB_PAGE_TOKEN}
 
             reply_text = result["reply"].strip()
-            # Clean internal instructions from reply
+            # Clean ALL [...] system tags from reply (must never reach customer)
+            reply_text = re.sub(r'\[[^\]]{10,}\]', '', reply_text).strip()
+            # Clean other internal patterns
             reply_text = re.sub(r'\(აქ ავტომატურად[^)]*\)', '', reply_text).strip()
-            reply_text = re.sub(r'\[SYSTEM:[^\]]*\]', '', reply_text).strip()
-            # Clean URLs, image references, file paths from reply
             reply_text = re.sub(r'https?://\S+', '', reply_text).strip()
-            reply_text = re.sub(r'\[Image[^\]]*\]', '', reply_text).strip()
-            reply_text = re.sub(r'\[Photo[^\]]*\]', '', reply_text).strip()
             reply_text = re.sub(r'/static/\S+', '', reply_text).strip()
-            # Clean leftover empty lines and brackets
             reply_text = re.sub(r'\n{3,}', '\n\n', reply_text).strip()
             if not reply_text:
                 if image_url:
