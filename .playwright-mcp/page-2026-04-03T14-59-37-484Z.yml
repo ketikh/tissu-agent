@@ -1,0 +1,265 @@
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - complementary "Skip links" [ref=e5]:
+        - link "Skip to main content" [ref=e6] [cursor=pointer]:
+          - /url: /
+          - generic [ref=e7]: Skip to main content
+        - button "Keyboard shortcuts" [ref=e8]:
+          - generic [ref=e9]: Keyboard shortcuts
+        - link "Accessibility Help external, opens new window" [ref=e10] [cursor=pointer]:
+          - /url: https://cloud.google.com/docs/accessibility?hl=en_US
+          - generic [ref=e11]:
+            - text: Accessibility Help
+            - generic "external, opens new window" [ref=e12]:
+              - img "external, opens new window" [ref=e13]:
+                - img [ref=e14]
+        - link "Accessibility Feedback external, opens new window" [ref=e16] [cursor=pointer]:
+          - /url: https://support.google.com/accessibility/contact/feedback?hl=en_US
+          - generic [ref=e17]:
+            - text: Accessibility Feedback
+            - generic "external, opens new window" [ref=e18]:
+              - img "external, opens new window" [ref=e19]:
+                - img [ref=e20]
+      - banner [ref=e23]:
+        - generic [ref=e24]:
+          - navigation [ref=e27]:
+            - button "Navigation menu (.)" [ref=e28] [cursor=pointer]:
+              - img [ref=e30]
+          - link "Google Cloud Platform Home" [ref=e32] [cursor=pointer]:
+            - /url: /
+            - generic:
+              - img
+          - button "You're currently working in tissu-bot. Hit enter to switch projects, folders, or organizations" [ref=e195]:
+            - generic [ref=e196]:
+              - img [ref=e198]
+              - generic [ref=e201]: tissu-bot
+        - search "Google Cloud Platform" [ref=e46]:
+          - combobox [ref=e47]:
+            - searchbox "Enter query to search for resources, docs, products, and more" [ref=e48]
+          - button "See all search results" [disabled]:
+            - generic:
+              - img
+            - generic: Search
+        - generic [ref=e49]:
+          - generic [ref=e50]:
+            - button "Open or close Gemini Cloud Assist chat (Option G)" [ref=e205] [cursor=pointer]:
+              - img [ref=e207]
+            - button "Activate Cloud Shell (G then S)" [ref=e209] [cursor=pointer]:
+              - img [ref=e211]
+            - button "2 unread notifications. Open notifications" [ref=e213] [cursor=pointer]:
+              - generic [ref=e216]: "2"
+            - button "Settings and utilities" [ref=e65] [cursor=pointer]:
+              - img [ref=e67]
+          - 'button "Account: Tissu (tissu.georgia@gmail.com)" [ref=e219]':
+            - img [ref=e220]
+    - generic [ref=e80]:
+      - status "Communication" [ref=e227]:
+        - img [ref=e230]:
+          - img [ref=e231]
+        - generic [ref=e233]:
+          - generic [ref=e235]: You are now incurring charges in your billing account My Billing Account, as of April 2, 2026.
+          - link "Read more about Google Cloud" [ref=e236] [cursor=pointer]:
+            - /url: https://cloud.google.com/free/docs/free-cloud-features#understanding-costs
+            - text: Learn more
+        - button "Dismiss" [ref=e238]:
+          - generic [ref=e239]: Dismiss
+        - button "View Costs In Billing" [ref=e241]:
+          - generic [ref=e242]: View Costs In Billing
+      - generic [ref=e91]:
+        - navigation "APIs & Services" [ref=e98]:
+          - generic [ref=e99]:
+            - generic [ref=e100]:
+              - heading "APIs & Services" [level=2] [ref=e101]:
+                - link "APIs & Services" [ref=e102] [cursor=pointer]:
+                  - /url: /apis
+                  - img [ref=e105]
+                  - generic [ref=e109]: APIs & Services
+              - button "Favorite APIs & Services to top" [ref=e245] [cursor=pointer]:
+                - img [ref=e247]
+            - list "Enabled APIs & services, 1 of 5 Library, 2 of 5 Credentials, 3 of 5 OAuth consent screen, 4 of 5 Page usage agreements, 5 of 5" [ref=e113]:
+              - listitem [ref=e114]:
+                - link "Enabled APIs & services, 1 of 5" [ref=e118] [cursor=pointer]:
+                  - /url: /apis/dashboard
+                  - generic [ref=e119]:
+                    - img [ref=e122]
+                    - generic [ref=e124]: Enabled APIs & services
+              - listitem [ref=e125]:
+                - link "Library, 2 of 5" [ref=e129] [cursor=pointer]:
+                  - /url: /apis/library
+                  - generic [ref=e130]:
+                    - img [ref=e133]
+                    - generic [ref=e135]: Library
+              - listitem [ref=e136]:
+                - link "Credentials, 3 of 5" [ref=e140] [cursor=pointer]:
+                  - /url: /apis/credentials
+                  - generic [ref=e141]:
+                    - img [ref=e144]
+                    - generic [ref=e146]: Credentials
+              - listitem [ref=e147]:
+                - link "OAuth consent screen, 4 of 5" [ref=e151] [cursor=pointer]:
+                  - /url: /apis/credentials/consent
+                  - generic [ref=e152]:
+                    - img [ref=e155]
+                    - generic [ref=e157]: OAuth consent screen
+              - listitem [ref=e158]:
+                - link "Page usage agreements, 5 of 5" [ref=e162] [cursor=pointer]:
+                  - /url: /apis/agreements
+                  - generic [ref=e163]:
+                    - img [ref=e166]
+                    - generic [ref=e169]: Page usage agreements
+            - button "Toggle APIs & Services navigation menu" [pressed] [ref=e172] [cursor=pointer]:
+              - img [ref=e175]
+        - main [ref=e178]:
+          - generic [ref=e254]:
+            - generic [ref=e257]:
+              - heading "Credentials" [level=1] [ref=e260]:
+                - generic [ref=e261]: Credentials
+              - generic [ref=e265]:
+                - generic [ref=e266]:
+                  - button "Create credential" [expanded] [active] [ref=e268]:
+                    - generic [ref=e269]:
+                      - img [ref=e271]:
+                        - img [ref=e272]
+                      - text: Create credentials
+                    - img [ref=e275]
+                  - button "Delete credential" [disabled] [ref=e279]:
+                    - img [ref=e281]:
+                      - img [ref=e282]
+                    - generic [ref=e284]: Delete
+                - button "Restore deleted credentials" [ref=e285] [cursor=pointer]:
+                  - generic [ref=e286]:
+                    - img [ref=e288]:
+                      - img [ref=e289]
+                    - text: Restore deleted credentials
+            - generic [ref=e298]:
+              - paragraph [ref=e300]:
+                - text: Create credentials to access your enabled APIs.
+                - link "Learn more about this feature external, opens new window" [ref=e301] [cursor=pointer]:
+                  - /url: https://cloud.google.com/docs/authentication
+                  - text: Learn more
+                  - img "external, opens new window" [ref=e302]:
+                    - img [ref=e303]
+              - status [ref=e306]:
+                - img "Warning" [ref=e307]:
+                  - img [ref=e308]
+                - generic [ref=e310]:
+                  - generic [ref=e312]: Remember to configure the OAuth consent screen with information about your application.
+                  - link "Configure consent screen" [ref=e314] [cursor=pointer]:
+                    - /url: /apis/credentials/consent?project=tissu-bot-492214
+                    - generic [ref=e315]: Configure consent screen
+              - generic [ref=e316]:
+                - heading "API Keys" [level=2] [ref=e318]
+                - grid "API Keys , Navigate table with arrow keys. Enter key to interact with cell. Tab to navigate inside cell. Escape to exit cell." [ref=e322]:
+                  - rowgroup [ref=e330]:
+                    - row "Row selection Status Name Creation date Restrictions Actions" [ref=e331] [cursor=pointer]:
+                      - gridcell "Row selection" [ref=e332]:
+                        - checkbox "Select all rows" [disabled] [ref=e333]
+                      - columnheader "Status" [ref=e334]:
+                        - img [ref=e338]
+                      - columnheader "Name" [ref=e340]:
+                        - generic [ref=e342]:
+                          - generic [ref=e343]: Name
+                          - button "Sort by Name" [ref=e344]:
+                            - img [ref=e346]
+                      - columnheader "Creation date" [ref=e348]:
+                        - generic [ref=e350]:
+                          - generic [ref=e351]: Creation date
+                          - button "Sort by Creation date" [ref=e352]:
+                            - img [ref=e354]
+                      - columnheader "Restrictions" [ref=e356]:
+                        - generic [ref=e358]:
+                          - generic [ref=e359]: Restrictions
+                          - button "Sort by Restrictions" [ref=e360]:
+                            - img [ref=e362]
+                      - columnheader "Actions" [ref=e364]:
+                        - generic [ref=e366]: Actions
+                  - rowgroup [ref=e367]:
+                    - row "No API keys to display" [ref=e368] [cursor=pointer]:
+                      - gridcell "No API keys to display" [ref=e369]
+              - generic [ref=e370]:
+                - heading "OAuth 2.0 Client IDs" [level=2] [ref=e372]
+                - grid "OAuth 2.0 Client IDs , Navigate table with arrow keys. Enter key to interact with cell. Tab to navigate inside cell. Escape to exit cell." [ref=e376]:
+                  - rowgroup [ref=e384]:
+                    - row "Row selection Name Creation date Type Client ID Actions" [ref=e385] [cursor=pointer]:
+                      - gridcell "Row selection" [ref=e386]:
+                        - checkbox "Select all rows" [disabled] [ref=e387]
+                      - columnheader "Name" [ref=e388]:
+                        - generic [ref=e390]:
+                          - generic [ref=e391]: Name
+                          - button "Sort by Name" [ref=e392]:
+                            - img [ref=e394]
+                      - columnheader "Creation date" [ref=e396]:
+                        - generic [ref=e398]:
+                          - generic [ref=e399]: Creation date
+                          - button "Sort by Creation date" [ref=e400]:
+                            - img [ref=e402]
+                      - columnheader "Type" [ref=e404]:
+                        - generic [ref=e406]:
+                          - generic [ref=e407]: Type
+                          - button "Sort by Type" [ref=e408]:
+                            - img [ref=e410]
+                      - columnheader "Client ID" [ref=e412]:
+                        - generic [ref=e414]:
+                          - generic [ref=e415]: Client ID
+                          - button "Sort by Client ID" [ref=e416]:
+                            - img [ref=e418]
+                      - columnheader "Actions" [ref=e420]:
+                        - generic [ref=e422]: Actions
+                  - rowgroup [ref=e423]:
+                    - row "No OAuth clients to display" [ref=e424] [cursor=pointer]:
+                      - gridcell "No OAuth clients to display" [ref=e425]
+              - generic [ref=e426]:
+                - generic [ref=e427]:
+                  - heading "Service Accounts" [level=2] [ref=e428]
+                  - link "Manage service accounts" [ref=e432] [cursor=pointer]:
+                    - /url: /iam-admin/serviceaccounts?project=tissu-bot-492214
+                - grid "Service Accounts , Navigate table with arrow keys. Enter key to interact with cell. Tab to navigate inside cell. Escape to exit cell." [ref=e436]:
+                  - rowgroup [ref=e442]:
+                    - row "Row selection Email Name Actions" [ref=e443] [cursor=pointer]:
+                      - gridcell "Row selection" [ref=e444]:
+                        - checkbox "Select all rows" [disabled] [ref=e445]
+                      - columnheader "Email" [ref=e446]:
+                        - generic [ref=e448]:
+                          - generic [ref=e449]: Email
+                          - button "Sort by Email" [ref=e450]:
+                            - img [ref=e452]
+                      - columnheader "Name" [ref=e454]:
+                        - generic [ref=e456]:
+                          - generic [ref=e457]: Name
+                          - button "Sort by Name" [ref=e458]:
+                            - img [ref=e460]
+                      - columnheader "Actions" [ref=e462]:
+                        - generic [ref=e464]: Actions
+                  - rowgroup [ref=e465]:
+                    - row "No service accounts to display" [ref=e466] [cursor=pointer]:
+                      - gridcell "No service accounts to display" [ref=e467]
+  - iframe [ref=e193]:
+    
+  - iframe [ref=e469]:
+    
+  - iframe [ref=e470]:
+    
+  - menu "Create credential" [ref=e473]:
+    - generic [ref=e474]:
+      - generic [ref=e476]:
+        - menuitem "API key . Identifies your project using a simple API key to check quota and access" [ref=e478] [cursor=pointer]:
+          - generic [ref=e481]:
+            - generic [ref=e483]: API key
+            - generic [ref=e484]: .
+            - generic [ref=e486]: Identifies your project using a simple API key to check quota and access
+        - menuitem "OAuth client ID . Requests user consent so your app can access the user's data" [ref=e488] [cursor=pointer]:
+          - generic [ref=e491]:
+            - generic [ref=e493]: OAuth client ID
+            - generic [ref=e494]: .
+            - generic [ref=e496]: Requests user consent so your app can access the user's data
+        - menuitem "Service account . Enables server-to-server, app-level authentication using robot accounts" [ref=e498] [cursor=pointer]:
+          - generic [ref=e501]:
+            - generic [ref=e503]: Service account
+            - generic [ref=e504]: .
+            - generic [ref=e506]: Enables server-to-server, app-level authentication using robot accounts
+      - menuitem "Help me choose . Asks a few questions to help you decide which type of credential to use" [ref=e510] [cursor=pointer]:
+        - generic [ref=e513]:
+          - generic [ref=e515]: Help me choose
+          - generic [ref=e516]: .
+          - generic [ref=e518]: Asks a few questions to help you decide which type of credential to use

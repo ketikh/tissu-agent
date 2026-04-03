@@ -1,0 +1,57 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - complementary "Skip links" [ref=e5]:
+        - link "Skip to main content" [ref=e6] [cursor=pointer]:
+          - /url: /
+          - generic [ref=e7]: Skip to main content
+        - button "Keyboard shortcuts" [ref=e8]:
+          - generic [ref=e9]: Keyboard shortcuts
+        - link "Accessibility Help external, opens new window" [ref=e10] [cursor=pointer]:
+          - /url: https://cloud.google.com/docs/accessibility?hl=en_US
+          - generic [ref=e11]:
+            - text: Accessibility Help
+            - generic "external, opens new window" [ref=e12]:
+              - img "external, opens new window" [ref=e13]:
+                - img [ref=e14]
+        - link "Accessibility Feedback external, opens new window" [ref=e16] [cursor=pointer]:
+          - /url: https://support.google.com/accessibility/contact/feedback?hl=en_US
+          - generic [ref=e17]:
+            - text: Accessibility Feedback
+            - generic "external, opens new window" [ref=e18]:
+              - img "external, opens new window" [ref=e19]:
+                - img [ref=e20]
+      - banner [ref=e23]:
+        - generic [ref=e24]:
+          - navigation [ref=e27]:
+            - button "Navigation menu (.)" [ref=e28] [cursor=pointer]:
+              - img [ref=e30]
+          - link "Google Cloud Platform Home" [ref=e32] [cursor=pointer]:
+            - /url: /
+            - generic:
+              - img
+          - button "No project selected. Hit enter to select a project, folder, or organization." [ref=e40]
+        - button "Open search" [ref=e47] [cursor=pointer]:
+          - img [ref=e49]
+        - generic [ref=e51]:
+          - generic [ref=e52]:
+            - generic [ref=e55]:
+              - button "Activate Cloud Shell (G then S)" [disabled]:
+                - generic:
+                  - img
+            - button "Open notifications" [ref=e59] [cursor=pointer]:
+              - img [ref=e61]
+            - button "Settings and utilities" [ref=e67] [cursor=pointer]:
+              - img [ref=e69]
+          - img [ref=e73]
+    - main [ref=e94]:
+      - progressbar [ref=e102]:
+        - img [ref=e104]
+        - generic [ref=e107]:
+          - img [ref=e109]
+          - img [ref=e112]
+          - img [ref=e115]
+  - iframe [ref=e118]:
+    
+  - iframe [ref=e120]:
+    

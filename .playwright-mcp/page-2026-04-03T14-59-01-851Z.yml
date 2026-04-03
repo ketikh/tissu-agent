@@ -1,0 +1,95 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - complementary "Skip links" [ref=e5]:
+        - link "Skip to main content" [ref=e6] [cursor=pointer]:
+          - /url: /
+          - generic [ref=e7]: Skip to main content
+        - button "Keyboard shortcuts" [ref=e8]:
+          - generic [ref=e9]: Keyboard shortcuts
+        - link "Accessibility Help external, opens new window" [ref=e10] [cursor=pointer]:
+          - /url: https://cloud.google.com/docs/accessibility?hl=en_US
+          - generic [ref=e11]:
+            - text: Accessibility Help
+            - generic "external, opens new window" [ref=e12]:
+              - img "external, opens new window" [ref=e13]:
+                - img [ref=e14]
+        - link "Accessibility Feedback external, opens new window" [ref=e16] [cursor=pointer]:
+          - /url: https://support.google.com/accessibility/contact/feedback?hl=en_US
+          - generic [ref=e17]:
+            - text: Accessibility Feedback
+            - generic "external, opens new window" [ref=e18]:
+              - img "external, opens new window" [ref=e19]:
+                - img [ref=e20]
+      - banner [ref=e23]:
+        - generic [ref=e24]:
+          - navigation [ref=e27]:
+            - button "Navigation menu (.)" [ref=e28] [cursor=pointer]:
+              - img [ref=e30]
+          - link "Google Cloud Platform Home" [ref=e32] [cursor=pointer]:
+            - /url: /
+            - generic:
+              - img
+          - button "You're currently working in tissu-bot. Hit enter to switch projects, folders, or organizations" [ref=e121]:
+            - generic [ref=e122]:
+              - img [ref=e124]
+              - generic [ref=e127]: tissu-bot
+        - search "Google Cloud Platform" [ref=e871]:
+          - combobox [ref=e872]:
+            - searchbox "Enter query to search for resources, docs, products, and more" [ref=e873]
+          - button "See all search results" [disabled]:
+            - generic:
+              - img
+            - generic: Search
+        - generic [ref=e51]:
+          - generic [ref=e52]:
+            - button "Open or close Gemini Cloud Assist chat (Option G)" [ref=e131] [cursor=pointer]:
+              - img [ref=e133]
+            - button "Activate Cloud Shell (G then S)" [ref=e135] [cursor=pointer]:
+              - img [ref=e137]
+            - button "Task in progress. Open notifications" [ref=e874] [cursor=pointer]:
+              - generic:
+                - progressbar:
+                  - generic:
+                    - img
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                      - generic:
+                        - img
+                      - generic:
+                        - img
+                - generic:
+                  - generic:
+                    - img
+            - button "Settings and utilities" [ref=e67] [cursor=pointer]:
+              - img [ref=e69]
+          - 'button "Account: Tissu (tissu.georgia@gmail.com)" [ref=e145]':
+            - img [ref=e146]
+    - generic [ref=e82]:
+      - status "Communication" [ref=e153]:
+        - img [ref=e156]:
+          - img [ref=e157]
+        - generic [ref=e159]:
+          - generic [ref=e161]: You are now incurring charges in your billing account My Billing Account, as of April 2, 2026.
+          - link "Read more about Google Cloud" [ref=e162] [cursor=pointer]:
+            - /url: https://cloud.google.com/free/docs/free-cloud-features#understanding-costs
+            - text: Learn more
+        - button "Dismiss" [ref=e164]:
+          - generic [ref=e165]: Dismiss
+        - button "View Costs In Billing" [ref=e167]:
+          - generic [ref=e168]: View Costs In Billing
+      - main [ref=e94]:
+        - progressbar [ref=e876]:
+          - img [ref=e878]
+          - generic [ref=e881]:
+            - img [ref=e883]
+            - img [ref=e886]
+            - img [ref=e889]
+  - iframe [ref=e118]:
+    
+  - iframe [ref=e120]:
+    
+  - iframe [ref=e892]:
+    

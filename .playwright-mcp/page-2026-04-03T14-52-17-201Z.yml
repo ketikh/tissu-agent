@@ -1,0 +1,31 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - progressbar [ref=e6]
+      - main [ref=e14]:
+        - generic [ref=e15]:
+          - img [ref=e18]
+          - generic [ref=e23]:
+            - heading "Verify it’s you" [level=1] [ref=e24]
+            - generic [ref=e31]: kate.khukhia@gmail.com
+        - generic [ref=e40]: To help keep your account secure, Google needs to verify it’s you. Please sign in again to continue to Google Cloud Platform.
+        - button "Next" [ref=e46] [cursor=pointer]:
+          - generic [ref=e49]: Next
+    - contentinfo [ref=e53]:
+      - combobox "Change language English (United States)" [ref=e57] [cursor=pointer]:
+        - generic:
+          - generic: English (United States)
+        - generic:
+          - img
+      - list [ref=e59]:
+        - listitem [ref=e60]:
+          - link "Help" [ref=e61] [cursor=pointer]:
+            - /url: https://support.google.com/accounts?hl=en&p=account_iph
+        - listitem [ref=e62]:
+          - link "Privacy" [ref=e63] [cursor=pointer]:
+            - /url: https://accounts.google.com/TOS?loc=GE&hl=en&privacy=true
+        - listitem [ref=e64]:
+          - link "Terms" [ref=e65] [cursor=pointer]:
+            - /url: https://accounts.google.com/TOS?loc=GE&hl=en
+  - iframe [ref=e66]:
+    

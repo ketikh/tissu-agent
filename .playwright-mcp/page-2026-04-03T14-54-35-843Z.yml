@@ -1,0 +1,316 @@
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - complementary "Skip links" [ref=e5]:
+        - link "Skip to main content" [ref=e6] [cursor=pointer]:
+          - /url: /
+          - generic [ref=e7]: Skip to main content
+        - button "Keyboard shortcuts" [ref=e8]:
+          - generic [ref=e9]: Keyboard shortcuts
+        - link "Accessibility Help external, opens new window" [ref=e10] [cursor=pointer]:
+          - /url: https://cloud.google.com/docs/accessibility?hl=en_US
+          - generic [ref=e11]:
+            - text: Accessibility Help
+            - generic "external, opens new window" [ref=e12]:
+              - img "external, opens new window" [ref=e13]:
+                - img [ref=e14]
+        - link "Accessibility Feedback external, opens new window" [ref=e16] [cursor=pointer]:
+          - /url: https://support.google.com/accessibility/contact/feedback?hl=en_US
+          - generic [ref=e17]:
+            - text: Accessibility Feedback
+            - generic "external, opens new window" [ref=e18]:
+              - img "external, opens new window" [ref=e19]:
+                - img [ref=e20]
+      - banner [ref=e23]:
+        - generic [ref=e24]:
+          - navigation [ref=e27]:
+            - button "Navigation menu (.)" [ref=e28] [cursor=pointer]:
+              - img [ref=e30]
+          - link "Google Cloud Platform Home" [ref=e32] [cursor=pointer]:
+            - /url: /
+            - generic:
+              - img
+        - search "Google Cloud Platform" [ref=e37]:
+          - combobox [ref=e38]:
+            - searchbox "Enter query to search for resources, docs, products, and more" [ref=e39]
+          - button "See all search results" [disabled]:
+            - generic:
+              - img
+            - generic: Search
+        - generic [ref=e40]:
+          - generic [ref=e41]:
+            - button "Open or close Gemini Cloud Assist chat (Option G)" [ref=e675] [cursor=pointer]:
+              - img [ref=e677]
+            - button "Activate Cloud Shell (G then S)" [ref=e110] [cursor=pointer]:
+              - img [ref=e112]
+            - button "1 unread notifications. Open notifications" [ref=e48] [cursor=pointer]:
+              - generic [ref=e51]: "1"
+            - button "Settings and utilities" [ref=e56] [cursor=pointer]:
+              - img [ref=e58]
+          - 'button "Account: Tissu (tissu.georgia@gmail.com)" [ref=e116]':
+            - img [ref=e117]
+    - generic [ref=e71]:
+      - navigation "Breadcrumb" [ref=e355]:
+        - link "Billing" [ref=e358] [cursor=pointer]:
+          - /url: /billing
+          - img [ref=e361]
+          - generic [ref=e370]: Billing
+        - list [ref=e371]:
+          - listitem [ref=e941]:
+            - generic [ref=e942]: /
+            - link "Credits" [ref=e945] [cursor=pointer]:
+              - /url: /billing/01C9C4-45ECC4-157445/credits?organizationId=559287353278
+              - generic [ref=e947]: Credits
+          - listitem [ref=e948]:
+            - generic [ref=e949]: /
+            - link "All Credits" [ref=e952] [cursor=pointer]:
+              - /url: /billing/01C9C4-45ECC4-157445/credits/all?organizationId=559287353278
+              - generic [ref=e954]: All Credits
+      - generic [ref=e82]:
+        - navigation "Billing" [ref=e385]:
+          - generic [ref=e386]:
+            - generic [ref=e387]:
+              - generic [ref=e393]:
+                - generic [ref=e394]: Billing account
+                - combobox "My Billing Account 1" [ref=e395]:
+                  - generic [ref=e396]:
+                    - generic [ref=e397]: My Billing Account 1
+                    - img [ref=e399]:
+                      - img [ref=e400]
+              - generic [ref=e402]:
+                - group [ref=e403]:
+                  - list "Overview, 1 of 1" [ref=e404]:
+                    - listitem [ref=e405]:
+                      - link "Overview, 1 of 1" [ref=e409] [cursor=pointer]:
+                        - /url: /billing/01C9C4-45ECC4-157445
+                        - generic [ref=e410]:
+                          - img [ref=e413]
+                          - generic [ref=e415]: Overview
+                - group "Cost management" [ref=e416]:
+                  - heading "Cost management" [level=3] [ref=e421]:
+                    - button "Cost management" [disabled] [expanded] [ref=e422]:
+                      - generic [ref=e425]: Cost management
+                  - list "Cost management" [ref=e426]:
+                    - listitem [ref=e427]:
+                      - link "Reports, 1 of 6" [ref=e431] [cursor=pointer]:
+                        - /url: /billing/01C9C4-45ECC4-157445/reports
+                        - generic [ref=e432]:
+                          - img [ref=e435]
+                          - generic [ref=e437]: Reports
+                    - listitem [ref=e438]:
+                      - link "Cost table, 2 of 6" [ref=e442] [cursor=pointer]:
+                        - /url: /billing/01C9C4-45ECC4-157445/reports/tabular
+                        - generic [ref=e443]:
+                          - img [ref=e446]
+                          - generic [ref=e448]: Cost table
+                    - listitem [ref=e449]:
+                      - link "Cost breakdown, 3 of 6" [ref=e453] [cursor=pointer]:
+                        - /url: /billing/01C9C4-45ECC4-157445/reports/cost-breakdown
+                        - generic [ref=e454]:
+                          - img [ref=e457]
+                          - generic [ref=e459]: Cost breakdown
+                    - listitem [ref=e460]:
+                      - link "Budgets & alerts, 4 of 6" [ref=e464] [cursor=pointer]:
+                        - /url: /billing/01C9C4-45ECC4-157445/budgets
+                        - generic [ref=e465]:
+                          - img [ref=e468]
+                          - generic [ref=e470]: Budgets & alerts
+                    - listitem [ref=e471]:
+                      - link "Billing export, 5 of 6" [ref=e475] [cursor=pointer]:
+                        - /url: /billing/01C9C4-45ECC4-157445/export?organizationId=559287353278
+                        - generic [ref=e476]:
+                          - img [ref=e479]
+                          - generic [ref=e481]: Billing export
+                    - listitem [ref=e482]:
+                      - link "Anomalies, 6 of 6" [ref=e486] [cursor=pointer]:
+                        - /url: /billing/01C9C4-45ECC4-157445/anomalies?organizationId=559287353278
+                        - generic [ref=e487]:
+                          - img [ref=e490]
+                          - generic [ref=e492]: Anomalies
+                - group "Cost optimization" [ref=e493]:
+                  - heading "Cost optimization" [level=3] [ref=e498]:
+                    - button "Cost optimization" [disabled] [expanded] [ref=e499]:
+                      - generic [ref=e502]: Cost optimization
+                  - list "Cost optimization" [ref=e503]:
+                    - listitem [ref=e504]:
+                      - link "FinOps hub, 1 of 6" [ref=e508] [cursor=pointer]:
+                        - /url: /billing/01C9C4-45ECC4-157445/optimize
+                        - generic [ref=e509]:
+                          - img [ref=e512]
+                          - generic [ref=e514]: FinOps hub
+                    - listitem [ref=e515]:
+                      - link "Committed use discounts (CUDs), 2 of 6" [ref=e519] [cursor=pointer]:
+                        - /url: /billing/01C9C4-45ECC4-157445/reports/commitments
+                        - generic [ref=e520]:
+                          - img [ref=e523]
+                          - generic [ref=e525]: Committed use discounts (CUDs)
+                    - listitem [ref=e526]:
+                      - link "CUD analysis, 3 of 6" [ref=e530] [cursor=pointer]:
+                        - /url: /billing/01C9C4-45ECC4-157445/commitments/analysis
+                        - generic [ref=e531]:
+                          - img [ref=e534]
+                          - generic [ref=e536]: CUD analysis
+                    - listitem [ref=e537]:
+                      - link "Pricing, 4 of 6" [ref=e541] [cursor=pointer]:
+                        - /url: /billing/01C9C4-45ECC4-157445/pricing
+                        - generic [ref=e542]:
+                          - img [ref=e545]
+                          - generic [ref=e547]: Pricing
+                    - listitem [ref=e548]:
+                      - link "Cost estimation, 5 of 6" [ref=e552] [cursor=pointer]:
+                        - /url: /billing/01C9C4-45ECC4-157445/estimate
+                        - generic [ref=e553]:
+                          - img [ref=e556]
+                          - generic [ref=e559]: Cost estimation
+                    - listitem [ref=e560]:
+                      - link "Credits, 6 of 6" [ref=e564] [cursor=pointer]:
+                        - /url: /billing/01C9C4-45ECC4-157445/credits?organizationId=559287353278
+                        - generic [ref=e565]:
+                          - img [ref=e568]
+                          - generic [ref=e570]: Credits
+                - group "Payments" [ref=e571]:
+                  - heading "Payments" [level=3] [ref=e576]:
+                    - button "Payments" [disabled] [expanded] [ref=e577]:
+                      - generic [ref=e580]: Payments
+                  - list "Payments" [ref=e581]:
+                    - listitem [ref=e582]:
+                      - link "Invoices, 1 of 4" [ref=e586] [cursor=pointer]:
+                        - /url: /billing/01C9C4-45ECC4-157445/invoices
+                        - generic [ref=e587]:
+                          - img [ref=e590]
+                          - generic [ref=e592]: Invoices
+                    - listitem [ref=e593]:
+                      - link "Transactions, 2 of 4" [ref=e597] [cursor=pointer]:
+                        - /url: /billing/01C9C4-45ECC4-157445/history
+                        - generic [ref=e598]:
+                          - img [ref=e601]
+                          - generic [ref=e603]: Transactions
+                    - listitem [ref=e604]:
+                      - link "Payment settings, 3 of 4" [ref=e608] [cursor=pointer]:
+                        - /url: /billing/01C9C4-45ECC4-157445/profile
+                        - generic [ref=e609]:
+                          - img [ref=e612]
+                          - generic [ref=e614]: Payment settings
+                    - listitem [ref=e615]:
+                      - link "Payment method, 4 of 4" [ref=e619] [cursor=pointer]:
+                        - /url: /billing/01C9C4-45ECC4-157445/settings
+                        - generic [ref=e620]:
+                          - img [ref=e623]
+                          - generic [ref=e625]: Payment method
+                - group "Billing management" [ref=e626]:
+                  - heading "Billing management" [level=3] [ref=e631]:
+                    - button "Billing management" [disabled] [expanded] [ref=e632]:
+                      - generic [ref=e635]: Billing management
+                  - list "Billing management" [ref=e636]:
+                    - listitem [ref=e637]:
+                      - link "Account management, 1 of 1" [ref=e641] [cursor=pointer]:
+                        - /url: /billing/01C9C4-45ECC4-157445/manage
+                        - generic [ref=e642]:
+                          - img [ref=e645]
+                          - generic [ref=e647]: Account management
+            - button "Explore Billing Release Notes" [ref=e653]:
+              - img [ref=e655]:
+                - img [ref=e656]
+              - generic [ref=e658]: Release Notes
+            - button "Toggle Billing navigation menu" [pressed] [ref=e661] [cursor=pointer]:
+              - img [ref=e664]
+        - main [active] [ref=e83]:
+          - generic [ref=e960]:
+            - heading "Credits" [level=1] [ref=e966]:
+              - generic [ref=e967]: Credits
+            - tablist "Tabs for credits views" [ref=e968]:
+              - tab "Issued Credits" [selected] [ref=e972] [cursor=pointer]:
+                - generic [ref=e975]: Issued Credits
+            - tabpanel "Issued Credits" [ref=e978]:
+              - generic [ref=e981]:
+                - paragraph [ref=e982]:
+                  - text: View and download credit details here.
+                  - generic [ref=e983]:
+                    - text: Active committed use discounts are not included here and can be viewed on the
+                    - link "Go to the commitments page" [ref=e984] [cursor=pointer]:
+                      - /url: /billing/01C9C4-45ECC4-157445/reports/commitments?organizationId=559287353278
+                      - text: Commitments page
+                    - text: .
+                - generic [ref=e985]:
+                  - generic [ref=e988]:
+                    - generic [ref=e989]:
+                      - img [ref=e991]
+                      - generic [ref=e993]: Filter
+                      - group "Filter" [ref=e994]:
+                        - combobox "Filter" [ref=e996]: Filter credits
+                      - button "Help with filtering." [ref=e998] [cursor=pointer]:
+                        - img [ref=e1000]
+                      - button "Download CSV" [ref=e1004]:
+                        - img [ref=e1006]
+                        - generic [ref=e1008]: Download CSV
+                    - button "Column display options..." [ref=e1012] [cursor=pointer]:
+                      - img [ref=e1014]
+                  - treegrid "Credits table , Navigate the tree grid rows with the up and down arrow keys. Right and left arrow keys to expand or collapse rows, if available. Right arrow key to navigate data within expanded or non-expandable row. Enter key to interact with cell. Tab to navigate inside cell. Escape to exit cell." [ref=e1019]:
+                    - rowgroup [ref=e1032]:
+                      - row "Credit name Status Percent remaining Remaining value Original value Type Credit ID Scope Start date End date Credit application type" [ref=e1033]:
+                        - columnheader "Credit name" [ref=e1034]:
+                          - generic [ref=e1036] [cursor=pointer]:
+                            - generic [ref=e1037]: Credit name
+                            - button "Sort by Credit name" [ref=e1038]:
+                              - img [ref=e1040]
+                        - columnheader "Status" [ref=e1042]:
+                          - generic [ref=e1044] [cursor=pointer]:
+                            - generic [ref=e1045]: Status
+                            - button "Sort by Status" [ref=e1046]:
+                              - img [ref=e1048]
+                        - columnheader "Percent remaining" [ref=e1050]:
+                          - generic [ref=e1052] [cursor=pointer]:
+                            - generic [ref=e1053]: Percent remaining
+                            - button "Sort by Percent remaining" [ref=e1054]:
+                              - img [ref=e1056]
+                        - columnheader "Remaining value" [ref=e1058]:
+                          - generic [ref=e1060] [cursor=pointer]:
+                            - generic [ref=e1061]: Remaining value
+                            - button "Sort by Remaining value" [ref=e1062]:
+                              - img [ref=e1064]
+                        - columnheader "Original value" [ref=e1066]:
+                          - generic [ref=e1068] [cursor=pointer]:
+                            - generic [ref=e1069]: Original value
+                            - button "Sort by Original value" [ref=e1070]:
+                              - img [ref=e1072]
+                        - columnheader "Type" [ref=e1074]:
+                          - generic [ref=e1076] [cursor=pointer]:
+                            - generic [ref=e1077]: Type
+                            - button "Sort by Type" [ref=e1078]:
+                              - img [ref=e1080]
+                        - columnheader "Credit ID" [ref=e1082]:
+                          - generic [ref=e1084] [cursor=pointer]:
+                            - generic [ref=e1085]: Credit ID
+                            - button "Sort by Credit ID" [ref=e1086]:
+                              - img [ref=e1088]
+                        - columnheader "Scope" [ref=e1090]:
+                          - generic [ref=e1092] [cursor=pointer]:
+                            - generic [ref=e1093]:
+                              - text: Usage scope
+                              - button "Scope help info" [ref=e1094]:
+                                - img [ref=e1096]:
+                                  - img [ref=e1097]
+                            - button "Sort by Scope" [ref=e1099]:
+                              - img [ref=e1101]
+                        - columnheader "Start date" [ref=e1103]:
+                          - generic [ref=e1105] [cursor=pointer]:
+                            - generic [ref=e1106]: Start date
+                            - button "Sort by Start date" [ref=e1107]:
+                              - img [ref=e1109]
+                        - columnheader "End date" [ref=e1111]:
+                          - generic [ref=e1113] [cursor=pointer]:
+                            - generic [ref=e1114]: End date
+                            - button "Sort by End date" [ref=e1115]:
+                              - img [ref=e1117]
+                        - columnheader "Credit application type" [ref=e1119]:
+                          - generic [ref=e1121] [cursor=pointer]:
+                            - generic [ref=e1122]: Credit application type
+                            - button "Sort by Credit application type" [ref=e1123]:
+                              - img [ref=e1125]
+                    - rowgroup [ref=e1127]:
+                      - row "No credits to display" [ref=e1128]:
+                        - gridcell "No credits to display" [ref=e1129]
+  - iframe [ref=e107]:
+    
+  - iframe [ref=e108]:
+    

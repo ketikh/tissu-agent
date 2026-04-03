@@ -1,0 +1,24 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - heading "Tissu Agent" [level=1] [ref=e4]
+      - generic [ref=e5]: Customer Support & Sales
+    - generic [ref=e6]:
+      - button "Support + Sales" [ref=e7] [cursor=pointer]
+      - button "Marketing" [ref=e8] [cursor=pointer]
+  - generic [ref=e9]:
+    - generic [ref=e10]: "Customer:"
+    - textbox "Name" [ref=e11]
+    - textbox "Email" [ref=e12]
+    - generic [ref=e13]: "Product:"
+    - textbox "Interest" [ref=e14]
+    - generic [ref=e15]: "Channel:"
+    - combobox [ref=e16]:
+      - option "Web" [selected]
+      - option "Messenger"
+      - option "Instagram"
+      - option "WhatsApp"
+  - generic [ref=e18]: Agent is ready. Type a message to start.
+  - generic [ref=e19]:
+    - textbox "Write a message..." [ref=e20]
+    - button "Send" [ref=e21] [cursor=pointer]

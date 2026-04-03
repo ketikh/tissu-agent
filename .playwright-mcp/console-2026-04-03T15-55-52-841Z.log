@@ -1,0 +1,2 @@
+[    2973ms] [INFO] [O11Y] [DatadogRUM] Initialized {service: claude-ai, env: production, version: 9843a1d5b8} @ https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:1
+[    4449ms] [INFO] [Intercom] Launcher is disabled in settings or current page does not match display conditions @ https://js.intercomcdn.com/frame-modern.40aacdf2.js:0

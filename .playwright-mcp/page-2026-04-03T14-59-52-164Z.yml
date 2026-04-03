@@ -1,0 +1,312 @@
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - complementary [ref=e519]:
+        - link [ref=e520] [cursor=pointer]:
+          - /url: /
+          - generic [ref=e7]: Skip to main content
+        - button [ref=e521]:
+          - generic [ref=e9]: Keyboard shortcuts
+        - link [ref=e522] [cursor=pointer]:
+          - /url: https://cloud.google.com/docs/accessibility?hl=en_US
+          - generic [ref=e11]:
+            - text: Accessibility Help
+            - img [ref=e524]:
+              - img [ref=e14]
+        - link [ref=e525] [cursor=pointer]:
+          - /url: https://support.google.com/accessibility/contact/feedback?hl=en_US
+          - generic [ref=e17]:
+            - text: Accessibility Feedback
+            - img [ref=e527]:
+              - img [ref=e20]
+      - banner [ref=e23]:
+        - generic [ref=e24]:
+          - navigation [ref=e27]:
+            - button [ref=e528] [cursor=pointer]:
+              - img [ref=e30]
+          - link [ref=e529] [cursor=pointer]:
+            - /url: /
+            - generic:
+              - img
+          - button [ref=e530]:
+            - generic [ref=e196]:
+              - img [ref=e198]
+              - generic [ref=e201]: tissu-bot
+        - search [ref=e531]:
+          - combobox [ref=e47]:
+            - searchbox [ref=e532]
+          - button [disabled]:
+            - generic:
+              - img
+            - generic: Search
+        - generic [ref=e49]:
+          - generic [ref=e50]:
+            - button [ref=e533] [cursor=pointer]:
+              - img [ref=e207]
+            - button [ref=e534] [cursor=pointer]:
+              - img [ref=e211]
+            - button [ref=e535] [cursor=pointer]:
+              - generic [ref=e216]: "2"
+            - button [ref=e536] [cursor=pointer]:
+              - img [ref=e67]
+          - button [ref=e537]:
+            - img [ref=e220]
+    - generic [ref=e80]:
+      - status [ref=e538]:
+        - img [ref=e230]:
+          - img [ref=e231]
+        - generic [ref=e233]:
+          - generic [ref=e235]: You are now incurring charges in your billing account My Billing Account, as of April 2, 2026.
+          - link [ref=e539] [cursor=pointer]:
+            - /url: https://cloud.google.com/free/docs/free-cloud-features#understanding-costs
+            - text: Learn more
+        - button [ref=e540]:
+          - generic [ref=e239]: Dismiss
+        - button [ref=e541]:
+          - generic [ref=e242]: View Costs In Billing
+      - generic [ref=e91]:
+        - navigation [ref=e542]:
+          - generic [ref=e99]:
+            - generic [ref=e100]:
+              - heading [level=2] [ref=e543]:
+                - link [ref=e544] [cursor=pointer]:
+                  - /url: /apis
+                  - img [ref=e105]
+                  - generic [ref=e109]: APIs & Services
+              - button [ref=e545] [cursor=pointer]:
+                - img [ref=e247]
+            - list [ref=e546]:
+              - listitem [ref=e114]:
+                - link [ref=e547] [cursor=pointer]:
+                  - /url: /apis/dashboard
+                  - generic [ref=e119]:
+                    - img [ref=e122]
+                    - generic [ref=e124]: Enabled APIs & services
+              - listitem [ref=e125]:
+                - link [ref=e548] [cursor=pointer]:
+                  - /url: /apis/library
+                  - generic [ref=e130]:
+                    - img [ref=e133]
+                    - generic [ref=e135]: Library
+              - listitem [ref=e136]:
+                - link [ref=e549] [cursor=pointer]:
+                  - /url: /apis/credentials
+                  - generic [ref=e141]:
+                    - img [ref=e144]
+                    - generic [ref=e146]: Credentials
+              - listitem [ref=e147]:
+                - link [ref=e550] [cursor=pointer]:
+                  - /url: /apis/credentials/consent
+                  - generic [ref=e152]:
+                    - img [ref=e155]
+                    - generic [ref=e157]: OAuth consent screen
+              - listitem [ref=e158]:
+                - link [ref=e551] [cursor=pointer]:
+                  - /url: /apis/agreements
+                  - generic [ref=e163]:
+                    - img [ref=e166]
+                    - generic [ref=e169]: Page usage agreements
+            - button [pressed] [ref=e552] [cursor=pointer]:
+              - img [ref=e175]
+        - main [ref=e178]:
+          - generic [ref=e254]:
+            - generic [ref=e257]:
+              - heading [level=1] [ref=e553]:
+                - generic [ref=e261]: Credentials
+              - generic [ref=e265]:
+                - generic [ref=e266]:
+                  - button [ref=e554]:
+                    - generic [ref=e269]:
+                      - img [ref=e271]:
+                        - img [ref=e272]
+                      - text: Create credentials
+                    - img [ref=e275]
+                  - button [disabled] [ref=e555]:
+                    - img [ref=e281]:
+                      - img [ref=e282]
+                    - generic [ref=e284]: Delete
+                - button [ref=e556] [cursor=pointer]:
+                  - generic [ref=e286]:
+                    - img [ref=e288]:
+                      - img [ref=e289]
+                    - text: Restore deleted credentials
+            - generic [ref=e298]:
+              - paragraph [ref=e300]:
+                - text: Create credentials to access your enabled APIs.
+                - link [ref=e557] [cursor=pointer]:
+                  - /url: https://cloud.google.com/docs/authentication
+                  - text: Learn more
+                  - img [ref=e558]:
+                    - img [ref=e303]
+              - status [ref=e306]:
+                - img [ref=e559]:
+                  - img [ref=e308]
+                - generic [ref=e310]:
+                  - generic [ref=e312]: Remember to configure the OAuth consent screen with information about your application.
+                  - link [ref=e560] [cursor=pointer]:
+                    - /url: /apis/credentials/consent?project=tissu-bot-492214
+                    - generic [ref=e315]: Configure consent screen
+              - generic [ref=e316]:
+                - heading [level=2] [ref=e561]: API Keys
+                - grid [ref=e562]:
+                  - rowgroup [ref=e330]:
+                    - row [ref=e563] [cursor=pointer]:
+                      - gridcell [ref=e564]:
+                        - checkbox [disabled] [ref=e565]
+                      - columnheader [ref=e566]:
+                        - img [ref=e338]
+                      - columnheader [ref=e567]:
+                        - generic [ref=e342]:
+                          - generic [ref=e343]: Name
+                          - button [ref=e568]:
+                            - img [ref=e346]
+                      - columnheader [ref=e569]:
+                        - generic [ref=e350]:
+                          - generic [ref=e351]: Creation date
+                          - button [ref=e570]:
+                            - img [ref=e354]
+                      - columnheader [ref=e571]:
+                        - generic [ref=e358]:
+                          - generic [ref=e359]: Restrictions
+                          - button [ref=e572]:
+                            - img [ref=e362]
+                      - columnheader [ref=e573]:
+                        - generic [ref=e366]: Actions
+                  - rowgroup [ref=e367]:
+                    - row [ref=e574] [cursor=pointer]:
+                      - gridcell [ref=e575]: No API keys to display
+              - generic [ref=e370]:
+                - heading [level=2] [ref=e576]: OAuth 2.0 Client IDs
+                - grid [ref=e577]:
+                  - rowgroup [ref=e384]:
+                    - row [ref=e578] [cursor=pointer]:
+                      - gridcell [ref=e579]:
+                        - checkbox [disabled] [ref=e580]
+                      - columnheader [ref=e581]:
+                        - generic [ref=e390]:
+                          - generic [ref=e391]: Name
+                          - button [ref=e582]:
+                            - img [ref=e394]
+                      - columnheader [ref=e583]:
+                        - generic [ref=e398]:
+                          - generic [ref=e399]: Creation date
+                          - button [ref=e584]:
+                            - img [ref=e402]
+                      - columnheader [ref=e585]:
+                        - generic [ref=e406]:
+                          - generic [ref=e407]: Type
+                          - button [ref=e586]:
+                            - img [ref=e410]
+                      - columnheader [ref=e587]:
+                        - generic [ref=e414]:
+                          - generic [ref=e415]: Client ID
+                          - button [ref=e588]:
+                            - img [ref=e418]
+                      - columnheader [ref=e589]:
+                        - generic [ref=e422]: Actions
+                  - rowgroup [ref=e423]:
+                    - row [ref=e590] [cursor=pointer]:
+                      - gridcell [ref=e591]: No OAuth clients to display
+              - generic [ref=e426]:
+                - generic [ref=e427]:
+                  - heading [level=2] [ref=e592]: Service Accounts
+                  - link [ref=e593] [cursor=pointer]:
+                    - /url: /iam-admin/serviceaccounts?project=tissu-bot-492214
+                    - text: Manage service accounts
+                - grid [ref=e594]:
+                  - rowgroup [ref=e442]:
+                    - row [ref=e595] [cursor=pointer]:
+                      - gridcell [ref=e596]:
+                        - checkbox [disabled] [ref=e597]
+                      - columnheader [ref=e598]:
+                        - generic [ref=e448]:
+                          - generic [ref=e449]: Email
+                          - button [ref=e599]:
+                            - img [ref=e452]
+                      - columnheader [ref=e600]:
+                        - generic [ref=e456]:
+                          - generic [ref=e457]: Name
+                          - button [ref=e601]:
+                            - img [ref=e460]
+                      - columnheader [ref=e602]:
+                        - generic [ref=e464]: Actions
+                  - rowgroup [ref=e465]:
+                    - row [ref=e603] [cursor=pointer]:
+                      - gridcell [ref=e604]: No service accounts to display
+  - iframe [ref=e193]:
+    
+  - iframe [ref=e469]:
+    
+  - iframe [ref=e470]:
+    
+  - dialog "Create API key" [ref=e606]:
+    - generic [ref=e612]:
+      - generic [ref=e615]:
+        - heading "Create API key" [level=1] [ref=e618]:
+          - generic [ref=e619]: Create API key
+        - button "Close" [ref=e625] [cursor=pointer]:
+          - img [ref=e627]
+      - generic [ref=e635]:
+        - generic [ref=e636]:
+          - generic [ref=e638] [cursor=pointer]:
+            - generic [ref=e639]:
+              - text: Name
+              - generic [ref=e640]: "*"
+            - textbox "Name" [ref=e642]: API key 1
+          - generic [ref=e645]: Use a unique name to identify your API key
+        - generic [ref=e647]:
+          - generic [ref=e648]:
+            - heading "APIs that can be accessed using this key" [level=2] [ref=e649]
+            - button "Help with api restrictions" [ref=e651] [cursor=pointer]:
+              - img [ref=e653]
+          - generic [ref=e655]:
+            - generic [ref=e657] [cursor=pointer]:
+              - generic [ref=e658]:
+                - text: Select API restrictions
+                - generic [ref=e659]: "*"
+              - combobox "Select API restrictions" [ref=e661]:
+                - generic [ref=e662]:
+                  - generic [ref=e664]: No APIs selected
+                  - img [ref=e666]
+            - generic [ref=e670]:
+              - text: This list includes only APIs enabled in this project. If you don't see the API you need, visit the
+              - link "API Library" [ref=e671] [cursor=pointer]:
+                - /url: /apis/library?project=tissu-bot-492214
+              - text: to enable it.
+          - list
+        - generic [ref=e673]:
+          - generic [ref=e675]:
+            - generic:
+              - checkbox "Authenticate API calls through a service account" [disabled]
+              - generic:
+                - img
+            - generic [ref=e676]: Authenticate API calls through a service account
+          - generic [ref=e677]: API calls made by this key will authenticate as the bound service account. This option is required to access some APIs such as Vertex AI.
+        - group [ref=e678]:
+          - heading "Restrict your key to reduce security risks" [level=2] [ref=e679]
+          - paragraph [ref=e680]: Select a specific application type to restrict access
+          - generic [ref=e681]:
+            - heading "Application restrictions" [level=3] [ref=e682]
+            - button "Help with application restrictions" [ref=e684] [cursor=pointer]:
+              - img [ref=e686]
+          - radiogroup "Application restrictions" [ref=e689]:
+            - generic [ref=e691]:
+              - radio "None" [checked] [ref=e693] [cursor=pointer]
+              - generic [ref=e697] [cursor=pointer]: None
+            - generic [ref=e699]:
+              - radio "Websites" [ref=e701] [cursor=pointer]
+              - generic [ref=e704] [cursor=pointer]: Websites
+            - generic [ref=e706]:
+              - radio "IP addresses" [ref=e708] [cursor=pointer]
+              - generic [ref=e711] [cursor=pointer]: IP addresses
+            - generic [ref=e713]:
+              - radio "Android apps" [ref=e715] [cursor=pointer]
+              - generic [ref=e718] [cursor=pointer]: Android apps
+            - generic [ref=e720]:
+              - radio "iOS apps" [ref=e722] [cursor=pointer]
+              - generic [ref=e725] [cursor=pointer]: iOS apps
+        - generic [ref=e726]:
+          - button "Create" [ref=e729]:
+            - generic [ref=e730]: Create
+          - button "Cancel" [ref=e731]:
+            - generic [ref=e732]: Cancel

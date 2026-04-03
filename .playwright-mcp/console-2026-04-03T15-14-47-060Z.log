@@ -1,0 +1,43 @@
+[   78166ms] [INFO] [O11Y] [DatadogRUM] Initialized {service: claude-ai, env: production, version: 9843a1d5b8} @ https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:1
+[   78920ms] [ERROR] Access to fetch at 'https://a-cdn.claude.ai/params/sri/EEA5F558-D6AC-4C03-B678-AABF639EE69A' from origin 'https://claude.ai' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource. @ https://claude.ai/login:0
+[   78921ms] [ERROR] Failed to load resource: net::ERR_FAILED @ https://a-cdn.claude.ai/params/sri/EEA5F558-D6AC-4C03-B678-AABF639EE69A:0
+[   79944ms] [WARNING] [Intercom] The App ID in your code snippet has not been set. Set it to your App ID found in settings to complete installation: https://app.intercom.com/a/apps/_/settings/web @ https://js.intercomcdn.com/frame-modern.07a29025.js:0
+[   92239ms] [INFO] Clear-Site-Data header on 'https://claude.ai/api/auth/logout': Cleared data types: "storage". @ https://claude.ai/logout:0
+[   92371ms] [ERROR] TypeError: Failed to fetch
+    at i (https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:3:109971)
+    at Wu (https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:2:72270)
+    at u (https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:3:54117)
+    at Array.map (<anonymous>)
+    at r (https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:3:54551)
+    at https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:3:54659 @ https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:2
+[   92647ms] [INFO] [O11Y] [DatadogRUM] Initialized {service: claude-ai, env: production, version: 9843a1d5b8} @ https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:1
+[   92857ms] [ERROR] Failed to load resource: the server responded with a status of 403 () @ https://claude.ai/api/bootstrap/423896d1-39e8-4888-a1e7-f4ffaf31466e/app_start?statsig_hashing_algorithm=djb2&growthbook_format=sdk&include_system_prompts=false:0
+[   93578ms] [ERROR] Access to fetch at 'https://a-cdn.claude.ai/params/sri/EEA5F558-D6AC-4C03-B678-AABF639EE69A' from origin 'https://claude.ai' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource. @ https://claude.ai/login?from=logout:0
+[   93578ms] [ERROR] Failed to load resource: net::ERR_FAILED @ https://a-cdn.claude.ai/params/sri/EEA5F558-D6AC-4C03-B678-AABF639EE69A:0
+[   94178ms] [WARNING] [Intercom] The App ID in your code snippet has not been set. Set it to your App ID found in settings to complete installation: https://app.intercom.com/a/apps/_/settings/web @ https://js.intercomcdn.com/frame-modern.07a29025.js:0
+[   96557ms] [ERROR] Cross-Origin-Opener-Policy policy would block the window.closed call. @ https://accounts.google.com/gsi/client:131
+[   96557ms] [ERROR] Cross-Origin-Opener-Policy policy would block the window.closed call. @ https://accounts.google.com/gsi/client:131
+[  212620ms] [ERROR] Cross-Origin-Opener-Policy policy would block the window.closed call. @ https://accounts.google.com/gsi/client:131
+[  212620ms] [ERROR] Cross-Origin-Opener-Policy policy would block the window.closed call. @ https://accounts.google.com/gsi/client:131
+[  215125ms] [ERROR] Cross-Origin-Opener-Policy policy would block the window.closed call. @ https://accounts.google.com/gsi/client:131
+[  215125ms] [ERROR] Cross-Origin-Opener-Policy policy would block the window.closed call. @ https://accounts.google.com/gsi/client:131
+[  217130ms] [ERROR] Cross-Origin-Opener-Policy policy would block the window.closed call. @ https://accounts.google.com/gsi/client:131
+[  217130ms] [ERROR] Cross-Origin-Opener-Policy policy would block the window.closed call. @ https://accounts.google.com/gsi/client:131
+[  218701ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://claude.ai/api/bootstrap/423896d1-39e8-4888-a1e7-f4ffaf31466e/app_start?statsig_hashing_algorithm=djb2&growthbook_format=sdk&include_system_prompts=false:0
+[  218705ms] [ERROR] [REACT_QUERY_CLIENT] QueryClient error: vo: Not found
+    at Co (https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:2:5905)
+    at https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:3:72562
+    at async https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:3:73872 @ https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:2
+[  218963ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://claude.ai/api/bootstrap/423896d1-39e8-4888-a1e7-f4ffaf31466e/app_start?statsig_hashing_algorithm=djb2&growthbook_format=sdk&include_system_prompts=false:0
+[  319461ms] [INFO] [COMPLETION] Starting completion request (attempt 1, mode=legacy) @ https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:1
+[  322281ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://code.c&size=32:0
+[  378790ms] [INFO] [COMPLETION] Completion request succeeded on attempt 1 @ https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:1
+[  404337ms] [WARNING] ProseMirror expects the CSS white-space property to be set, preferably to 'pre-wrap'. It is recommended to load style/prosemirror.css from the prosemirror-view package. @ https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:39
+[  577185ms] [INFO] [COMPLETION] Starting completion request (attempt 1, mode=legacy) @ https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:1
+[  594690ms] [INFO] [COMPLETION] Completion request succeeded on attempt 1 @ https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:1
+[  668835ms] [INFO] [COMPLETION] Starting completion request (attempt 1, mode=legacy) @ https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:1
+[  679196ms] [INFO] [COMPLETION] Completion request succeeded on attempt 1 @ https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:1
+[  679723ms] [INFO] [COMPLETION] Starting completion request (attempt 1, mode=legacy) @ https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:1
+[  679786ms] [WARNING] [COMPLETION] message_store_sync_blocked {conversation_uuid: e85f56ae-ece2-41f6-8451-97bc48750d1a, prev_tree_count: 8, new_tree_count: 6, tree_lost_count: 2, current_path_count: 6} @ https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:1
+[  687928ms] [INFO] [COMPLETION] Completion request succeeded on attempt 1 @ https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:1
+[  716921ms] [INFO] [COMPLETION] Starting completion request (attempt 1, mode=legacy) @ https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/index-DeEKGoAx.js:1

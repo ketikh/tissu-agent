@@ -1,0 +1,62 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - complementary "Skip links" [ref=e5]:
+        - link "Skip to main content" [ref=e6] [cursor=pointer]:
+          - /url: /
+          - generic [ref=e7]: Skip to main content
+        - button "Keyboard shortcuts" [ref=e8]:
+          - generic [ref=e9]: Keyboard shortcuts
+        - link "Accessibility Help external, opens new window" [ref=e10] [cursor=pointer]:
+          - /url: https://cloud.google.com/docs/accessibility?hl=en_US
+          - generic [ref=e11]:
+            - text: Accessibility Help
+            - generic "external, opens new window" [ref=e12]:
+              - img "external, opens new window" [ref=e13]:
+                - img [ref=e14]
+        - link "Accessibility Feedback external, opens new window" [ref=e16] [cursor=pointer]:
+          - /url: https://support.google.com/accessibility/contact/feedback?hl=en_US
+          - generic [ref=e17]:
+            - text: Accessibility Feedback
+            - generic "external, opens new window" [ref=e18]:
+              - img "external, opens new window" [ref=e19]:
+                - img [ref=e20]
+      - banner [ref=e23]:
+        - generic [ref=e24]:
+          - navigation [ref=e27]:
+            - button "Navigation menu (.)" [ref=e28] [cursor=pointer]:
+              - img [ref=e30]
+          - link "Google Cloud Platform Home" [ref=e32] [cursor=pointer]:
+            - /url: /
+            - generic:
+              - img
+        - search "Google Cloud Platform" [ref=e37]:
+          - combobox [ref=e38]:
+            - searchbox "Enter query to search for resources, docs, products, and more" [ref=e39]
+          - button "See all search results" [disabled]:
+            - generic:
+              - img
+            - generic: Search
+        - generic [ref=e40]:
+          - generic [ref=e41]:
+            - generic [ref=e44]:
+              - button "Activate Cloud Shell (G then S)" [disabled]:
+                - generic:
+                  - img
+            - button "1 unread notifications. Open notifications" [ref=e48] [cursor=pointer]:
+              - generic [ref=e51]: "1"
+            - button "Settings and utilities" [ref=e56] [cursor=pointer]:
+              - img [ref=e58]
+          - img [ref=e62]
+    - main [ref=e83]:
+      - progressbar [ref=e91]:
+        - img [ref=e93]
+        - generic [ref=e96]:
+          - img [ref=e98]
+          - img [ref=e101]
+          - img [ref=e104]
+  - iframe [ref=e107]:
+    
+  - iframe [ref=e108]:
+    
+  - paragraph
