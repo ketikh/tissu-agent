@@ -326,38 +326,109 @@ async def _is_payment_receipt(image_bytes: bytes, conversation_id: str) -> bool:
 # ── Main Analysis Function ─────────────────────────────────────
 
 async def analyze_image(image_bytes: bytes, conversation_id: str) -> ImageAnalysisResult:
-    """Analyze customer image — receipt or product color match."""
+    """Analyze customer image — receipt or product.
 
+    For products: hybrid approach:
+    1. Cloud Vision API — color pre-filter (37 → 8 candidates)
+    2. Gemini Vision — visual comparison of 8 candidates (accurate)
+    """
     # Step 1: Receipt check (Gemini)
     if await _is_payment_receipt(image_bytes, conversation_id):
-        return ImageAnalysisResult("payment_receipt", "გადახდის ქვითარი", [], "")
+        return ImageAnalysisResult("payment_receipt", "", [], "")
 
-    # Step 2: Extract customer photo colors (Cloud Vision API)
-    customer_colors = await _extract_colors_from_bytes(image_bytes)
-    if not customer_colors:
-        logger.warning("Cloud Vision API failed for customer photo")
-        return ImageAnalysisResult("product", "", [], "")
-
-    # Step 3: Ensure product colors are loaded
+    # Step 2: Color pre-filter (Cloud Vision API)
     await _ensure_product_colors()
-    if not _product_colors:
-        logger.warning("No product color data available")
+    candidates = await _get_color_candidates(image_bytes, top_n=8)
+
+    if not candidates:
+        # Fallback: if color matching fails, return empty
         return ImageAnalysisResult("product", "", [], "")
 
-    # Step 4: Compare colors
+    # Step 3: Visual comparison (Gemini) — only 8 candidates, not 37
+    matches = await _gemini_visual_compare(image_bytes, candidates)
+
+    return ImageAnalysisResult("product", "", matches, "")
+
+
+async def _get_color_candidates(image_bytes: bytes, top_n: int = 8) -> list[str]:
+    """Use Cloud Vision API to pre-filter products by color similarity."""
+    customer_colors = await _extract_colors_from_bytes(image_bytes)
+    if not customer_colors or not _product_colors:
+        return []
+
     scores: list[tuple[str, float]] = []
     for code, product_profile in _product_colors.items():
         similarity = compare_colors(customer_colors, product_profile)
         scores.append((code, similarity))
 
     scores.sort(key=lambda x: x[1], reverse=True)
+    return [code for code, _score in scores[:top_n]]
 
-    # Always return top 3 — customer's phone photo will look very different
-    # from product photo (lighting, angle, background). Trust the ranking.
-    matches = [code for code, _score in scores[:3]]
 
-    top_info = ", ".join(f"{c}={s:.2f}" for c, s in scores[:5])
-    return ImageAnalysisResult("product", f"ტოპ: {top_info}", matches, str(scores[:5]))
+async def _gemini_visual_compare(image_bytes: bytes, candidate_codes: list[str]) -> list[str]:
+    """Send customer photo + candidate product photos to Gemini for visual comparison."""
+    import json as _json
+    from pathlib import Path
+
+    client = _get_gemini_client()
+
+    # Load Cloudinary URLs from seed
+    seed_file = Path(__file__).parent.parent / "seed_inventory.json"
+    code_to_url: dict[str, str] = {}
+    if seed_file.exists():
+        for item in _json.loads(seed_file.read_text()):
+            url = item.get("image_url", "")
+            if url.startswith("http"):
+                code_to_url[item.get("code", "")] = url
+
+    # Download candidate images
+    parts: list[types.Part] = [
+        types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+        types.Part(text="⬆️ კლიენტის ფოტო. ქვემოთ ჩვენი კანდიდატები:\n\n"),
+    ]
+
+    loaded_codes: list[str] = []
+    for code in candidate_codes:
+        url = code_to_url.get(code)
+        if not url:
+            continue
+        img = await download_image(url)
+        if not img:
+            continue
+        loaded_codes.append(code)
+        parts.append(types.Part.from_bytes(data=img, mime_type="image/jpeg"))
+        parts.append(types.Part(text=f"⬆️ {code}\n"))
+
+    if not loaded_codes:
+        return candidate_codes[:3]
+
+    codes_str = ", ".join(loaded_codes)
+    parts.append(types.Part(text=(
+        f'\nკლიენტის ფოტო (პირველი) რომელ პროდუქტ(ებ)ს ჰგავს ყველაზე მეტად ({codes_str})?\n'
+        'ყურადღება: ფონის/ნაჭრის ფერი და ნახატის სტილი. ყვავილები ყველას აქვს — ფერი განასხვავებს.\n'
+        'დააბრუნე მხოლოდ ნამდვილად მსგავსი (ფერით!). თუ არცერთი — ცარიელი.\n'
+        'JSON: {"matches": ["CODE1", "CODE2"]}'
+    )))
+
+    try:
+        resp = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[types.Content(role="user", parts=parts)],
+        )
+        resp_text = resp.text.strip() if resp.text else ""
+
+        if "{" in resp_text:
+            parsed = _json.loads(resp_text[resp_text.index("{"):resp_text.rindex("}") + 1])
+            confirmed = parsed.get("matches", [])
+            # Filter to only valid codes
+            valid = [c for c in confirmed if c in loaded_codes]
+            if valid:
+                return valid[:3]
+    except Exception as e:
+        logger.error(f"Gemini visual comparison failed: {e}")
+
+    # Fallback to color-ranked top 3
+    return candidate_codes[:3]
 
 
 # ── Download helper (used by facebook.py) ──────────────────────
