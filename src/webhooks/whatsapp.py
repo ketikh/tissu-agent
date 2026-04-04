@@ -224,7 +224,7 @@ async def wa_webhook_receive(request: Request):
 
 @router.get("/api/owner-confirm/{conversation_id}")
 async def owner_confirm(conversation_id: str):
-    """Owner confirms order via link in WhatsApp."""
+    """Owner confirms payment via link in WhatsApp."""
     sender_id = _extract_sender_id(conversation_id)
     reply = await _handle_confirmation(conversation_id)
     await _send_to_customer(sender_id, reply)
@@ -233,8 +233,38 @@ async def owner_confirm(conversation_id: str):
 
 @router.get("/api/owner-deny/{conversation_id}")
 async def owner_deny(conversation_id: str):
-    """Owner denies order via link in WhatsApp."""
+    """Owner denies payment via link in WhatsApp."""
     sender_id = _extract_sender_id(conversation_id)
     reply = await _handle_denial(conversation_id)
     await _send_to_customer(sender_id, reply)
     return HTMLResponse("<h1>❌ უარყოფილია</h1><p>კლიენტს ეცნობა.</p>")
+
+
+@router.get("/api/photo-confirm/{conversation_id}")
+async def photo_confirm(conversation_id: str):
+    """Owner confirms product is in stock (photo match)."""
+    sender_id = _extract_sender_id(conversation_id)
+    agent = get_support_sales_agent()
+    result = await run_agent(
+        agent,
+        "[მფლობელმა დაადასტურა — კლიენტის ფოტოზე მოდელი მარაგშია. უთხარი 'გვაქვს მარაგში ✨' და გააგრძელე შეკვეთის flow: ეკითხე ფხრიწიანი თუ თასმიანი, მერე check_inventory გამოიძახე და აჩვენე]",
+        conversation_id,
+    )
+    reply = result["reply"].strip() or "გვაქვს მარაგში ✨ მოდელი მოგეწონებათ?"
+    await _send_to_customer(sender_id, reply)
+    return HTMLResponse("<h1>✅ მარაგშია!</h1><p>კლიენტს ეცნობა.</p>")
+
+
+@router.get("/api/photo-deny/{conversation_id}")
+async def photo_deny(conversation_id: str):
+    """Owner says product is not in stock (photo match)."""
+    sender_id = _extract_sender_id(conversation_id)
+    agent = get_support_sales_agent()
+    result = await run_agent(
+        agent,
+        "[მფლობელმა უარყო — კლიენტის ფოტოზე მოდელი არ არის მარაგში. უთხარი 'სამწუხაროდ ეს მოდელი ამჟამად აღარ გვაქვს ✨ სხვა ლამაზი მოდელები გაჩვენოთ?']",
+        conversation_id,
+    )
+    reply = result["reply"].strip() or "სამწუხაროდ ეს მოდელი ამჟამად აღარ გვაქვს ✨ სხვა ლამაზი მოდელები გაჩვენოთ?"
+    await _send_to_customer(sender_id, reply)
+    return HTMLResponse("<h1>❌ არ გვაქვს</h1><p>კლიენტს ეცნობა.</p>")

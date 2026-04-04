@@ -185,6 +185,30 @@ async def search_knowledge(query: str) -> dict:
         await db.close()
 
 
+# Pending customer photos: conversation_id -> image_bytes
+_pending_photos: dict[str, bytes] = {}
+
+
+async def forward_photo_to_owner(size: str, conversation_id: str = "") -> dict:
+    """Forward customer's pending photo to owner via WhatsApp with confirm/deny links."""
+    from src.notifications import send_whatsapp_image
+
+    photo_bytes = _pending_photos.get(conversation_id)
+    if not photo_bytes:
+        return {"forwarded": False, "message": "ფოტო ვერ მოიძებნა"}
+
+    public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
+    confirm_url = f"{public_url}/api/photo-confirm/{conversation_id}"
+    deny_url = f"{public_url}/api/photo-deny/{conversation_id}"
+
+    await send_whatsapp_image(
+        photo_bytes,
+        caption=f"📷 კლიენტი ეძებს ამ მოდელს, {size} ზომაში.\n\n✅ გვაქვს:\n{confirm_url}\n\n❌ არ გვაქვს:\n{deny_url}",
+    )
+
+    return {"forwarded": True, "message": "მფლობელს გადაეგზავნა, დაელოდე პასუხს"}
+
+
 SUPPORT_TOOLS = [
     Tool(
         name="check_inventory",
@@ -258,5 +282,17 @@ SUPPORT_TOOLS = [
             "required": ["query"],
         },
         handler=search_knowledge,
+    ),
+    Tool(
+        name="forward_photo_to_owner",
+        description="კლიენტის ფოტო მფლობელს გადაუგზავნე WhatsApp-ზე. მფლობელი გადაწყვეტს მარაგშია თუ არა. გამოიძახე მხოლოდ მას შემდეგ რაც კლიენტმა ზომა აირჩია.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "size": {"type": "string", "description": "'პატარა' ან 'დიდი'"},
+            },
+            "required": ["size"],
+        },
+        handler=forward_photo_to_owner,
     ),
 ]
