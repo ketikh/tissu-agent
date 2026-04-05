@@ -119,10 +119,11 @@ async def _process_message(
             if not reply_text:
                 reply_text = "გადავამოწმებ და მოგწერთ ✨"
 
-            await client.post(fb_api, params=fb_params, json={
+            fb_resp = await client.post(fb_api, params=fb_params, json={
                 "recipient": {"id": sender_id},
                 "message": {"text": reply_text[:2000]},
             })
+            print(f"[MSG] FB reply: {fb_resp.status_code} {fb_resp.text[:200]}", flush=True)
 
             await _send_product_images(client, fb_api, fb_params, sender_id, result)
 
