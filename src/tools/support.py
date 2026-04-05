@@ -194,16 +194,15 @@ async def forward_photo_to_owner(size: str, conversation_id: str = "") -> dict:
     import logging
     from src.notifications import send_whatsapp_image
 
-    logger = logging.getLogger(__name__)
-    logger.info(f"forward_photo_to_owner called: size={size}, conv_id={conversation_id}")
-    logger.info(f"Pending photos keys: {list(_pending_photos.keys())}")
+    print(f"[PHOTO] forward_photo_to_owner called: size={size}, conv_id={conversation_id}")
+    print(f"[PHOTO] Pending photos keys: {list(_pending_photos.keys())}")
 
     photo_bytes = _pending_photos.get(conversation_id)
     if not photo_bytes:
-        logger.error(f"Photo NOT FOUND for conversation_id={conversation_id}")
+        print(f"[PHOTO] ERROR: Photo NOT FOUND for conversation_id={conversation_id}")
         return {"forwarded": False, "message": "ფოტო ვერ მოიძებნა"}
 
-    logger.info(f"Photo found: {len(photo_bytes)} bytes")
+    print(f"[PHOTO] Photo found: {len(photo_bytes)} bytes")
 
     public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
     confirm_url = f"{public_url}/api/photo-confirm/{conversation_id}"
@@ -214,7 +213,7 @@ async def forward_photo_to_owner(size: str, conversation_id: str = "") -> dict:
         caption=f"📷 კლიენტი ეძებს ამ მოდელს, {size} ზომაში.\n\n✅ გვაქვს:\n{confirm_url}\n\n❌ არ გვაქვს:\n{deny_url}",
     )
 
-    logger.info(f"WhatsApp send result: {sent}")
+    print(f"[PHOTO] WhatsApp send result: {sent}")
 
     # Clean up
     _pending_photos.pop(conversation_id, None)

@@ -87,6 +87,7 @@ async def _process_message(
             else:
                 # Product photo — save for later forwarding to owner
                 _pending_photos[conversation_id] = image_bytes
+                print(f"[PHOTO] Saved photo for {conversation_id}: {len(image_bytes)} bytes")
                 text = (text or "").strip()
                 text += "\n[კლიენტმა პროდუქტის ფოტო გამოგზავნა. ეკითხე რომელ ზომაში უნდა: პატარა თუ დიდი? (თუ ზომა უკვე იცი, ᲐᲠ იმეორო — პირდაპირ forward_photo_to_owner გამოიძახე). როცა ზომა გეცოდინება, forward_photo_to_owner გამოიძახე იმ ზომით და უთხარი 'გადავამოწმებ ✨'.]"
 
