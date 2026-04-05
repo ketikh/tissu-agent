@@ -90,22 +90,26 @@ async def chat_with_tools(
     if gemini_tools:
         config.tools = [gemini_tools]
 
-    # Retry up to 5 times if Gemini returns empty or rate limited
+    # Retry up to 3 times if Gemini returns empty or rate limited
     response = None
-    for attempt in range(5):
+    for attempt in range(3):
         try:
+            print(f"[LLM] Calling Gemini (attempt {attempt+1}/3)...")
             response = client.models.generate_content(
                 model=model,
                 contents=contents,
                 config=config,
             )
             if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+                print(f"[LLM] Got response, {len(response.candidates[0].content.parts)} parts")
                 break
+            print(f"[LLM] Empty response, retrying...")
         except Exception as e:
             err_str = str(e)
+            print(f"[LLM] Error: {err_str[:200]}")
             if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "503" in err_str or "UNAVAILABLE" in err_str:
-                wait = (attempt + 1) * 5
-                _logger.warning(f"Rate limited, waiting {wait}s (attempt {attempt+1}/5)")
+                wait = (attempt + 1) * 3
+                print(f"[LLM] Rate limited, waiting {wait}s")
                 await _asyncio.sleep(wait)
                 continue
             raise
