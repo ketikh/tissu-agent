@@ -62,6 +62,20 @@ async def _process_message(
     channel: str, customer_name: str = "", image_url: str = "",
 ) -> None:
     """Process a single message: text, photo, or link."""
+    print(f"[MSG] Processing: sender={sender_id}, text={text[:50]}..., image={'YES' if image_url else 'NO'}")
+    try:
+        await _process_message_inner(sender_id, text, conversation_id, channel, customer_name, image_url)
+    except Exception as e:
+        print(f"[MSG] CRASH in _process_message: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+async def _process_message_inner(
+    sender_id: str, text: str, conversation_id: str,
+    channel: str, customer_name: str = "", image_url: str = "",
+) -> None:
+    """Inner processing logic."""
     await _send_typing_on(sender_id)
 
     # ── Photo handling ──────────────────────────────────────
