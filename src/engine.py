@@ -139,9 +139,9 @@ async def run_agent(agent: AgentDefinition, user_message: str, conversation_id: 
                     tool = tool_map.get(block["name"])
                     if tool:
                         try:
-                            # Inject conversation_id for notify_owner
+                            # Inject conversation_id for tools that need it
                             tool_input = dict(block["input"])
-                            if block["name"] == "notify_owner" and "conversation_id" not in tool_input:
+                            if block["name"] in ("notify_owner", "forward_photo_to_owner") and "conversation_id" not in tool_input:
                                 tool_input["conversation_id"] = conversation_id
                             result = await tool.handler(**tool_input)
                             result_str = json.dumps(result, ensure_ascii=False) if not isinstance(result, str) else result

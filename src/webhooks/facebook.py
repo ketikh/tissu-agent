@@ -87,7 +87,8 @@ async def _process_message(
             else:
                 # Product photo — save for later forwarding to owner
                 _pending_photos[conversation_id] = image_bytes
-                text = "[კლიენტმა პროდუქტის ფოტო გამოგზავნა. ეკითხე რომელი ზომა უნდა: პატარა (33x25) — 69₾ თუ დიდი (37x27) — 74₾? როცა ზომას აირჩევს, forward_photo_to_owner გამოიძახე იმ ზომით.]"
+                text = (text or "").strip()
+                text += "\n[კლიენტმა პროდუქტის ფოტო გამოგზავნა. ეკითხე რომელ ზომაში უნდა: პატარა თუ დიდი? (თუ ზომა უკვე იცი, ᲐᲠ იმეორო — პირდაპირ forward_photo_to_owner გამოიძახე). როცა ზომა გეცოდინება, forward_photo_to_owner გამოიძახე იმ ზომით და უთხარი 'გადავამოწმებ ✨'.]"
 
     # ── Link handling ───────────────────────────────────────
     elif text and re.search(r'https?://', text):
