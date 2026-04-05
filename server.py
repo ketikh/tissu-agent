@@ -494,7 +494,7 @@ async def update_order(order_id: int, request: Request):
     db = await get_db()
     try:
         now = datetime.now(timezone.utc).isoformat()
-        for field in ("customer_phone", "customer_address", "status", "notes"):
+        for field in ("customer_phone", "customer_address", "status", "notes", "items", "total"):
             if field in data:
                 await db.execute(f"UPDATE orders SET {field} = ?, updated_at = ? WHERE id = ?", (data[field], now, order_id))
         await db.commit()

@@ -241,10 +241,15 @@
                 <td>${o.customer_name}</td>
                 <td contenteditable="true" onblur="updateOrder(${o.id},'customer_phone',this.innerText)">${o.customer_phone||'—'}</td>
                 <td contenteditable="true" onblur="updateOrder(${o.id},'customer_address',this.innerText)">${o.customer_address||'—'}</td>
-                <td>${o.items}</td>
+                <td>
+                    <select id="code-${o.id}" onchange="updateOrderCode(${o.id},this.value)" style="font-size:12px;padding:2px;max-width:80px">
+                        <option value="">${o.items || '— აირჩიე —'}</option>
+                        ${allInventory.filter(i=>i.stock>0).map(i=>`<option value="${i.code}" ${o.items===i.code?'selected':''}>${i.code}</option>`).join('')}
+                    </select>
+                </td>
                 <td>${o.total}₾</td>
                 <td>
-                    <select onchange="changeOrderStatus(${o.id},this.value,'${o.items}')" style="font-size:12px;padding:2px">
+                    <select onchange="changeOrderStatus(${o.id},this.value,document.getElementById('code-${o.id}').value)" style="font-size:12px;padding:2px">
                         <option value="pending" ${o.status==='pending'?'selected':''}>⏳ Pending</option>
                         <option value="ready_for_send" ${o.status==='ready_for_send'?'selected':''}>📦 Ready</option>
                         <option value="sent" ${o.status==='sent'?'selected':''}>🚚 Sent</option>
@@ -305,6 +310,14 @@
         // Orders management
         async function updateOrder(id, field, value) {
             await fetch(API+'/api/orders/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({[field]:value})});
+        }
+        async function updateOrderCode(id, code) {
+            if (!code) return;
+            const item = allInventory.find(i => i.code === code);
+            const price = item ? item.price : 0;
+            const total = price + 6;
+            await fetch(API+'/api/orders/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({items: code, total: total})});
+            loadData();
         }
         async function changeOrderStatus(id, status, itemCode) {
             await fetch(API+'/api/orders/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:status})});
