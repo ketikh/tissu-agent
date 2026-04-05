@@ -63,12 +63,15 @@ async def send_whatsapp_image(image_bytes: bytes, caption: str, filename: str = 
                 data={"messaging_product": "whatsapp", "type": "image/jpeg"},
                 files={"file": (filename, image_bytes, "image/jpeg")},
             )
-            media_id = upload_resp.json().get("id", "")
+            upload_data = upload_resp.json()
+            media_id = upload_data.get("id", "")
+            print(f"[WA] Upload response: {upload_resp.status_code} media_id={media_id}")
             if not media_id:
+                print(f"[WA] Upload FAILED: {upload_data}")
                 return False
 
             # Send image message
-            await client.post(
+            send_resp = await client.post(
                 f"{WA_API_BASE}/{phone_id}/messages",
                 headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
                 json={
@@ -78,7 +81,12 @@ async def send_whatsapp_image(image_bytes: bytes, caption: str, filename: str = 
                     "image": {"id": media_id, "caption": caption},
                 },
             )
+            send_data = send_resp.json()
+            print(f"[WA] Send response: {send_resp.status_code} data={send_data}")
+            if "error" in send_data:
+                print(f"[WA] Send ERROR: {send_data['error']}")
+                return False
         return True
     except Exception as e:
-        logger.error(f"WhatsApp image failed: {e}")
+        print(f"[WA] Exception: {e}")
         return False
