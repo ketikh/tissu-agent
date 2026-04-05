@@ -247,10 +247,10 @@ async def photo_confirm(conversation_id: str):
     agent = get_support_sales_agent()
     result = await run_agent(
         agent,
-        "[მფლობელმა დაადასტურა — კლიენტის ფოტოზე მოდელი მარაგშია. უთხარი 'გვაქვს მარაგში ✨' და გააგრძელე შეკვეთის flow: ეკითხე ფხრიწიანი თუ თასმიანი, მერე check_inventory გამოიძახე და აჩვენე]",
+        "[მფლობელმა დაადასტურა — მარაგშია. უთხარი 'გვაქვს მარაგში ✨ გავაფორმოთ შეკვეთა? თიბისი თუ საქართველოს ბანკი?' — სტილს ᲐᲠ ეკითხო, ფოტოებს ᲐᲠ გაუგზავნო, პირდაპირ შეკვეთის flow გააგრძელე.]",
         conversation_id,
     )
-    reply = result["reply"].strip() or "გვაქვს მარაგში ✨ მოდელი მოგეწონებათ?"
+    reply = result["reply"].strip() or "გვაქვს მარაგში ✨ გავაფორმოთ შეკვეთა? თიბისი თუ საქართველოს ბანკი?"
     await _send_to_customer(sender_id, reply)
     return HTMLResponse("<h1>✅ მარაგშია!</h1><p>კლიენტს ეცნობა.</p>")
 
