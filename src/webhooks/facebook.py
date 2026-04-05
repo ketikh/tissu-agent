@@ -1,11 +1,4 @@
-"""Facebook Messenger / Instagram DM webhook handler.
-
-Simple flow:
-- Text → agent responds
-- Photo → receipt check (Gemini), then save photo + tell agent to ask size
-- Agent calls forward_photo_to_owner after customer picks size
-- Owner confirms/denies via WhatsApp links
-"""
+"""Facebook Messenger / Instagram DM webhook handler."""
 from __future__ import annotations
 
 import asyncio
@@ -13,11 +6,13 @@ import logging
 import os
 import re
 import time
+import traceback as _tb
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 
 from src.agents.support_sales import get_support_sales_agent
+from src.db import get_db
 from src.engine import run_agent
 from src.notifications import send_whatsapp_image, send_whatsapp_text
 from src.tools.support import _pending_photos
@@ -43,7 +38,6 @@ def _cleanup_old_mids() -> None:
 
 
 async def _send_typing_on(sender_id: str) -> None:
-    """Show typing indicator to customer."""
     if not FB_PAGE_TOKEN:
         return
     try:
@@ -61,78 +55,62 @@ async def _process_message(
     sender_id: str, text: str, conversation_id: str,
     channel: str, customer_name: str = "", image_url: str = "",
 ) -> None:
-    """Process a single message: text, photo, or link."""
-    print(f"[MSG] Processing: sender={sender_id}, text={text[:50]}..., image={'YES' if image_url else 'NO'}")
+    print(f"[MSG] START: sender={sender_id}, text={text[:50]}..., image={'YES' if image_url else 'NO'}", flush=True)
     try:
-        await _process_message_inner(sender_id, text, conversation_id, channel, customer_name, image_url)
-    except Exception as e:
-        print(f"[MSG] CRASH in _process_message: {e}")
-        import traceback
-        traceback.print_exc()
+        await _send_typing_on(sender_id)
 
-
-async def _process_message_inner(
-    sender_id: str, text: str, conversation_id: str,
-    channel: str, customer_name: str = "", image_url: str = "",
-) -> None:
-    """Inner processing logic."""
-    await _send_typing_on(sender_id)
-
-    # ── Photo handling ──────────────────────────────────────
-    if image_url:
-        image_bytes = await download_image(image_url)
-        if not image_bytes:
-            text = "[კლიენტმა ფოტო გამოგზავნა მაგრამ ვერ დამუშავდა. უთხარი 'გადავამოწმებ და მოგწერთ ✨']"
-        else:
-            # Receipt or product?
-            is_receipt = await is_payment_receipt(image_bytes, conversation_id)
-
-            if is_receipt:
-                # Forward receipt to owner with confirm/deny links
-                cname = customer_name or "კლიენტი"
-                confirm_url = f"{PUBLIC_URL}/api/owner-confirm/{conversation_id}"
-                deny_url = f"{PUBLIC_URL}/api/owner-deny/{conversation_id}"
-                await send_whatsapp_image(
-                    image_bytes,
-                    caption=f"📷 {cname} — გადახდის ქვითარი\n\n✅ ვადასტურებ:\n{confirm_url}\n\n❌ არ ვადასტურებ:\n{deny_url}",
-                    filename="receipt.jpg",
-                )
-                text = "[კლიენტმა გადახდის სქრინი გამოგზავნა. უთხარი 'მადლობა, გადავამოწმებ ✨' და ᲒᲐᲩᲔᲠᲓᲘ. მისამართს ᲐᲠ ეკითხო.]"
+        # ── Photo handling ──
+        if image_url:
+            image_bytes = await download_image(image_url)
+            if not image_bytes:
+                text = "[კლიენტმა ფოტო გამოგზავნა მაგრამ ვერ დამუშავდა. უთხარი 'გადავამოწმებ და მოგწერთ ✨']"
             else:
-                # Product photo — save for later forwarding to owner
-                _pending_photos[conversation_id] = image_bytes
-                print(f"[PHOTO] Saved photo for {conversation_id}: {len(image_bytes)} bytes")
-                text = (text or "").strip()
-                text += "\n[კლიენტმა პროდუქტის ფოტო გამოგზავნა. ეკითხე რომელ ზომაში უნდა: პატარა თუ დიდი? (თუ ზომა უკვე იცი, ᲐᲠ იმეორო — პირდაპირ forward_photo_to_owner გამოიძახე). როცა ზომა გეცოდინება, forward_photo_to_owner გამოიძახე იმ ზომით და უთხარი 'გადავამოწმებ ✨'.]"
+                is_receipt = await is_payment_receipt(image_bytes, conversation_id)
+                if is_receipt:
+                    cname = customer_name or "კლიენტი"
+                    confirm_url = f"{PUBLIC_URL}/api/owner-confirm/{conversation_id}"
+                    deny_url = f"{PUBLIC_URL}/api/owner-deny/{conversation_id}"
+                    await send_whatsapp_image(
+                        image_bytes,
+                        caption=f"📷 {cname} — გადახდის ქვითარი\n\n✅ ვადასტურებ:\n{confirm_url}\n\n❌ არ ვადასტურებ:\n{deny_url}",
+                        filename="receipt.jpg",
+                    )
+                    text = "[კლიენტმა გადახდის სქრინი გამოგზავნა. უთხარი 'მადლობა, გადავამოწმებ ✨' და ᲒᲐᲩᲔᲠᲓᲘ. მისამართს ᲐᲠ ეკითხო.]"
+                else:
+                    _pending_photos[conversation_id] = image_bytes
+                    print(f"[PHOTO] Saved: {conversation_id}, {len(image_bytes)} bytes", flush=True)
+                    text = (text or "").strip()
+                    text += "\n[კლიენტმა პროდუქტის ფოტო გამოგზავნა. ეკითხე რომელ ზომაში უნდა: პატარა თუ დიდი? (თუ ზომა უკვე იცი, ᲐᲠ იმეორო — პირდაპირ forward_photo_to_owner გამოიძახე). როცა ზომა გეცოდინება, forward_photo_to_owner გამოიძახე იმ ზომით და უთხარი 'გადავამოწმებ ✨'.]"
 
-    # ── Link handling ───────────────────────────────────────
-    elif text and re.search(r'https?://', text):
-        text += "\n[კლიენტმა ბმული გამოგზავნა. უთხარი 'ბმულებს სამწუხაროდ ვერ ვხსნი 😊 თუ შეგიძლიათ ფოტო გამომიგზავნეთ ✨']"
+        # ── Link handling ──
+        elif text and re.search(r'https?://', text):
+            text += "\n[კლიენტმა ბმული გამოგზავნა. უთხარი 'ბმულებს სამწუხაროდ ვერ ვხსნი 😊 თუ შეგიძლიათ ფოტო გამომიგზავნეთ ✨']"
 
-    # ── Customer name context ───────────────────────────────
-    if customer_name:
-        text = f"[SYSTEM: customer_name={customer_name}]\n{text}"
+        # ── Customer name ──
+        if customer_name:
+            text = f"[SYSTEM: customer_name={customer_name}]\n{text}"
 
-    # ── Run agent ───────────────────────────────────────────
-    agent = get_support_sales_agent()
-    try:
-        result = await run_agent(agent, text, conversation_id)
-    except Exception as e:
-        logger.error(f"Agent error: {e}", exc_info=True)
-        await send_whatsapp_text(f"🚨 აგენტის შეცდომა!\n{text[:200]}\n{str(e)[:300]}")
-        result = {"reply": "გადავამოწმებ და მოგწერთ ✨", "tool_calls_made": [], "tool_results_data": {}}
+        # ── Run agent ──
+        print(f"[MSG] Calling agent...", flush=True)
+        agent = get_support_sales_agent()
+        try:
+            result = await run_agent(agent, text, conversation_id)
+        except Exception as e:
+            print(f"[MSG] Agent error: {e}", flush=True)
+            await send_whatsapp_text(f"🚨 აგენტის შეცდომა!\n{text[:200]}\n{str(e)[:300]}")
+            result = {"reply": "გადავამოწმებ და მოგწერთ ✨", "tool_calls_made": [], "tool_results_data": {}}
 
-    # ── Send reply ──────────────────────────────────────────
-    if not FB_PAGE_TOKEN:
-        return
+        print(f"[MSG] Agent replied: {result['reply'][:80]}...", flush=True)
 
-    try:
+        # ── Send reply ──
+        if not FB_PAGE_TOKEN:
+            return
+
         async with httpx.AsyncClient(timeout=30) as client:
             fb_api = "https://graph.facebook.com/v21.0/me/messages"
             fb_params = {"access_token": FB_PAGE_TOKEN}
 
             reply_text = result["reply"].strip()
-            # Clean ALL system tags from reply
             reply_text = re.sub(r'\[[^\]]{10,}\]', '', reply_text).strip()
             reply_text = re.sub(r'https?://\S+', '', reply_text).strip()
             reply_text = re.sub(r'/static/\S+', '', reply_text).strip()
@@ -141,24 +119,24 @@ async def _process_message_inner(
             if not reply_text:
                 reply_text = "გადავამოწმებ და მოგწერთ ✨"
 
-            # Send text reply
             await client.post(fb_api, params=fb_params, json={
                 "recipient": {"id": sender_id},
                 "message": {"text": reply_text[:2000]},
             })
 
-            # Send product images if inventory was checked
             await _send_product_images(client, fb_api, fb_params, sender_id, result)
 
+        print(f"[MSG] DONE", flush=True)
+
     except Exception as e:
-        logger.error(f"Failed to send FB reply: {e}", exc_info=True)
+        print(f"[MSG] CRASH: {e}", flush=True)
+        _tb.print_exc()
 
 
 async def _send_product_images(
     client: httpx.AsyncClient, fb_api: str, fb_params: dict,
     sender_id: str, result: dict,
 ) -> None:
-    """Send product images after inventory check. No duplicates."""
     tool_data = result.get("tool_results_data", {})
     inventory_data = tool_data.get("check_inventory")
     if not inventory_data or not inventory_data.get("found"):
@@ -215,7 +193,6 @@ async def webhook_verify(request: Request):
 
 @router.post("/webhook")
 async def webhook_receive(request: Request):
-    """Receive messages from Facebook Messenger / Instagram DM."""
     body = await request.json()
 
     if body.get("object") not in ("page", "instagram"):
@@ -234,7 +211,6 @@ async def webhook_receive(request: Request):
             if message.get("is_echo") or sender_id == PAGE_ID or not sender_id:
                 continue
 
-            # Check for image
             image_url = ""
             for att in message.get("attachments", []):
                 if att.get("type") == "image":
@@ -244,7 +220,6 @@ async def webhook_receive(request: Request):
             if not text and not image_url:
                 continue
 
-            # Anti-duplicate
             if mid and mid in _processed_mids:
                 continue
             if mid:
@@ -254,7 +229,6 @@ async def webhook_receive(request: Request):
             channel = "instagram_dm" if body["object"] == "instagram" else "facebook_messenger"
             conversation_id = f"{channel}_{sender_id}"
 
-            # Get customer name
             customer_name = ""
             if FB_PAGE_TOKEN:
                 try:
