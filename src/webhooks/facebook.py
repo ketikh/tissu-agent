@@ -29,6 +29,11 @@ PAGE_ID = "447377388462459"
 
 _processed_mids: dict[str, float] = {}
 
+# Buffer for text messages that might be followed by a photo
+_pending_text: dict[str, dict] = {}  # sender_id -> {text, mid, conv_id, channel, customer_name, timestamp}
+
+_PHOTO_HINT = re.compile(r'(გაქვთ|მოდელი|ჩანთა|ასეთი|მსგავსი|ეს\s*არის|have|this)', re.IGNORECASE)
+
 
 def _cleanup_old_mids() -> None:
     now = time.time()
@@ -178,6 +183,16 @@ async def _send_product_images(
             except Exception:
                 pass
 
+    # After all photos — send selection prompt
+    if sent_codes:
+        try:
+            await client.post(fb_api, params=fb_params, json={
+                "recipient": {"id": sender_id},
+                "message": {"text": "შეარჩიეთ მოდელი და შესაბამისი კოდი მოგვწერეთ ✨"},
+            })
+        except Exception:
+            pass
+
 
 @router.get("/webhook")
 async def webhook_verify(request: Request):
@@ -242,6 +257,34 @@ async def webhook_receive(request: Request):
                 except Exception:
                     pass
 
+            # Photo arrived — check if there's buffered text
+            if image_url and sender_id in _pending_text:
+                buffered = _pending_text.pop(sender_id)
+                combined_text = buffered["text"]
+                asyncio.create_task(_process_message(
+                    sender_id, combined_text, conversation_id, channel, customer_name, image_url,
+                ))
+                continue
+
+            # Text looks like "ეს გაქვთ?" — wait 3 sec for photo
+            if text and not image_url and _PHOTO_HINT.search(text):
+                _pending_text[sender_id] = {
+                    "text": text, "mid": mid, "conv_id": conversation_id,
+                    "channel": channel, "customer_name": customer_name,
+                }
+
+                async def _wait_for_photo(sid: str, stored_mid: str):
+                    await asyncio.sleep(3)
+                    if sid in _pending_text and _pending_text[sid]["mid"] == stored_mid:
+                        buf = _pending_text.pop(sid)
+                        asyncio.create_task(_process_message(
+                            sid, buf["text"], buf["conv_id"], buf["channel"], buf["customer_name"], "",
+                        ))
+
+                asyncio.create_task(_wait_for_photo(sender_id, mid))
+                continue
+
+            # Normal message
             asyncio.create_task(_process_message(
                 sender_id, text, conversation_id, channel, customer_name, image_url,
             ))
