@@ -138,7 +138,9 @@ async def notify_owner(reason: str, customer_name: str = "", customer_phone: str
                     msg_parts.append(f"📱 {customer_phone}")
                 if details:
                     msg_parts.append(f"📝 {details}")
-                if public_url and conversation_id:
+                # Only add confirm/deny links for order-related notifications
+                _needs_confirm = any(kw in reason.lower() for kw in ("შეკვეთა", "გადახდა", "ჩარიცხ", "order", "payment"))
+                if public_url and conversation_id and _needs_confirm:
                     msg_parts.append("")
                     msg_parts.append(f"✅ ვადასტურებ:\n{public_url}/api/owner-confirm/{conversation_id}")
                     msg_parts.append(f"❌ არ ვადასტურებ:\n{public_url}/api/owner-deny/{conversation_id}")
