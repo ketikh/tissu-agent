@@ -8,91 +8,73 @@ from src.engine import Tool
 
 
 async def save_content(title: str, body: str, content_type: str, tags: list[str] | str = "") -> dict:
-    db = await get_db()
-    try:
-        now = datetime.now(timezone.utc).isoformat()
-        tags_json = json.dumps(tags if isinstance(tags, list) else [t.strip() for t in tags.split(",") if t.strip()])
-        cursor = await db.execute(
-            "INSERT INTO content (title, body, content_type, tags, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'draft', ?, ?)",
-            (title, body, content_type, tags_json, now, now),
-        )
-        await db.commit()
-        return {"success": True, "content_id": cursor.lastrowid, "message": f"Content '{title}' saved as draft."}
-    finally:
-        await db.close()
+    pool = await get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    tags_json = json.dumps(tags if isinstance(tags, list) else [t.strip() for t in tags.split(",") if t.strip()])
+    row = await pool.fetchrow(
+        "INSERT INTO content (title, body, content_type, tags, status, created_at, updated_at) VALUES ($1, $2, $3, $4, 'draft', $5, $6) RETURNING id",
+        title, body, content_type, tags_json, now, now,
+    )
+    return {"success": True, "content_id": row["id"], "message": f"Content '{title}' saved as draft."}
 
 
 async def list_content(content_type: str = "", status: str = "", limit: int = 10) -> dict:
-    db = await get_db()
-    try:
-        query = "SELECT id, title, content_type, status, tags, created_at FROM content WHERE 1=1"
-        params = []
-        if content_type:
-            query += " AND content_type = ?"
-            params.append(content_type)
-        if status:
-            query += " AND status = ?"
-            params.append(status)
-        query += " ORDER BY created_at DESC LIMIT ?"
-        params.append(limit)
-        cursor = await db.execute(query, params)
-        rows = await cursor.fetchall()
-        return {
-            "count": len(rows),
-            "content": [dict(r) for r in rows],
-        }
-    finally:
-        await db.close()
+    pool = await get_db()
+    query = "SELECT id, title, content_type, status, tags, created_at FROM content WHERE 1=1"
+    params = []
+    idx = 1
+    if content_type:
+        query += f" AND content_type = ${idx}"
+        params.append(content_type)
+        idx += 1
+    if status:
+        query += f" AND status = ${idx}"
+        params.append(status)
+        idx += 1
+    query += f" ORDER BY created_at DESC LIMIT ${idx}"
+    params.append(limit)
+    rows = await pool.fetch(query, *params)
+    return {
+        "count": len(rows),
+        "content": [dict(r) for r in rows],
+    }
 
 
 async def schedule_content(content_id: int, scheduled_at: str) -> dict:
-    db = await get_db()
-    try:
-        now = datetime.now(timezone.utc).isoformat()
-        await db.execute(
-            "UPDATE content SET status = 'scheduled', scheduled_at = ?, updated_at = ? WHERE id = ?",
-            (scheduled_at, now, content_id),
-        )
-        await db.commit()
-        return {"success": True, "message": f"Content #{content_id} scheduled for {scheduled_at}."}
-    finally:
-        await db.close()
+    pool = await get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    await pool.execute(
+        "UPDATE content SET status = 'scheduled', scheduled_at = $1, updated_at = $2 WHERE id = $3",
+        scheduled_at, now, content_id,
+    )
+    return {"success": True, "message": f"Content #{content_id} scheduled for {scheduled_at}."}
 
 
 async def get_content_stats() -> dict:
-    db = await get_db()
-    try:
-        cursor = await db.execute(
-            "SELECT content_type, status, COUNT(*) as count FROM content GROUP BY content_type, status"
-        )
-        rows = await cursor.fetchall()
-        cursor2 = await db.execute("SELECT COUNT(*) as total FROM content")
-        total = (await cursor2.fetchone())["total"]
-        return {
-            "total_pieces": total,
-            "breakdown": [dict(r) for r in rows],
-        }
-    finally:
-        await db.close()
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT content_type, status, COUNT(*) as count FROM content GROUP BY content_type, status"
+    )
+    total_row = await pool.fetchrow("SELECT COUNT(*) as total FROM content")
+    total = total_row["total"]
+    return {
+        "total_pieces": total,
+        "breakdown": [dict(r) for r in rows],
+    }
 
 
 async def get_lead_insights() -> dict:
-    db = await get_db()
-    try:
-        cursor = await db.execute(
-            "SELECT status, COUNT(*) as count, AVG(score) as avg_score FROM leads GROUP BY status"
-        )
-        rows = await cursor.fetchall()
-        cursor2 = await db.execute(
-            "SELECT source, COUNT(*) as count FROM leads GROUP BY source"
-        )
-        sources = await cursor2.fetchall()
-        return {
-            "by_status": [dict(r) for r in rows],
-            "by_source": [dict(s) for s in sources],
-        }
-    finally:
-        await db.close()
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT status, COUNT(*) as count, AVG(score) as avg_score FROM leads GROUP BY status"
+    )
+    sources = await pool.fetch(
+        "SELECT source, COUNT(*) as count FROM leads GROUP BY source"
+    )
+    return {
+        "by_status": [dict(r) for r in rows],
+        "by_source": [dict(s) for s in sources],
+    }
 
 
 MARKETING_TOOLS = [

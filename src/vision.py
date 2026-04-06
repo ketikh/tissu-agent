@@ -43,21 +43,17 @@ async def is_payment_receipt(image_bytes: bytes, conversation_id: str) -> bool:
 
     # Check conversation context
     expecting = False
-    db = await get_db()
-    try:
-        cursor = await db.execute(
-            "SELECT content FROM messages WHERE conversation_id = ? AND role = 'assistant' ORDER BY created_at DESC LIMIT 3",
-            (conversation_id,),
-        )
-        rows = await cursor.fetchall()
-        receipt_keywords = ("სქრინ", "ჩარიცხ", "გადარიცხ", "გადასახდელი")
-        for row in rows:
-            text = row["content"] or ""
-            if any(kw in text for kw in receipt_keywords):
-                expecting = True
-                break
-    finally:
-        await db.close()
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT content FROM messages WHERE conversation_id = $1 AND role = 'assistant' ORDER BY created_at DESC LIMIT 3",
+        conversation_id,
+    )
+    receipt_keywords = ("სქრინ", "ჩარიცხ", "გადარიცხ", "გადასახდელი")
+    for row in rows:
+        text = row["content"] or ""
+        if any(kw in text for kw in receipt_keywords):
+            expecting = True
+            break
 
     ctx = "კლიენტმა გადახდის სქრინი უნდა გამოეგზავნა." if expecting else "კლიენტი ჩანთას ეძებს."
 

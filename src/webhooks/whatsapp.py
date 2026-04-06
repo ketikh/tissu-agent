@@ -38,15 +38,11 @@ def _cleanup_old_mids() -> None:
 
 async def _get_latest_conversation_id() -> str:
     """Find the most recent customer conversation from tickets."""
-    db = await get_db()
-    try:
-        cursor = await db.execute(
-            "SELECT conversation_id FROM tickets ORDER BY created_at DESC LIMIT 1"
-        )
-        row = await cursor.fetchone()
-        return row["conversation_id"] if row else ""
-    finally:
-        await db.close()
+    pool = await get_db()
+    row = await pool.fetchrow(
+        "SELECT conversation_id FROM tickets ORDER BY created_at DESC LIMIT 1"
+    )
+    return row["conversation_id"] if row else ""
 
 
 def _extract_sender_id(conv_id: str) -> str:
@@ -155,15 +151,11 @@ async def wa_webhook_receive(request: Request):
                 elif len(text_upper) <= 5 and any(text_upper.startswith(p) for p in ("FP", "TP", "FD", "TD")):
                     # Owner sent a product code (e.g., "FP3") — send that product to customer
                     code = text_upper
-                    db = await get_db()
-                    try:
-                        cursor = await db.execute(
-                            "SELECT code, model, size, price, image_url, image_url_back FROM inventory WHERE UPPER(code) = ? AND stock > 0",
-                            (code,),
-                        )
-                        row = await cursor.fetchone()
-                    finally:
-                        await db.close()
+                    pool = await get_db()
+                    row = await pool.fetchrow(
+                        "SELECT code, model, size, price, image_url, image_url_back FROM inventory WHERE UPPER(code) = $1 AND stock > 0",
+                        code,
+                    )
 
                     if row:
                         product = dict(row)
