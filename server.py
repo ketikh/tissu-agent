@@ -546,13 +546,14 @@ async def health_check():
 # ── Seed Data ────────────────────────────────────────────────
 
 async def seed_knowledge_base():
-    """Seed Tissu Shop knowledge base and starter inventory."""
+    """Seed Tissu Shop knowledge base (always) and inventory (only missing codes)."""
     db = await get_db()
     try:
+        # Always reseed knowledge base (small, no user edits)
         cursor = await db.execute("SELECT COUNT(*) as c FROM knowledge_base")
-        count = (await cursor.fetchone())["c"]
-        if count > 0:
-            return
+        kb_count = (await cursor.fetchone())["c"]
+        if kb_count > 0:
+            await db.execute("DELETE FROM knowledge_base")  # Refresh
 
         now = datetime.now(timezone.utc).isoformat()
 
@@ -571,16 +572,22 @@ async def seed_knowledge_base():
                 (q, a, cat, now),
             )
 
+        # Seed inventory — only add products that don't exist yet (by code)
         seed_file = Path(__file__).parent / "seed_inventory.json"
         if seed_file.exists():
+            cursor = await db.execute("SELECT code FROM inventory")
+            existing_codes = {row["code"] for row in await cursor.fetchall()}
+
             items = json.loads(seed_file.read_text())
             for item in items:
-                await db.execute(
-                    "INSERT INTO inventory (product_name, model, size, color, style, code, tags, price, stock, image_url, image_url_back, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (item["product_name"], item["model"], item["size"], item.get("color", ""), item.get("style", ""),
-                     item.get("code", ""), item.get("tags", ""), item["price"], item["stock"],
-                     item.get("image_url", ""), item.get("image_url_back", ""), now, now),
-                )
+                code = item.get("code", "")
+                if code and code not in existing_codes:
+                    await db.execute(
+                        "INSERT INTO inventory (product_name, model, size, color, style, code, tags, price, stock, image_url, image_url_back, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (item["product_name"], item["model"], item["size"], item.get("color", ""), item.get("style", ""),
+                         code, item.get("tags", ""), item["price"], item["stock"],
+                         item.get("image_url", ""), item.get("image_url_back", ""), now, now),
+                    )
 
         await db.commit()
     finally:
