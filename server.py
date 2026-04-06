@@ -523,7 +523,11 @@ async def decrease_stock_for_order(order_id: int):
         order = await cursor.fetchone()
         if not order:
             raise HTTPException(status_code=404)
-        item_code = order["items"].strip().upper()
+        items_raw = order["items"].strip().upper()
+        # Extract product code (FP1, TD2, etc.) from items field
+        import re as _re
+        code_match = _re.search(r'(FP|TP|FD|TD)\d+', items_raw)
+        item_code = code_match.group(0) if code_match else items_raw
         await db.execute(
             "UPDATE inventory SET stock = MAX(0, stock - 1), updated_at = ? WHERE UPPER(code) = ? AND stock > 0",
             (datetime.now(timezone.utc).isoformat(), item_code),
