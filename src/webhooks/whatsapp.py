@@ -199,9 +199,23 @@ async def wa_webhook_receive(request: Request):
                     else:
                         await _send_to_customer(sender_id, "სამწუხაროდ ეს მოდელი ამჟამად არ არის მარაგში ✨")
 
+                elif text_lower in ("მე ვპასუხობ", "ჩემია", "მე", "stop", "სტოპ"):
+                    # Owner takes over — tell bot to shut up, notify owner
+                    agent = get_support_sales_agent()
+                    await run_agent(agent, "[SYSTEM: owner_is_chatting]", conv_id)
+                    from src.notifications import send_whatsapp_text
+                    await send_whatsapp_text("✅ ბოტი გაჩერდა, შენ აგრძელებ. 'უპასუხე:' ტექსტით მიწერე კლიენტს.")
+
                 elif text.startswith("უპასუხე:") or text.startswith("უპასუხე "):
                     reply = text.replace("უპასუხე:", "").replace("უპასუხე ", "").strip()
                     await _send_to_customer(sender_id, reply)
+
+                elif text_lower in ("ბოტი", "bot", "გააგრძელე"):
+                    # Resume bot — clear owner_is_chatting state
+                    agent = get_support_sales_agent()
+                    await run_agent(agent, "[SYSTEM: owner_stopped_chatting — ბოტი ისევ აგრძელებს]", conv_id)
+                    from src.notifications import send_whatsapp_text
+                    await send_whatsapp_text("🤖 ბოტი ისევ ჩაირთო.")
 
                 else:
                     # Other text — forward as instruction to bot
