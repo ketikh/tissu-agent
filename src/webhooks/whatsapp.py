@@ -77,10 +77,10 @@ async def _handle_confirmation(conv_id: str) -> str:
 
 
 async def _handle_denial(conv_id: str) -> str:
-    """Owner denied — tell customer product is unavailable."""
+    """Owner denied payment — tell customer payment wasn't confirmed."""
     agent = get_support_sales_agent()
-    result = await run_agent(agent, "[მფლობელმა უარყო. თავაზიანად უთხარი რომ ეს პროდუქტი ამჟამად არ არის ხელმისაწვდომი და შესთავაზე სხვა ვარიანტი.]", conv_id)
-    return result["reply"].strip() or "სამწუხაროდ ეს მოდელი ამჟამად არ არის ხელმისაწვდომი. გსურთ სხვა ვარიანტი ნახოთ?"
+    result = await run_agent(agent, "[მფლობელმა გადახდა ვერ დაადასტურა. თავაზიანად უთხარი რომ გადახდა ვერ დადასტურდა და გთხოვთ გადაამოწმოთ ან ხელახლა გამოაგზავნოთ ქვითარი.]", conv_id)
+    return result["reply"].strip() or "გადახდა ვერ დადასტურდა 😔 გთხოვთ გადაამოწმოთ და ქვითარი ხელახლა გამოგვიგზავნეთ ✨"
 
 
 @router.get("/wa-webhook")
