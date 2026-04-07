@@ -24,9 +24,16 @@ async def check_inventory(model: str = "", size: str = "", search: str = "") -> 
         params.append(f"%{size}%")
         idx += 1
     if search:
-        query += f" AND (tags ILIKE ${idx} OR color ILIKE ${idx+1} OR style ILIKE ${idx+2})"
-        params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
-        idx += 3
+        # Check if search looks like a product code (FP1, TP15, etc.)
+        search_upper = search.strip().upper()
+        if any(search_upper.startswith(p) for p in ("FP", "TP", "FD", "TD")) and any(c.isdigit() for c in search_upper):
+            query += f" AND UPPER(code) = ${idx}"
+            params.append(search_upper)
+            idx += 1
+        else:
+            query += f" AND (tags ILIKE ${idx} OR color ILIKE ${idx+1} OR style ILIKE ${idx+2})"
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+            idx += 3
     rows = await pool.fetch(query, *params)
     if not rows:
         return {"found": False, "message": "ვერ მოიძებნა."}

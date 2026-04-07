@@ -29,6 +29,10 @@ PAGE_ID = "447377388462459"
 
 _processed_mids: dict[str, float] = {}
 
+# Track which inventory categories were already sent to each conversation
+# Key: conversation_id, Value: set of "model|size" combos already sent
+_sent_inventory: dict[str, set[str]] = {}
+
 # Buffers for text↔photo pairing
 _pending_text: dict[str, dict] = {}   # sender_id -> {text, mid, ...} — text waiting for photo
 _pending_photo: dict[str, dict] = {}  # sender_id -> {image_url, mid, ...} — photo waiting for text
@@ -147,7 +151,7 @@ async def _process_message(
             })
             print(f"[MSG] FB reply: {fb_resp.status_code} {fb_resp.text[:200]}", flush=True)
 
-            await _send_product_images(client, fb_api, fb_params, sender_id, result)
+            await _send_product_images(client, fb_api, fb_params, sender_id, result, conversation_id)
 
         print(f"[MSG] DONE", flush=True)
 
@@ -158,15 +162,31 @@ async def _process_message(
 
 async def _send_product_images(
     client: httpx.AsyncClient, fb_api: str, fb_params: dict,
-    sender_id: str, result: dict,
+    sender_id: str, result: dict, conversation_id: str = "",
 ) -> None:
     tool_data = result.get("tool_results_data", {})
     inventory_data = tool_data.get("check_inventory")
     if not inventory_data or not inventory_data.get("found"):
         return
 
+    items = inventory_data.get("items", [])
+    if not items:
+        return
+
+    # Check if we already sent this exact category to this conversation
+    if conversation_id and len(items) > 1:
+        first = items[0]
+        category_key = f"{first.get('model', '')}|{first.get('size', '')}"
+        already_sent = _sent_inventory.get(conversation_id, set())
+        if category_key in already_sent:
+            print(f"[PHOTO] Skipping — already sent {category_key} to {conversation_id}", flush=True)
+            return
+        already_sent.add(category_key)
+        _sent_inventory[conversation_id] = already_sent
+
     sent_codes: set[str] = set()
-    for item in inventory_data.get("items", []):
+    photos_sent = 0
+    for item in items:
         code = item.get("code", "")
         front = item.get("image_url", "")
         if not front or not code or code in sent_codes:
@@ -187,6 +207,7 @@ async def _send_product_images(
                 "recipient": {"id": sender_id},
                 "message": {"attachment": {"type": "image", "payload": {"url": img_url, "is_reusable": True}}},
             })
+            photos_sent += 1
         except Exception:
             pass
 
@@ -201,7 +222,15 @@ async def _send_product_images(
             except Exception:
                 pass
 
-    # "შეარჩიეთ კოდი" is said by the agent after photos, not here
+    # After photos — tell customer to pick a code
+    if photos_sent > 0 and len(items) > 1:
+        try:
+            await client.post(fb_api, params=fb_params, json={
+                "recipient": {"id": sender_id},
+                "message": {"text": "შეარჩიეთ მოდელი და შესაბამისი კოდი მოგვწერეთ ✨"},
+            })
+        except Exception:
+            pass
 
 
 @router.get("/webhook")
