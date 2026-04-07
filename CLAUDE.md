@@ -16,9 +16,10 @@ Tissu Shop — წყალგაუმტარი ტილოს ლეპტ
 **ელვა შესაკრავიანი მოდელები არ გვაქვს!** მხოლოდ ფხრიწიანი და თასმიანი.
 
 ## ზომების შესაბამისობა
-- პატარა (33x25): 13", 13.3", 13.6", 14" (MacBook Air/Pro 14" ეტევა პატარაში)
-- დიდი (37x27): 15", 15.6", 16" ლეპტოპები
-- ინჩებს ბოტი არ ახსენებს სანამ კლიენტი თავად არ იკითხავს
+- ≤13" ან ≤33სმ → პატარა → 69₾
+- 13.6" → პატარა → 69₾
+- 14"+ ან ≥35სმ → დიდი → 74₾
+- 15" / 15.6" → დიდი → 74₾
 
 ## საკურიერო
 - თბილისი: 6₾, კურიერით
@@ -56,13 +57,25 @@ Tissu Shop — წყალგაუმტარი ტილოს ლეპტ
 - Facebook Messenger webhook + WhatsApp owner notifications
 - Cloudinary CDN for product images
 
+## არქიტექტურა — Multi-Agent System
+Python intent router ანაწილებს მესიჯებს 4 სპეციალიზებულ აგენტზე:
+
+| აგენტი | ფაილი | საქმე |
+|--------|-------|-------|
+| Sales | `src/agents/sales_agent.py` | მისალმება, ფასი, ზომა, სტილი, FAQ |
+| Catalog | `src/agents/catalog_agent.py` | მარაგი, კოდით ძებნა, ფოტო/ლინკი |
+| Payment | `src/agents/payment_agent.py` | ბანკი, კალკულაცია, სქრინი, მისამართი |
+| Escalation | `src/agents/escalation_agent.py` | მფლობელი, ოპერატორი, სპამი |
+
 ## ძირითადი ფაილები
-- `src/agents/support_sales.py` — ბოტის სისტემის პრომპტი (ORCHESTRATOR_PROMPT)
+- `src/agents/support_sales.py` — Orchestrator (intent router + run_orchestrator)
+- `src/engine.py` — Agent engine + detect_intent (Python keyword router)
 - `src/tools/support.py` — check_inventory, create_order, notify_owner
 - `src/webhooks/facebook.py` — Messenger webhook (ფოტო/ლინკი/ტექსტი handling)
 - `src/webhooks/whatsapp.py` — WhatsApp webhook (მფლობელის პასუხები)
 - `src/db.py` — Supabase Postgres connection pool
 - `server.py` — FastAPI endpoints + seed data
+- `.claude/rules/04-master-bot-instruction.md` — Master Bot Instruction (ბოტის მთავარი სქილი)
 
 ## Development Commands
 ```bash
