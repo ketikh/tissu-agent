@@ -11,9 +11,8 @@ import traceback as _tb
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 
-from src.agents.support_sales import get_support_sales_agent
+from src.agents.support_sales import run_orchestrator
 from src.db import get_db
-from src.engine import run_agent
 from src.notifications import send_whatsapp_image, send_whatsapp_text
 from src.tools.support import _pending_photos
 from src.vision import download_image, is_payment_receipt
@@ -116,11 +115,11 @@ async def _process_message(
         if customer_name:
             text = f"[SYSTEM: customer_name={customer_name}]\n{text}"
 
-        # ── Run agent ──
-        print(f"[MSG] Calling agent...", flush=True)
-        agent = get_support_sales_agent()
+        # ── Run orchestrator (routes to correct agent) ──
+        print(f"[MSG] Calling orchestrator...", flush=True)
         try:
-            result = await run_agent(agent, text, conversation_id)
+            result = await run_orchestrator(text, conversation_id)
+            print(f"[MSG] Routed to: {result.get('routed_to', '?')}", flush=True)
         except Exception as e:
             print(f"[MSG] Agent error: {e}", flush=True)
             await send_whatsapp_text(f"🚨 აგენტის შეცდომა!\n{text[:200]}\n{str(e)[:300]}")
