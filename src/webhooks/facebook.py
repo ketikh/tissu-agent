@@ -89,9 +89,13 @@ async def _process_message(
                     print(f"[PHOTO] Saved: {conversation_id}, {len(image_bytes)} bytes", flush=True)
                     text = "[კლიენტმა პროდუქტის ფოტო გამოგზავნა. ეკითხე მხოლოდ ზომა: პატარა თუ დიდი? (თუ ზომა უკვე იცი — პირდაპირ forward_photo_to_owner გამოიძახე). სტილს ᲐᲠ ეკითხო! ზომა რომ გეცოდინება, forward_photo_to_owner გამოიძახე და უთხარი 'გადავამოწმებ ✨'.]"
 
-        # ── Link handling ──
+        # ── Link handling — forward to owner like photo ──
         elif text and re.search(r'https?://', text):
-            text += "\n[კლიენტმა ბმული გამოგზავნა. უთხარი 'ბმულებს სამწუხაროდ ვერ ვხსნი 😊 თუ შეგიძლიათ ფოტო გამომიგზავნეთ ✨']"
+            link_match = re.search(r'https?://\S+', text)
+            link_url = link_match.group(0) if link_match else text
+            # Forward link to owner via WhatsApp
+            await send_whatsapp_text(f"🔗 კლიენტმა ლინკი გამოგზავნა:\n{link_url}\n\n👤 {customer_name or 'კლიენტი'}")
+            text = "[კლიენტმა ბმული გამოგზავნა. მფლობელს გადაეგზავნა. უთხარი 'გადავამოწმებ ✨' და დაელოდე მფლობელის ინსტრუქციას.]"
 
         # ── Customer name ──
         if customer_name:
