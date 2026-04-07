@@ -37,12 +37,19 @@ def _cleanup_old_mids() -> None:
 
 
 async def _get_latest_conversation_id() -> str:
-    """Find the most recent customer conversation from tickets."""
+    """Find the most recent customer conversation — check tickets first, then conversations."""
     pool = await get_db()
+    # Try tickets first (order/payment related)
     row = await pool.fetchrow(
-        "SELECT conversation_id FROM tickets ORDER BY created_at DESC LIMIT 1"
+        "SELECT conversation_id FROM tickets WHERE conversation_id IS NOT NULL ORDER BY created_at DESC LIMIT 1"
     )
-    return row["conversation_id"] if row else ""
+    if row and row["conversation_id"]:
+        return row["conversation_id"]
+    # Fallback: most recent conversation (covers link/photo forwards)
+    row = await pool.fetchrow(
+        "SELECT id FROM conversations WHERE agent_type = 'support_sales' ORDER BY updated_at DESC LIMIT 1"
+    )
+    return row["id"] if row else ""
 
 
 def _extract_sender_id(conv_id: str) -> str:

@@ -92,10 +92,21 @@ async def _process_message(
         # ── Link handling — forward to owner like photo ──
         elif text and re.search(r'https?://', text):
             link_match = re.search(r'https?://\S+', text)
-            link_url = link_match.group(0) if link_match else text
+            link_url = link_match.group(0) if link_match else ""
+            # Extract user's text without the link
+            user_text = re.sub(r'https?://\S+', '', text).strip()
             # Forward link to owner via WhatsApp
-            await send_whatsapp_text(f"🔗 კლიენტმა ლინკი გამოგზავნა:\n{link_url}\n\n👤 {customer_name or 'კლიენტი'}")
-            text = "[კლიენტმა ბმული გამოგზავნა. მფლობელს გადაეგზავნა. უთხარი 'გადავამოწმებ ✨' და დაელოდე მფლობელის ინსტრუქციას.]"
+            wa_msg = f"🔗 კლიენტმა ბმული გამოგზავნა:\n{link_url}"
+            if user_text:
+                wa_msg += f"\n💬 {user_text}"
+            wa_msg += f"\n\n👤 {customer_name or 'კლიენტი'}"
+            await send_whatsapp_text(wa_msg)
+            if user_text:
+                # User also wrote something ("ეს გაქვთ?") — let bot respond to the question
+                text = f"[კლიენტმა ბმული გამოგზავნა პროდუქტის. მფლობელს გადაეგზავნა. კლიენტი ეკითხება: '{user_text}'. ეკითხე ზომა: პატარა თუ დიდი?]"
+            else:
+                # Only a link, no text
+                text = "[კლიენტმა ბმული გამოგზავნა. მფლობელს გადაეგზავნა. უთხარი 'გადავამოწმებ ✨']"
 
         # ── Customer name ──
         if customer_name:
