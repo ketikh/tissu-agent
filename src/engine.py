@@ -30,8 +30,10 @@ def detect_intent(user_message: str, history: list[dict]) -> str:
     """Detect which agent should handle this message. Returns agent name."""
     msg = user_message.lower().strip()
 
-    # System messages — always escalation
+    # System messages — escalation handles owner instructions
     if msg.startswith("[system:") or msg.startswith("[მფლობელ"):
+        if "გადახდა" in msg or "დაადასტურა გადახდა" in msg:
+            return "payment"
         return "escalation"
 
     # Owner instructions
@@ -42,9 +44,33 @@ def detect_intent(user_message: str, history: list[dict]) -> str:
     if "ფოტო გამოგზავნა" in msg or "ბმული გამოგზავნა" in msg:
         return "catalog"
 
+    # Goodbye / end of conversation — sales handles it
+    goodbye_keywords = ("მადლობა", "ნახვამდის", "კარგი ნახვამდის", "არ მინდა", "სხვა დროს")
+    if msg.strip() in goodbye_keywords or any(msg.strip() == kw for kw in goodbye_keywords):
+        return "sales"
+
+    # FAQ — sales handles directly (BEFORE catalog/escalation checks!)
+    faq_keywords = ("ღირს", "ფასი", "რამდენ", "მასალ", "ნაჭრ", "რისგან", "ტილო",
+                    "წყალგაუმტარ", "ელვა", "შესაკრავ", "დამტენ", "ტელეფონის",
+                    "ფასდაკლება", "შეკვეთით", "ქასთომ", "პრინტ", "კორპორატ",
+                    "საკურიერო", "მიწოდება", "როდის", "ზომა", "ინჩ", "სტილ",
+                    "ფხრიწ", "თასმიან", "მახასიათებ", "ორმხრივ")
+    if any(kw in msg for kw in faq_keywords):
+        return "sales"
+
+    # Escalation — spam, operator, unknown
+    escalation_keywords = ("ოპერატორ", "დამაკავშირ", "საიტს აგიწყობ", "საიტს გაგიწყობ",
+                          "ფოლოვერ", "გაგირეკლამებ", "ბარტერ", "დაპოსტ", "საჩუქარ",
+                          "notify_owner", "გაუგებარ", "კონფიდენციალ",
+                          "აგიწყობთ", "რეკლამ", "თანამშრომლობ", "სტუდენტ",
+                          "რას მირჩევთ", "რომელი ჯობია", "მირჩიეთ",
+                          "რეგიონ", "თბილისის გარეთ")
+    if any(kw in msg for kw in escalation_keywords):
+        return "escalation"
+
     # Payment-related
     payment_keywords = ("თიბისი", "საქართველოს ბანკი", "ჩარიცხ", "გადავრიცხ", "სქრინ",
-                        "ქვითარ", "გადახდ", "მისამართ", "ტელეფონ", "ნომერ",
+                        "ქვითარ", "გადახდ", "მისამართ",
                         "მფლობელმა დაადასტურა", "მფლობელმა გადახდა")
     if any(kw in msg for kw in payment_keywords):
         return "payment"
@@ -60,14 +86,6 @@ def detect_intent(user_message: str, history: list[dict]) -> str:
     if any(kw in msg for kw in catalog_keywords):
         return "catalog"
 
-    # Escalation — spam, operator, unknown
-    escalation_keywords = ("ოპერატორ", "დამაკავშირ", "საიტს აგიწყობ", "საიტს გაგიწყობ",
-                          "ფოლოვერ", "გაგირეკლამებ", "ბარტერ", "დაპოსტ", "საჩუქარ",
-                          "notify_owner", "გაუგებარ", "კონფიდენციალ",
-                          "აგიწყობთ", "რეკლამ", "თანამშრომლობ", "სტუდენტ")
-    if any(kw in msg for kw in escalation_keywords):
-        return "escalation"
-
     # Check conversation history for context — if we're mid-payment flow
     if history:
         last_few = [m["content"].lower() for m in history[-4:] if m["role"] == "assistant"]
@@ -76,6 +94,8 @@ def detect_intent(user_message: str, history: list[dict]) -> str:
             return "payment"
         if any(kw in last_text for kw in ("კოდი მოგვწერეთ", "შეარჩიეთ", "პატარა თუ დიდი")):
             return "catalog"
+        if any(kw in last_text for kw in ("თიბისი თუ საქართველოს", "გავაფორმოთ")):
+            return "payment"
 
     # Default — sales (greeting, price, size, style, FAQ)
     return "sales"
