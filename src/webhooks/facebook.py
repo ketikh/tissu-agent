@@ -92,17 +92,40 @@ async def _process_message(
                     _pending_photos[conversation_id] = image_bytes
                     print(f"[PHOTO] Saved: {conversation_id}, {len(image_bytes)} bytes", flush=True)
 
-                    # Try AI image matching
+                    # Try AI image matching first
+                    ai_matched = False
                     try:
                         from src.image_match import analyze_and_match
                         match_result = await analyze_and_match(image_bytes)
                         if match_result.get("matched"):
                             code = match_result["code"]
                             score = match_result["score"]
+                            product = match_result["product"]
+                            alts = match_result.get("alternatives", [])
                             print(f"[PHOTO] AI match: {code} (score={score})", flush=True)
+                            ai_matched = True
+
+                            # Tell bot about the match
+                            alt_text = ""
+                            if alts:
+                                alt_codes = ", ".join(a["code"] for a in alts[:2])
+                                alt_text = f" ალტერნატივები: {alt_codes}."
+                            text = (
+                                f"[AI ანალიზმა კლიენტის ფოტო შეადარა მარაგს და იპოვა: {code} "
+                                f"({product['model']}, {product['size']}, {product['price']}₾). "
+                                f"სიზუსტე: {int(score*100)}%.{alt_text} "
+                                f"უთხარი რომ მსგავსი მოდელი მოიძებნა და აჩვენე — "
+                                f"check_inventory(search='{code}') გამოიძახე. "
+                                f"მერე ეკითხე მოეწონა თუ არა და გსურს შეკვეთა.]"
+                            )
+                        else:
+                            print(f"[PHOTO] AI no match: {match_result.get('message')}", flush=True)
                     except Exception as match_err:
                         print(f"[PHOTO] AI match failed: {match_err}", flush=True)
-                    text = "[კლიენტმა პროდუქტის ფოტო გამოგზავნა. ეკითხე მხოლოდ ზომა: პატარა თუ დიდი? (თუ ზომა უკვე იცი — პირდაპირ forward_photo_to_owner გამოიძახე). სტილს ᲐᲠ ეკითხო! ზომა რომ გეცოდინება, forward_photo_to_owner გამოიძახე და უთხარი 'გადავამოწმებ ✨'.]"
+
+                    # If AI didn't find a match — fallback to manual owner check
+                    if not ai_matched:
+                        text = "[კლიენტმა პროდუქტის ფოტო გამოგზავნა. ეკითხე მხოლოდ ზომა: პატარა თუ დიდი? (თუ ზომა უკვე იცი — პირდაპირ forward_photo_to_owner გამოიძახე). სტილს ᲐᲠ ეკითხო! ზომა რომ გეცოდინება, forward_photo_to_owner გამოიძახე და უთხარი 'გადავამოწმებ ✨'.]"
 
         # ── Link handling — forward to owner like photo ──
         elif text and re.search(r'https?://', text):
