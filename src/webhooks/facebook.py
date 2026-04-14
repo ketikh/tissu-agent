@@ -125,7 +125,7 @@ async def _process_message(
 
                     # If AI didn't find a match — fallback to manual owner check
                     if not ai_matched:
-                        text = "[კლიენტმა პროდუქტის ფოტო გამოგზავნა. ეკითხე მხოლოდ ზომა: პატარა თუ დიდი? (თუ ზომა უკვე იცი — პირდაპირ forward_photo_to_owner გამოიძახე). სტილს ᲐᲠ ეკითხო! ზომა რომ გეცოდინება, forward_photo_to_owner გამოიძახე და უთხარი 'გადავამოწმებ ✨'.]"
+                        text = "[კლიენტმა პროდუქტის ფოტო გამოგზავნა მაგრამ AI ვერ იპოვა ზუსტი შესაბამისი. ჯერ უთხარი 'ერთი წუთით, გადავამოწმებ ✨' და ეკითხე ზომა: 'პატარა თუ დიდი ზომაში გაინტერესებთ?' სტილს ᲐᲠ ეკითხო! ზომა რომ გეცოდინება, forward_photo_to_owner გამოიძახე.]"
 
         # ── Link handling — forward to owner like photo ──
         elif text and re.search(r'https?://', text):
@@ -179,7 +179,7 @@ async def _process_message(
             if not reply_text:
                 # If tools were used (e.g. check_inventory for photo match) — send a fallback
                 if result.get("tool_calls_made"):
-                    reply_text = "მსგავსი მოდელი მოიძებნა ✨ მოგეწონებათ?"
+                    reply_text = "გადავამოწმეთ და მსგავსი მოდელი მარაგში გვაქვს ✨ გნებავთ?"
                     print(f"[MSG] Empty reply with tools — sending fallback", flush=True)
                 else:
                     # True silence (e.g. waiting for address+phone)
