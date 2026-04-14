@@ -177,8 +177,13 @@ async def _process_message(
             reply_text = re.sub(r'\n{3,}', '\n\n', reply_text).strip()
 
             if not reply_text:
-                # Empty reply = bot chose silence (e.g. waiting for address+phone)
-                print(f"[MSG] Empty reply — not sending anything", flush=True)
+                # If tools were used (e.g. check_inventory for photo match) — send a fallback
+                if result.get("tool_calls_made"):
+                    reply_text = "მსგავსი მოდელი მოიძებნა ✨ მოგეწონებათ?"
+                    print(f"[MSG] Empty reply with tools — sending fallback", flush=True)
+                else:
+                    # True silence (e.g. waiting for address+phone)
+                    print(f"[MSG] Empty reply — not sending anything", flush=True)
             else:
                 fb_resp = await client.post(fb_api, params=fb_params, json={
                     "recipient": {"id": sender_id},
