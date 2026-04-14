@@ -198,6 +198,17 @@ async def _process_message(
     except Exception as e:
         print(f"[MSG] CRASH: {e}", flush=True)
         _tb.print_exc()
+        # Always try to respond to customer even on crash
+        try:
+            if FB_PAGE_TOKEN and sender_id:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    await client.post(
+                        "https://graph.facebook.com/v21.0/me/messages",
+                        params={"access_token": FB_PAGE_TOKEN},
+                        json={"recipient": {"id": sender_id}, "message": {"text": "ერთი წუთით, გადავამოწმებ ✨"}},
+                    )
+        except Exception:
+            pass
 
 
 async def _send_product_images(
