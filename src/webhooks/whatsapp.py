@@ -15,8 +15,9 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from src.agents.support_sales import run_orchestrator
+from src.agents.support_sales import get_support_sales_agent
 from src.db import get_db
+from src.engine import run_agent
 
 logger = logging.getLogger(__name__)
 
@@ -77,13 +78,15 @@ async def _handle_confirmation(conv_id: str) -> str:
             if f.suffix in ('.jpg', '.jpeg', '.png'):
                 f.unlink(missing_ok=True)
 
-    result = await run_orchestrator("[მფლობელმა დაადასტურა გადახდა. მოითხოვე მისამართი და ტელეფონი.]", conv_id)
+    agent = get_support_sales_agent()
+    result = await run_agent(agent, "[მფლობელმა დაადასტურა გადახდა. მოითხოვე მისამართი და ტელეფონი.]", conv_id)
     return result["reply"].strip() or "გადახდა დადასტურებულია! ✨ მისამართი და ტელეფონის ნომერი მოგვწერეთ."
 
 
 async def _handle_denial(conv_id: str) -> str:
     """Owner denied payment — tell customer payment wasn't confirmed."""
-    result = await run_orchestrator("[მფლობელმა გადახდა ვერ დაადასტურა. თავაზიანად უთხარი რომ გადახდა ვერ დადასტურდა და გთხოვთ გადაამოწმოთ ან ხელახლა გამოაგზავნოთ ქვითარი.]", conv_id)
+    agent = get_support_sales_agent()
+    result = await run_agent(agent, "[მფლობელმა გადახდა ვერ დაადასტურა. თავაზიანად უთხარი რომ გადახდა ვერ დადასტურდა და გთხოვთ გადაამოწმოთ ან ხელახლა გამოაგზავნოთ ქვითარი.]", conv_id)
     return result["reply"].strip() or "გადახდა ვერ დადასტურდა 😔 გთხოვთ გადაამოწმოთ და ქვითარი ხელახლა გამოგვიგზავნეთ ✨"
 
 
@@ -147,7 +150,8 @@ async def wa_webhook_receive(request: Request):
 
                 elif "არ გვაქვს" in text_lower or "არა" == text_lower.strip():
                     # Owner says product not available
-                    result = await run_orchestrator("[მფლობელის ინსტრუქცია: ეს მოდელი არ გვაქვს, შესთავაზე სხვა]", conv_id)
+                    agent = get_support_sales_agent()
+                    result = await run_agent(agent, "[მფლობელის ინსტრუქცია: ეს მოდელი არ გვაქვს, შესთავაზე სხვა]", conv_id)
                     reply = result["reply"].strip() or "სამწუხაროდ ეს მოდელი ამჟამად არ გვაქვს. სხვა ლამაზი მოდელები გაჩვენოთ? ✨"
                     await _send_to_customer(sender_id, reply)
 
@@ -163,7 +167,9 @@ async def wa_webhook_receive(request: Request):
                     if row:
                         product = dict(row)
                         # Tell agent the owner found the product
-                        result = await run_orchestrator(
+                        agent = get_support_sales_agent()
+                        result = await run_agent(
+                            agent,
                             f"[მფლობელის ინსტრუქცია: კლიენტის ფოტოს {code} ემთხვევა. აჩვენე ეს პროდუქტი და ეკითხე მოეწონა თუ არა]",
                             conv_id,
                         )
@@ -202,7 +208,8 @@ async def wa_webhook_receive(request: Request):
 
                 elif text_lower in ("მე ვპასუხობ", "ჩემია", "მე", "stop", "სტოპ"):
                     # Owner takes over — tell bot to shut up, notify owner
-                    await run_orchestrator("[SYSTEM: owner_is_chatting]", conv_id)
+                    agent = get_support_sales_agent()
+                    await run_agent(agent, "[SYSTEM: owner_is_chatting]", conv_id)
                     from src.notifications import send_whatsapp_text
                     await send_whatsapp_text("✅ ბოტი გაჩერდა, შენ აგრძელებ. 'უპასუხე:' ტექსტით მიწერე კლიენტს.")
 
@@ -212,13 +219,15 @@ async def wa_webhook_receive(request: Request):
 
                 elif text_lower in ("ბოტი", "bot", "გააგრძელე"):
                     # Resume bot — clear owner_is_chatting state
-                    await run_orchestrator("[SYSTEM: owner_stopped_chatting — ბოტი ისევ აგრძელებს]", conv_id)
+                    agent = get_support_sales_agent()
+                    await run_agent(agent, "[SYSTEM: owner_stopped_chatting — ბოტი ისევ აგრძელებს]", conv_id)
                     from src.notifications import send_whatsapp_text
                     await send_whatsapp_text("🤖 ბოტი ისევ ჩაირთო.")
 
                 else:
                     # Other text — forward as instruction to bot
-                    result = await run_orchestrator(f"[მფლობელის ინსტრუქცია: {text}]", conv_id)
+                    agent = get_support_sales_agent()
+                    result = await run_agent(agent, f"[მფლობელის ინსტრუქცია: {text}]", conv_id)
                     reply = result["reply"].strip()
                     if reply:
                         await _send_to_customer(sender_id, reply)
@@ -248,7 +257,9 @@ async def owner_deny(conversation_id: str):
 async def photo_confirm(conversation_id: str):
     """Owner confirms product is in stock (photo match)."""
     sender_id = _extract_sender_id(conversation_id)
-    result = await run_orchestrator(
+    agent = get_support_sales_agent()
+    result = await run_agent(
+        agent,
         "[მფლობელმა დაადასტურა — მარაგშია. უთხარი 'გვაქვს მარაგში ✨ გავაფორმოთ შეკვეთა?' — როცა დაეთანხმება, ეკითხე 'თიბისი თუ საქართველოს ბანკი?' სტილს ᲐᲠ ეკითხო, ფოტოებს ᲐᲠ გაუგზავნო, check_inventory ᲐᲠ გამოიძახო.]",
         conversation_id,
     )
@@ -261,7 +272,9 @@ async def photo_confirm(conversation_id: str):
 async def photo_deny(conversation_id: str):
     """Owner says product is not in stock (photo match)."""
     sender_id = _extract_sender_id(conversation_id)
-    result = await run_orchestrator(
+    agent = get_support_sales_agent()
+    result = await run_agent(
+        agent,
         "[მფლობელმა უარყო — კლიენტის ფოტოზე მოდელი არ არის მარაგში. უთხარი 'სამწუხაროდ ეს მოდელი ამჟამად აღარ გვაქვს ✨ სხვა ლამაზი მოდელები გაჩვენოთ?']",
         conversation_id,
     )

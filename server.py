@@ -23,7 +23,7 @@ from src.config import API_HOST, API_PORT
 from src.db import init_db, get_db, close_pool
 from src.models import ChatRequest, ChatResponse, LeadCreate, ContentCreate
 from src.engine import run_agent
-from src.agents.support_sales import get_support_sales_agent, run_orchestrator
+from src.agents.support_sales import get_support_sales_agent
 from src.agents.marketing import get_marketing_agent
 from src.channels import get_adapter, ADAPTERS
 from src.webhooks.facebook import router as fb_router
@@ -93,7 +93,8 @@ async def chat_support(req: ChatRequest):
         if context_parts:
             enriched_message = f"[Context: {'; '.join(context_parts)}]\n\n{req.message}"
 
-    result = await run_orchestrator(enriched_message, req.conversation_id)
+    agent = get_support_sales_agent()
+    result = await run_agent(agent, enriched_message, req.conversation_id)
     try:
         return ChatResponse(**result)
     except Exception:
@@ -124,7 +125,8 @@ async def channel_webhook(channel: str, request: Request):
             context_parts.append(f"Product interest: {ctx.product_interest}")
         enriched_message = f"[Context: {'; '.join(context_parts)}]\n\n{chat_request.message}"
 
-    result = await run_orchestrator(enriched_message, chat_request.conversation_id)
+    agent = get_support_sales_agent()
+    result = await run_agent(agent, enriched_message, chat_request.conversation_id)
     return {"agent_response": result, "channel": channel}
 
 
