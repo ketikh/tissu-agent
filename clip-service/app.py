@@ -1,23 +1,16 @@
-"""CLIP Image Embedding Service — runs on Hugging Face Spaces (free).
-
-Provides /embed endpoint that takes an image URL or base64 and returns
-a 512-dim CLIP embedding vector.
-"""
+"""CLIP Image Embedding Service — runs on Hugging Face Spaces (free)."""
 import io
 import base64
 from PIL import Image
-import torch
-from transformers import CLIPProcessor, CLIPModel
+from sentence_transformers import SentenceTransformer
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import httpx
 
 app = FastAPI(title="CLIP Embedding Service")
 
-# Load CLIP model once at startup
 print("Loading CLIP model...")
-model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+model = SentenceTransformer("clip-ViT-B-32")
 print("CLIP ready!")
 
 
@@ -33,7 +26,6 @@ class EmbedResponse(BaseModel):
 
 @app.post("/embed", response_model=EmbedResponse)
 async def embed_image(req: EmbedRequest):
-    """Generate CLIP embedding for an image."""
     if not req.image_url and not req.image_base64:
         raise HTTPException(400, "Provide image_url or image_base64")
 
@@ -42,18 +34,13 @@ async def embed_image(req: EmbedRequest):
             async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
                 resp = await client.get(req.image_url)
                 if resp.status_code != 200:
-                    raise HTTPException(400, f"Failed to download: {resp.status_code}")
+                    raise HTTPException(400, f"Download failed: {resp.status_code}")
                 image = Image.open(io.BytesIO(resp.content)).convert("RGB")
         else:
             image_bytes = base64.b64decode(req.image_base64)
             image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        inputs = processor(images=image, return_tensors="pt")
-        with torch.no_grad():
-            features = model.get_image_features(**inputs)
-            features = features / features.norm(p=2, dim=-1, keepdim=True)
-
-        embedding = features[0].tolist()
+        embedding = model.encode(image).tolist()
         return EmbedResponse(embedding=embedding, dimension=len(embedding))
 
     except HTTPException:
@@ -64,4 +51,4 @@ async def embed_image(req: EmbedRequest):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model": "clip-vit-base-patch32", "dimension": 512}
+    return {"status": "ok", "model": "clip-ViT-B-32", "dimension": 512}
