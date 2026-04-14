@@ -143,13 +143,14 @@ async def _process_message(
             reply_text = re.sub(r'\n{3,}', '\n\n', reply_text).strip()
 
             if not reply_text:
-                reply_text = "გადავამოწმებ და მოგწერთ ✨"
-
-            fb_resp = await client.post(fb_api, params=fb_params, json={
-                "recipient": {"id": sender_id},
-                "message": {"text": reply_text[:2000]},
-            })
-            print(f"[MSG] FB reply: {fb_resp.status_code} {fb_resp.text[:200]}", flush=True)
+                # Empty reply = bot chose silence (e.g. waiting for address+phone)
+                print(f"[MSG] Empty reply — not sending anything", flush=True)
+            else:
+                fb_resp = await client.post(fb_api, params=fb_params, json={
+                    "recipient": {"id": sender_id},
+                    "message": {"text": reply_text[:2000]},
+                })
+                print(f"[MSG] FB reply: {fb_resp.status_code} {fb_resp.text[:200]}", flush=True)
 
             await _send_product_images(client, fb_api, fb_params, sender_id, result, conversation_id)
 

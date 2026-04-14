@@ -71,7 +71,23 @@ async def create_order(customer_name: str, customer_phone: str, customer_address
         "INSERT INTO orders (customer_name, customer_phone, customer_address, items, total, payment_method, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
         customer_name, customer_phone, customer_address, items, total, payment_method, notes, now, now,
     )
-    return {"success": True, "order_id": row["id"]}
+    order_id = row["id"]
+
+    # Notify owner via WhatsApp about new order
+    from src.notifications import send_whatsapp_text
+    public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
+    wa_msg = (
+        f"🛒 ახალი შეკვეთა #{order_id}!\n"
+        f"👤 {customer_name}\n"
+        f"📱 {customer_phone}\n"
+        f"📍 {customer_address}\n"
+        f"📦 {items}\n"
+        f"💰 {total}₾\n\n"
+        f"📋 ადმინ პანელი:\n{public_url}/admin"
+    )
+    await send_whatsapp_text(wa_msg)
+
+    return {"success": True, "order_id": order_id}
 
 
 async def notify_owner(reason: str, customer_name: str = "", customer_phone: str = "", details: str = "", conversation_id: str = "") -> dict:
