@@ -110,7 +110,7 @@ async def generate_embedding_from_image(image_url: str = "", image_bytes: bytes 
         return await _gemini_text_embedding("laptop bag product")
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=90) as client:
             if image_url:
                 resp = await client.post(f"{CLIP_SERVICE_URL}/embed", json={"image_url": image_url})
             elif image_bytes:

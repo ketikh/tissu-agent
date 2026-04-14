@@ -92,11 +92,14 @@ async def _process_message(
                     _pending_photos[conversation_id] = image_bytes
                     print(f"[PHOTO] Saved: {conversation_id}, {len(image_bytes)} bytes", flush=True)
 
-                    # Try AI image matching first
+                    # Try AI image matching first (with timeout)
                     ai_matched = False
                     try:
                         from src.image_match import analyze_and_match
-                        match_result = await analyze_and_match(image_bytes)
+                        match_result = await asyncio.wait_for(
+                            analyze_and_match(image_bytes),
+                            timeout=60,
+                        )
                         if match_result.get("matched"):
                             code = match_result["code"]
                             score = match_result["score"]
@@ -105,7 +108,6 @@ async def _process_message(
                             print(f"[PHOTO] AI match: {code} (score={score})", flush=True)
                             ai_matched = True
 
-                            # Tell bot about the match
                             alt_text = ""
                             if alts:
                                 alt_codes = ", ".join(a["code"] for a in alts[:2])
@@ -114,12 +116,14 @@ async def _process_message(
                                 f"[AI ანალიზმა კლიენტის ფოტო შეადარა მარაგს და იპოვა: {code} "
                                 f"({product['model']}, {product['size']}, {product['price']}₾). "
                                 f"სიზუსტე: {int(score*100)}%.{alt_text} "
-                                f"უთხარი რომ მსგავსი მოდელი მოიძებნა და აჩვენე — "
+                                f"უთხარი რომ გადავამოწმეთ და მსგავსი მოდელი მარაგში გვაქვს — "
                                 f"check_inventory(search='{code}') გამოიძახე. "
-                                f"მერე ეკითხე მოეწონა თუ არა და გსურს შეკვეთა.]"
+                                f"მერე ეკითხე გნებავთ.]"
                             )
                         else:
                             print(f"[PHOTO] AI no match: {match_result.get('message')}", flush=True)
+                    except asyncio.TimeoutError:
+                        print(f"[PHOTO] AI match timeout (60s)", flush=True)
                     except Exception as match_err:
                         print(f"[PHOTO] AI match failed: {match_err}", flush=True)
 
