@@ -91,6 +91,17 @@ async def _process_message(
                 else:
                     _pending_photos[conversation_id] = image_bytes
                     print(f"[PHOTO] Saved: {conversation_id}, {len(image_bytes)} bytes", flush=True)
+
+                    # Try AI image matching
+                    try:
+                        from src.image_match import analyze_and_match
+                        match_result = await analyze_and_match(image_bytes)
+                        if match_result.get("matched"):
+                            code = match_result["code"]
+                            score = match_result["score"]
+                            print(f"[PHOTO] AI match: {code} (score={score})", flush=True)
+                    except Exception as match_err:
+                        print(f"[PHOTO] AI match failed: {match_err}", flush=True)
                     text = "[კლიენტმა პროდუქტის ფოტო გამოგზავნა. ეკითხე მხოლოდ ზომა: პატარა თუ დიდი? (თუ ზომა უკვე იცი — პირდაპირ forward_photo_to_owner გამოიძახე). სტილს ᲐᲠ ეკითხო! ზომა რომ გეცოდინება, forward_photo_to_owner გამოიძახე და უთხარი 'გადავამოწმებ ✨'.]"
 
         # ── Link handling — forward to owner like photo ──
