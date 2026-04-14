@@ -15,7 +15,7 @@ from src.agents.support_sales import get_support_sales_agent
 from src.db import get_db
 from src.engine import run_agent
 from src.notifications import send_whatsapp_image, send_whatsapp_text
-from src.tools.support import _pending_photos
+from src.tools.support import _pending_photos, _ai_hints
 from src.vision import download_image, is_payment_receipt
 
 logger = logging.getLogger(__name__)
@@ -92,44 +92,21 @@ async def _process_message(
                     _pending_photos[conversation_id] = image_bytes
                     print(f"[PHOTO] Saved: {conversation_id}, {len(image_bytes)} bytes", flush=True)
 
-                    # Try AI image matching first (with timeout)
-                    ai_matched = False
+                    # Always ask size + forward to owner. AI match info goes to owner as hint.
+                    ai_hint = ""
                     try:
                         from src.image_match import analyze_and_match
-                        match_result = await asyncio.wait_for(
-                            analyze_and_match(image_bytes),
-                            timeout=60,
-                        )
+                        match_result = await asyncio.wait_for(analyze_and_match(image_bytes), timeout=45)
                         if match_result.get("matched"):
                             code = match_result["code"]
                             score = match_result["score"]
-                            product = match_result["product"]
-                            alts = match_result.get("alternatives", [])
-                            print(f"[PHOTO] AI match: {code} (score={score})", flush=True)
-                            ai_matched = True
+                            ai_hint = f"\n🤖 AI რეკომენდაცია: {code} ({int(score*100)}%)"
+                            _ai_hints[conversation_id] = ai_hint
+                            print(f"[PHOTO] AI hint: {code} (score={score})", flush=True)
+                    except Exception as e:
+                        print(f"[PHOTO] AI match skipped: {e}", flush=True)
 
-                            alt_text = ""
-                            if alts:
-                                alt_codes = ", ".join(a["code"] for a in alts[:2])
-                                alt_text = f" ალტერნატივები: {alt_codes}."
-                            text = (
-                                f"[AI ანალიზმა კლიენტის ფოტო შეადარა მარაგს და იპოვა: {code} "
-                                f"({product['model']}, {product['size']}, {product['price']}₾). "
-                                f"სიზუსტე: {int(score*100)}%.{alt_text} "
-                                f"უთხარი რომ გადავამოწმეთ და მსგავსი მოდელი მარაგში გვაქვს — "
-                                f"check_inventory(search='{code}') გამოიძახე. "
-                                f"მერე ეკითხე გნებავთ.]"
-                            )
-                        else:
-                            print(f"[PHOTO] AI no match: {match_result.get('message')}", flush=True)
-                    except asyncio.TimeoutError:
-                        print(f"[PHOTO] AI match timeout (60s)", flush=True)
-                    except Exception as match_err:
-                        print(f"[PHOTO] AI match failed: {match_err}", flush=True)
-
-                    # If AI didn't find a match — fallback to manual owner check
-                    if not ai_matched:
-                        text = "[კლიენტმა პროდუქტის ფოტო გამოგზავნა მაგრამ AI ვერ იპოვა ზუსტი შესაბამისი. ჯერ უთხარი 'ერთი წუთით, გადავამოწმებ ✨' და ეკითხე ზომა: 'პატარა თუ დიდი ზომაში გაინტერესებთ?' სტილს ᲐᲠ ეკითხო! ზომა რომ გეცოდინება, forward_photo_to_owner გამოიძახე.]"
+                    text = "[კლიენტმა პროდუქტის ფოტო გამოგზავნა. უთხარი 'ერთი წუთით, გადავამოწმებ ✨ პატარა თუ დიდი ზომაში გაინტერესებთ?' სტილს ᲐᲠ ეკითხო! ზომა რომ გეცოდინება, forward_photo_to_owner გამოიძახე.]"
 
         # ── Link handling — forward to owner like photo ──
         elif text and re.search(r'https?://', text):
@@ -181,13 +158,8 @@ async def _process_message(
             reply_text = re.sub(r'\n{3,}', '\n\n', reply_text).strip()
 
             if not reply_text:
-                # If tools were used (e.g. check_inventory for photo match) — send a fallback
-                if result.get("tool_calls_made"):
-                    reply_text = "გადავამოწმეთ და მსგავსი მოდელი მარაგში გვაქვს ✨ გნებავთ?"
-                    print(f"[MSG] Empty reply with tools — sending fallback", flush=True)
-                else:
-                    # True silence (e.g. waiting for address+phone)
-                    print(f"[MSG] Empty reply — not sending anything", flush=True)
+                # Empty reply = bot chose silence (e.g. waiting for address+phone)
+                print(f"[MSG] Empty reply — not sending anything", flush=True)
             else:
                 fb_resp = await client.post(fb_api, params=fb_params, json={
                     "recipient": {"id": sender_id},

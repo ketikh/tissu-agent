@@ -191,6 +191,8 @@ async def search_knowledge(query: str) -> dict:
 
 # Pending customer photos: conversation_id -> image_bytes
 _pending_photos: dict[str, bytes] = {}
+# AI match hints: conversation_id -> hint text
+_ai_hints: dict[str, str] = {}
 
 
 async def forward_photo_to_owner(size: str, conversation_id: str = "") -> dict:
@@ -213,9 +215,10 @@ async def forward_photo_to_owner(size: str, conversation_id: str = "") -> dict:
     deny_url = f"{public_url}/api/photo-deny/{conversation_id}"
 
     admin_url = f"{public_url}/admin"
+    ai_hint = _ai_hints.pop(conversation_id, "")
     sent = await send_whatsapp_image(
         photo_bytes,
-        caption=f"📷 კლიენტი ეძებს ამ მოდელს, {size} ზომაში.\n\n✅ გვაქვს:\n{confirm_url}\n\n❌ არ გვაქვს:\n{deny_url}\n\n📋 ადმინ პანელი:\n{admin_url}",
+        caption=f"📷 კლიენტი ეძებს ამ მოდელს, {size} ზომაში.{ai_hint}\n\n✅ გვაქვს:\n{confirm_url}\n\n❌ არ გვაქვს:\n{deny_url}\n\n📋 ადმინ პანელი:\n{admin_url}",
     )
 
     print(f"[PHOTO] WhatsApp send result: {sent}")

@@ -213,26 +213,60 @@ async def index_all_products() -> dict:
     return {"indexed": success, "failed": failed, "total": len(rows)}
 
 
+async def _gemini_visual_compare(user_image: bytes, candidate_urls: list[str]) -> str | None:
+    """Use Gemini Vision to pick the best match from CLIP candidates."""
+    if not candidate_urls:
+        return None
+    client = _get_client()
+    try:
+        # Download candidate images
+        parts = [types.Part.from_bytes(data=user_image, mime_type="image/jpeg")]
+        parts.append(types.Part(text="ეს არის კლიენტის ფოტო (პირველი სურათი). ქვემოთ არის კანდიდატი პროდუქტები:"))
+
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as http:
+            for i, url in enumerate(candidate_urls):
+                try:
+                    resp = await http.get(url)
+                    if resp.status_code == 200:
+                        parts.append(types.Part.from_bytes(data=resp.content, mime_type="image/jpeg"))
+                        parts.append(types.Part(text=f"კანდიდატი {i+1}"))
+                except Exception:
+                    pass
+
+        parts.append(types.Part(text=(
+            "რომელი კანდიდატი ემსგავსება ყველაზე მეტად კლიენტის ფოტოს? "
+            "შეადარე ფერი, ნახატი/პატერნი, სტილი. "
+            "უპასუხე მხოლოდ ციფრით: 1, 2, ან 3. თუ არცერთი არ ემსგავსება, დაწერე: 0"
+        )))
+
+        resp = client.models.generate_content(
+            model=VISION_MODEL,
+            contents=[types.Content(role="user", parts=parts)],
+        )
+        answer = (resp.text or "").strip()
+        # Extract number
+        for ch in answer:
+            if ch.isdigit():
+                return int(ch)
+        return None
+    except Exception as e:
+        logger.error(f"Visual compare failed: {e}")
+        return None
+
+
 async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     """Analyze a user's photo and find the closest matching product.
+
+    Uses CLIP for top-3 candidates, then Gemini Vision to pick the best match.
 
     Returns:
         {"matched": True, "code": "TP15", "score": 0.92, "product": {...}} or
         {"matched": False, "message": "..."}
     """
-    # Step 1: Analyze user's photo
-    tags = await analyze_image(image_bytes)
-    if not tags:
-        return {"matched": False, "message": "ფოტოს ანალიზი ვერ მოხერხდა"}
-
-    # Step 2: Generate CLIP embedding for user's photo
+    # Step 1: Generate CLIP embedding for user's photo
     user_embedding = await generate_embedding_from_image(image_bytes=image_bytes)
     if not user_embedding:
-        # Fallback to text embedding
-        text = _tags_to_text(tags)
-        if size:
-            text += f" size:{size}"
-        user_embedding = await _gemini_text_embedding(text)
+        return {"matched": False, "message": "CLIP embedding ვერ მოხერხდა"}
 
     # Step 3: Find closest match in database using pgvector cosine similarity
     pool = await get_db()
@@ -261,32 +295,52 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
         return {"matched": False, "message": "მარაგში ვერ მოიძებნა"}
 
     best = rows[0]
-    score = float(best["similarity"])
+    clip_score = float(best["similarity"])
 
-    # Threshold: 0.75 = good match
-    if score < 0.75:
+    # If CLIP score is too low, no match
+    if clip_score < 0.70:
         return {
             "matched": False,
             "message": "ზუსტი შესაბამისი ვერ მოიძებნა",
             "closest_code": best["code"],
-            "score": round(score, 2),
+            "score": round(clip_score, 2),
         }
+
+    # Step 3: Gemini Vision picks the best from top-3 CLIP candidates
+    candidate_urls = [r["image_url"] for r in rows if r.get("image_url")]
+    gemini_pick = await _gemini_visual_compare(image_bytes, candidate_urls)
+
+    if gemini_pick and 1 <= gemini_pick <= len(rows):
+        # Gemini chose a specific candidate
+        chosen = rows[gemini_pick - 1]
+        print(f"[MATCH] Gemini picked #{gemini_pick}: {chosen['code']}", flush=True)
+    elif gemini_pick == 0:
+        # Gemini says none match — but if CLIP is very confident, use it
+        if clip_score >= 0.85:
+            chosen = best
+            print(f"[MATCH] Gemini said 0 but CLIP confident ({clip_score}): {best['code']}", flush=True)
+        else:
+            return {"matched": False, "message": "ვიზუალური შედარებით ვერ მოიძებნა"}
+    else:
+        # Gemini failed — use CLIP's best
+        chosen = best
+        print(f"[MATCH] Gemini failed, using CLIP best: {best['code']}", flush=True)
 
     return {
         "matched": True,
-        "code": best["code"],
-        "score": round(score, 2),
+        "code": chosen["code"],
+        "score": round(float(chosen["similarity"]), 2),
         "product": {
-            "code": best["code"],
-            "model": best["model"],
-            "size": best["size"],
-            "price": best["price"],
-            "image_url": best["image_url"],
-            "image_url_back": best.get("image_url_back", ""),
+            "code": chosen["code"],
+            "model": chosen["model"],
+            "size": chosen["size"],
+            "price": chosen["price"],
+            "image_url": chosen["image_url"],
+            "image_url_back": chosen.get("image_url_back", ""),
         },
         "alternatives": [
             {"code": r["code"], "score": round(float(r["similarity"]), 2)}
-            for r in rows[1:]
-            if float(r["similarity"]) > 0.70
+            for r in rows
+            if r["code"] != chosen["code"] and float(r["similarity"]) > 0.70
         ],
     }
