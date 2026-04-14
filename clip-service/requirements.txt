@@ -1,0 +1,6 @@
+torch
+transformers
+Pillow
+fastapi
+uvicorn
+httpx

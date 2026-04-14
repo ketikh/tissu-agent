@@ -18,8 +18,8 @@ from src.db import get_db
 
 logger = logging.getLogger(__name__)
 
-EMBEDDING_MODEL = "gemini-embedding-001"
 VISION_MODEL = "gemini-2.5-flash"
+CLIP_SERVICE_URL = os.getenv("CLIP_SERVICE_URL", "")  # e.g. https://your-space.hf.space
 
 
 def _get_client() -> genai.Client:
@@ -102,11 +102,42 @@ def _tags_to_text(tags: dict, code: str = "", model: str = "", size: str = "") -
     return " ".join(parts)
 
 
-async def generate_embedding(text: str) -> list[float]:
-    """Generate embedding vector for text using Gemini."""
-    client = _get_client()
-    result = client.models.embed_content(model=EMBEDDING_MODEL, contents=text)
-    return list(result.embeddings[0].values)
+async def generate_embedding_from_image(image_url: str = "", image_bytes: bytes = b"") -> list[float]:
+    """Generate CLIP image embedding via microservice."""
+    if not CLIP_SERVICE_URL:
+        # Fallback to Gemini text embedding if CLIP not available
+        return await _gemini_text_embedding("laptop bag product")
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            if image_url:
+                resp = await client.post(f"{CLIP_SERVICE_URL}/embed", json={"image_url": image_url})
+            elif image_bytes:
+                import base64
+                b64 = base64.b64encode(image_bytes).decode()
+                resp = await client.post(f"{CLIP_SERVICE_URL}/embed", json={"image_base64": b64})
+            else:
+                return []
+
+            if resp.status_code == 200:
+                return resp.json()["embedding"]
+            else:
+                logger.error(f"CLIP service error: {resp.status_code} {resp.text[:100]}")
+                return []
+    except Exception as e:
+        logger.error(f"CLIP service failed: {e}")
+        return []
+
+
+async def _gemini_text_embedding(text: str) -> list[float]:
+    """Fallback: Gemini text embedding."""
+    try:
+        client = _get_client()
+        result = client.models.embed_content(model="gemini-embedding-001", contents=text)
+        return list(result.embeddings[0].values)
+    except Exception as e:
+        logger.error(f"Gemini embedding failed: {e}")
+        return []
 
 
 async def index_product(inventory_id: int, code: str, model: str, size: str, image_url: str) -> bool:
@@ -126,9 +157,12 @@ async def index_product(inventory_id: int, code: str, model: str, size: str, ima
             logger.error(f"Failed to analyze {code}")
             return False
 
-        # Generate embedding from tags + metadata
-        text = _tags_to_text(tags, code=code, model=model, size=size)
-        embedding = await generate_embedding(text)
+        # Generate CLIP image embedding (or fallback to text)
+        embedding = await generate_embedding_from_image(image_url=image_url)
+        if not embedding:
+            # Fallback to text embedding from tags
+            text = _tags_to_text(tags, code=code, model=model, size=size)
+            embedding = await _gemini_text_embedding(text)
 
         # Store in database
         pool = await get_db()
@@ -190,11 +224,14 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     if not tags:
         return {"matched": False, "message": "ფოტოს ანალიზი ვერ მოხერხდა"}
 
-    # Step 2: Generate embedding for user's photo description
-    text = _tags_to_text(tags)
-    if size:
-        text += f" size:{size}"
-    user_embedding = await generate_embedding(text)
+    # Step 2: Generate CLIP embedding for user's photo
+    user_embedding = await generate_embedding_from_image(image_bytes=image_bytes)
+    if not user_embedding:
+        # Fallback to text embedding
+        text = _tags_to_text(tags)
+        if size:
+            text += f" size:{size}"
+        user_embedding = await _gemini_text_embedding(text)
 
     # Step 3: Find closest match in database using pgvector cosine similarity
     pool = await get_db()
