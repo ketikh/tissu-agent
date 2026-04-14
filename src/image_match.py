@@ -141,41 +141,42 @@ async def _gemini_text_embedding(text: str) -> list[float]:
         return []
 
 
-async def index_product(inventory_id: int, code: str, model: str, size: str, image_url: str) -> bool:
-    """Analyze and index a single product image."""
+async def index_product(inventory_id: int, code: str, model: str, size: str, image_url: str, image_url_back: str = "") -> bool:
+    """Analyze and index a product — both front and back images."""
     try:
-        # Download image
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-            resp = await client.get(image_url)
-            if resp.status_code != 200:
-                logger.error(f"Failed to download {image_url}: {resp.status_code}")
-                return False
-            image_bytes = resp.content
-
-        # Analyze with Vision
-        tags = await analyze_image(image_bytes)
-        if not tags:
-            logger.error(f"Failed to analyze {code}")
-            return False
-
-        # Generate CLIP image embedding (or fallback to text)
+        # Generate CLIP embedding for front image
         embedding = await generate_embedding_from_image(image_url=image_url)
         if not embedding:
-            # Fallback to text embedding from tags
-            text = _tags_to_text(tags, code=code, model=model, size=size)
-            embedding = await _gemini_text_embedding(text)
+            logger.error(f"Failed to embed {code} front")
+            return False
 
-        # Store in database
+        # Analyze with Vision for tags
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            resp = await client.get(image_url)
+            image_bytes = resp.content if resp.status_code == 200 else b""
+        tags = await analyze_image(image_bytes) if image_bytes else {}
+
+        # Store front embedding
         pool = await get_db()
         now = datetime.now(timezone.utc).isoformat()
         tags_json = json.dumps(tags, ensure_ascii=False)
-
         await pool.execute(
             """INSERT INTO product_embeddings (inventory_id, code, tags, embedding, created_at)
-               VALUES ($1, $2, $3, $4, $5)
-               ON CONFLICT (inventory_id) DO UPDATE SET tags = $3, embedding = $4, created_at = $5""",
+               VALUES ($1, $2, $3, $4, $5)""",
             inventory_id, code, tags_json, str(embedding), now,
         )
+
+        # Index back image too (as separate row with negative inventory_id)
+        if image_url_back:
+            back_embedding = await generate_embedding_from_image(image_url=image_url_back)
+            if back_embedding:
+                await pool.execute(
+                    """INSERT INTO product_embeddings (inventory_id, code, tags, embedding, created_at)
+                       VALUES ($1, $2, $3, $4, $5)
+                       ON CONFLICT (inventory_id) DO UPDATE SET embedding = $4, created_at = $5""",
+                    -inventory_id, code, tags_json, str(back_embedding), now,
+                )
+
         return True
     except Exception as e:
         logger.error(f"Indexing failed for {code}: {e}")
@@ -188,7 +189,7 @@ async def index_all_products() -> dict:
 
     # Get products with images that haven't been indexed
     rows = await pool.fetch("""
-        SELECT i.id, i.code, i.model, i.size, i.image_url
+        SELECT i.id, i.code, i.model, i.size, i.image_url, i.image_url_back
         FROM inventory i
         LEFT JOIN product_embeddings pe ON pe.inventory_id = i.id
         WHERE i.image_url != '' AND i.image_url IS NOT NULL AND i.stock > 0 AND pe.id IS NULL
@@ -202,7 +203,7 @@ async def index_all_products() -> dict:
     failed = 0
     for row in rows:
         print(f"[INDEX] Processing {row['code']}...", flush=True)
-        ok = await index_product(row["id"], row["code"], row["model"], row["size"], row["image_url"])
+        ok = await index_product(row["id"], row["code"], row["model"], row["size"], row["image_url"], row.get("image_url_back", ""))
         if ok:
             success += 1
             print(f"[INDEX] ✅ {row['code']}", flush=True)
@@ -234,9 +235,12 @@ async def _gemini_visual_compare(user_image: bytes, candidate_urls: list[str]) -
                     pass
 
         parts.append(types.Part(text=(
-            "რომელი კანდიდატი ემსგავსება ყველაზე მეტად კლიენტის ფოტოს? "
-            "შეადარე ფერი, ნახატი/პატერნი, სტილი. "
-            "უპასუხე მხოლოდ ციფრით: 1, 2, ან 3. თუ არცერთი არ ემსგავსება, დაწერე: 0"
+            "Which candidate product BEST matches the customer's photo? "
+            "Focus ONLY on: 1) FABRIC PATTERN (floral, geometric, striped, solid, plaid, tropical) "
+            "2) COLOR PALETTE (exact colors, not just 'blue' but 'navy blue with yellow accents') "
+            "3) TEXTURE (quilted, smooth, woven). "
+            "Ignore background, lighting, angle. Look at the BAG SURFACE PATTERN. "
+            "Answer with ONLY a number: 1, 2, or 3. If NONE match the pattern, answer: 0"
         )))
 
         resp = client.models.generate_content(

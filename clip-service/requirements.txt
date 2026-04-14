@@ -3,3 +3,4 @@ Pillow
 fastapi
 uvicorn
 httpx
+rembg[cpu]
