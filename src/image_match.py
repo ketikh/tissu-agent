@@ -27,7 +27,7 @@ def _get_client() -> genai.Client:
 
 
 async def analyze_image(image_bytes: bytes) -> dict:
-    """Analyze a product image with Gemini Vision. Returns tags dict."""
+    """Analyze a product image with Gemini Vision. Returns detailed tags dict."""
     client = _get_client()
     try:
         resp = client.models.generate_content(
@@ -35,11 +35,24 @@ async def analyze_image(image_bytes: bytes) -> dict:
             contents=[types.Content(role="user", parts=[
                 types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
                 types.Part(text=(
-                    'ეს არის ლეპტოპის ქეისი/ჩანთა. აღწერე JSON-ით:\n'
-                    '{"color": "main color", "pattern": "solid/striped/floral/geometric/abstract/checkered", '
-                    '"style": "strap/zipper", "dominant_colors": ["color1","color2"], '
-                    '"material_look": "canvas/leather/nylon/fabric", '
-                    '"description": "short english description of the bag appearance"}\n'
+                    'This is a laptop sleeve/case. Analyze it in extreme detail. Return JSON:\n'
+                    '{\n'
+                    '  "primary_color": "exact color name (e.g. navy blue, forest green, burgundy, beige)",\n'
+                    '  "secondary_color": "second most visible color or none",\n'
+                    '  "color_tone": "warm/cool/neutral",\n'
+                    '  "brightness": "light/medium/dark",\n'
+                    '  "pattern_type": "solid/striped/floral/geometric/abstract/checkered/paisley/animal/tropical",\n'
+                    '  "pattern_detail": "describe the specific pattern in 5-10 words",\n'
+                    '  "pattern_scale": "small/medium/large",\n'
+                    '  "pattern_colors": ["color1", "color2", "color3"],\n'
+                    '  "closure_type": "strap/zipper/magnetic/velcro/open",\n'
+                    '  "surface_texture": "smooth/rough/woven/quilted/ribbed",\n'
+                    '  "material_appearance": "canvas/denim/cotton/linen/synthetic",\n'
+                    '  "overall_style": "minimalist/colorful/vintage/modern/bohemian/classic",\n'
+                    '  "distinctive_features": "any unique visual element in 5-10 words",\n'
+                    '  "visual_description": "detailed 20-30 word description of exact appearance"\n'
+                    '}\n'
+                    'Be very specific about colors and patterns — two bags that look different MUST have different descriptions.\n'
                     'Only valid JSON, no markdown, no explanation.'
                 )),
             ])],
@@ -55,19 +68,37 @@ async def analyze_image(image_bytes: bytes) -> dict:
 
 
 def _tags_to_text(tags: dict, code: str = "", model: str = "", size: str = "") -> str:
-    """Convert tags dict to searchable text for embedding."""
+    """Convert tags dict to rich searchable text for embedding."""
     parts = []
     if code:
-        parts.append(f"code:{code}")
+        parts.append(f"product code {code}")
     if model:
-        parts.append(f"model:{model}")
+        parts.append(f"model {model}")
     if size:
-        parts.append(f"size:{size}")
-    for key in ("color", "pattern", "style", "material_look", "description"):
-        if tags.get(key):
-            parts.append(str(tags[key]))
-    for c in tags.get("dominant_colors", []):
+        parts.append(f"size {size}")
+
+    # Core visual identity
+    for key in ("primary_color", "secondary_color", "color_tone", "brightness",
+                "pattern_type", "pattern_detail", "pattern_scale",
+                "closure_type", "surface_texture", "material_appearance",
+                "overall_style", "distinctive_features", "visual_description"):
+        val = tags.get(key)
+        if val and val != "none":
+            parts.append(str(val))
+
+    # Pattern colors
+    for c in tags.get("pattern_colors", []):
         parts.append(c)
+
+    # Fallback for old format
+    for key in ("color", "pattern", "style", "material_look", "description"):
+        val = tags.get(key)
+        if val and val not in parts:
+            parts.append(str(val))
+    for c in tags.get("dominant_colors", []):
+        if c not in parts:
+            parts.append(c)
+
     return " ".join(parts)
 
 
