@@ -150,44 +150,43 @@ async def _process_message(
                 # Only a link, no text
                 text = "[კლიენტმა ბმული გამოგზავნა. მფლობელს გადაეგზავნა. უთხარი 'გადავამოწმებ ✨']"
 
-        # ── Inject AI hint if user is answering size after photo ──
-        # If we have a pending AI match for this conversation and the user
-        # just typed "პატარა" or "დიდი" (size), inject the AI code so the bot
-        # can directly show the matched product to the customer.
+        # ── AI photo match: when user answers size after sending photo ──
+        # Check _ai_hints for pending match stored at photo arrival time
         if not image_url and text and conversation_id in _ai_hints:
-            size_hint = ""
             text_lower = text.lower().strip()
+            size_wanted = ""
             if "პატარა" in text_lower:
-                size_hint = "პატარა"
+                size_wanted = "პატარა"
             elif "დიდი" in text_lower:
-                size_hint = "დიდი"
-            if size_hint:
-                hint = _ai_hints.get(conversation_id)
-                if isinstance(hint, dict):
-                    code = hint.get("code", "")
-                    price = hint.get("price", 0)
+                size_wanted = "დიდი"
+
+            if size_wanted:
+                hint = _ai_hints.pop(conversation_id, None)
+                if isinstance(hint, dict) and hint.get("code"):
+                    code = hint["code"]
                     hint_size = hint.get("size", "")
-                    # Check if the AI-found size matches what customer asked
-                    size_matches = size_hint in hint_size
-                    if code and size_matches:
-                        print(f"[PHOTO] Injecting AI hint to bot: code={code}", flush=True)
+                    price = hint.get("price", 0)
+                    if size_wanted in hint_size:
+                        # Size matches — show matched product to customer
+                        print(f"[PHOTO] AI match → show {code} to customer", flush=True)
                         text = (
-                            f"[კლიენტმა ფოტოზე აირჩია {size_hint} ზომა. "
-                            f"AI-მ იპოვა მსგავსი მოდელი: {code} ({hint_size}, {price}₾). "
-                            f"გამოიძახე check_inventory(search='{code}') რომ ფოტო გაუგზავნო "
-                            f"და უპასუხე: 'ეს მოდელი გვაქვს მარაგში, {size_hint} ზომაში — {price}₾ ✨ გნებავთ?']"
+                            f"[AI-მ იპოვა: {code}. გამოიძახე check_inventory(search='{code}') "
+                            f"და უპასუხე: 'ეს მოდელი გვაქვს მარაგში, {size_wanted} ზომაში — {int(price)}₾ ✨ გნებავთ?']"
                         )
-                        # Clear hint and pending photo — don't need them anymore
-                        _ai_hints.pop(conversation_id, None)
-                    elif code and not size_matches:
-                        # AI found a match but in different size
-                        print(f"[PHOTO] AI match size mismatch: wanted {size_hint}, found {hint_size}", flush=True)
+                    else:
+                        # AI found match but in different size
+                        print(f"[PHOTO] AI match size mismatch: wanted={size_wanted}, found={hint_size}", flush=True)
                         text = (
-                            f"[კლიენტმა ფოტოზე აირჩია {size_hint} ზომა, მაგრამ AI-მ ვერ იპოვა "
-                            f"{size_hint} ზომაში. უპასუხე: 'სამწუხაროდ ეს მოდელი {size_hint} "
-                            f"ზომაში აღარ გვაქვს 😔 სხვა მოდელები გაჩვენოთ?']"
+                            f"[AI ვერ იპოვა {size_wanted} ზომაში. უპასუხე: 'სამწუხაროდ ზუსტად ასეთი მოდელი "
+                            f"{size_wanted} ზომაში არ გვაქვს ✨ სხვა მოდელები გაჩვენოთ?']"
                         )
-                        _ai_hints.pop(conversation_id, None)
+                else:
+                    # No AI match at all — tell bot
+                    print(f"[PHOTO] No AI match available for {conversation_id}", flush=True)
+                    text = (
+                        f"[AI ვერ იპოვა ზუსტი შესაბამისი. უპასუხე: 'სამწუხაროდ ზუსტად ასეთი მოდელი "
+                        f"არ გვაქვს ✨ სხვა მოდელები გაჩვენოთ?']"
+                    )
 
         # ── Customer name ──
         if customer_name:

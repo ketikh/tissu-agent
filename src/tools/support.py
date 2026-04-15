@@ -328,16 +328,18 @@ SUPPORT_TOOLS = [
         },
         handler=search_knowledge,
     ),
-    Tool(
-        name="forward_photo_to_owner",
-        description="კლიენტის ფოტო მფლობელს გადაუგზავნე WhatsApp-ზე. მფლობელი გადაწყვეტს მარაგშია თუ არა. გამოიძახე მხოლოდ მას შემდეგ რაც კლიენტმა ზომა აირჩია.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "size": {"type": "string", "description": "'პატარა' ან 'დიდი'"},
-            },
-            "required": ["size"],
-        },
-        handler=forward_photo_to_owner,
-    ),
+    # DISABLED — AI photo matching handles this automatically now.
+    # Payment screenshot confirmation still works via send_whatsapp_image in facebook.py.
+    # Tool(
+    #     name="forward_photo_to_owner",
+    #     description="კლიენტის ფოტო მფლობელს გადაუგზავნე WhatsApp-ზე. მფლობელი გადაწყვეტს მარაგშია თუ არა. გამოიძახე მხოლოდ მას შემდეგ რაც კლიენტმა ზომა აირჩია.",
+    #     parameters={
+    #         "type": "object",
+    #         "properties": {
+    #             "size": {"type": "string", "description": "'პატარა' ან 'დიდი'"},
+    #         },
+    #         "required": ["size"],
+    #     },
+    #     handler=forward_photo_to_owner,
+    # ),
 ]
