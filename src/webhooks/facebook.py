@@ -93,12 +93,14 @@ async def _process_message(
                     print(f"[PHOTO] Saved: {conversation_id}, {len(image_bytes)} bytes", flush=True)
 
                     # Run AI match — analyzes photo and compares to indexed products
+                    print(f"[PHOTO] Starting AI match for conv_id={conversation_id}", flush=True)
                     try:
                         from src.vision_match import analyze_and_match
                         match_result = await asyncio.wait_for(
                             analyze_and_match(image_bytes),
                             timeout=30,
                         )
+                        print(f"[PHOTO] AI match result: {match_result}", flush=True)
                         if match_result and match_result.get("matched"):
                             code = match_result["code"]
                             score = match_result["score"]
@@ -117,11 +119,15 @@ async def _process_message(
                                 "image_url": product.get("image_url", ""),
                                 "text": f"\n🤖 AI რეკომენდაცია: {code} ({int(score*100)}%){alt_str}",
                             }
-                            print(f"[PHOTO] AI hint stored: {code} (score={score})", flush=True)
+                            print(f"[PHOTO] ✅ AI hint stored: {code} img={product.get('image_url','')[:60]}", flush=True)
                         else:
-                            print(f"[PHOTO] AI no match", flush=True)
+                            print(f"[PHOTO] AI no match (score too low or not found)", flush=True)
+                    except asyncio.TimeoutError:
+                        print(f"[PHOTO] AI match TIMEOUT (30s)", flush=True)
                     except Exception as e:
-                        print(f"[PHOTO] AI match skipped: {e}", flush=True)
+                        import traceback
+                        print(f"[PHOTO] ❌ AI match EXCEPTION: {type(e).__name__}: {e}", flush=True)
+                        traceback.print_exc()
 
                     text = "[კლიენტმა პროდუქტის ფოტო გამოგზავნა. ჯერ ეკითხე: 'პატარა თუ დიდი ზომაში გაინტერესებთ? ✨' სტილს ᲐᲠ ეკითხო! ზომა რომ გეცოდინება, გამოიძახე forward_photo_to_owner იმ ზომით და უპასუხე 'ერთი წუთით, გადავამოწმებ ✨'.]"
 
