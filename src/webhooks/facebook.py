@@ -7,6 +7,7 @@ import os
 import re
 import time
 import traceback as _tb
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -100,28 +101,31 @@ async def _process_message(
                             analyze_and_match(image_bytes),
                             timeout=30,
                         )
-                        print(f"[PHOTO] AI match result: {match_result}", flush=True)
+                        print(f"[PHOTO] AI match: matched={match_result.get('matched')} code={match_result.get('code')}", flush=True)
                         if match_result and match_result.get("matched"):
                             code = match_result["code"]
                             score = match_result["score"]
                             product = match_result.get("product", {})
-                            alts = match_result.get("alternatives", [])
-                            alt_str = ""
-                            if alts:
-                                alt_str = " | " + ", ".join(f"{a['code']}={int(a['score']*100)}%" for a in alts[:2])
-                            # Store richer hint with model + size + price
-                            _ai_hints[conversation_id] = {
-                                "code": code,
-                                "score": score,
-                                "model": product.get("model", ""),
-                                "size": product.get("size", ""),
-                                "price": product.get("price", 0),
-                                "image_url": product.get("image_url", ""),
-                                "text": f"\n🤖 AI რეკომენდაცია: {code} ({int(score*100)}%){alt_str}",
-                            }
-                            print(f"[PHOTO] ✅ AI hint stored: {code} img={product.get('image_url','')[:60]}", flush=True)
+                            # Persist hint in database (survives cross-request state loss)
+                            pool = await get_db()
+                            now_iso = datetime.now(timezone.utc).isoformat()
+                            await pool.execute(
+                                """INSERT INTO ai_photo_hints (conversation_id, code, model, size, price, image_url, score, created_at)
+                                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                                   ON CONFLICT (conversation_id) DO UPDATE SET
+                                     code=$2, model=$3, size=$4, price=$5, image_url=$6, score=$7, created_at=$8""",
+                                conversation_id,
+                                code,
+                                product.get("model", ""),
+                                product.get("size", ""),
+                                float(product.get("price", 0)),
+                                product.get("image_url", ""),
+                                float(score),
+                                now_iso,
+                            )
+                            print(f"[PHOTO] ✅ AI hint saved to DB: {code}", flush=True)
                         else:
-                            print(f"[PHOTO] AI no match (score too low or not found)", flush=True)
+                            print(f"[PHOTO] AI no match", flush=True)
                     except asyncio.TimeoutError:
                         print(f"[PHOTO] AI match TIMEOUT (30s)", flush=True)
                     except Exception as e:
@@ -151,8 +155,8 @@ async def _process_message(
                 text = "[კლიენტმა ბმული გამოგზავნა. მფლობელს გადაეგზავნა. უთხარი 'გადავამოწმებ ✨']"
 
         # ── AI photo match: when user answers size after sending photo ──
-        # Check _ai_hints for pending match stored at photo arrival time
-        if not image_url and text and conversation_id in _ai_hints:
+        # Read persisted hint from database (survives cross-request state loss)
+        if not image_url and text:
             text_lower = text.lower().strip()
             size_wanted = ""
             if "პატარა" in text_lower:
@@ -161,32 +165,41 @@ async def _process_message(
                 size_wanted = "დიდი"
 
             if size_wanted:
-                hint = _ai_hints.pop(conversation_id, None)
-                if isinstance(hint, dict) and hint.get("code"):
-                    code = hint["code"]
-                    hint_size = hint.get("size", "")
-                    price = hint.get("price", 0)
+                try:
+                    pool = await get_db()
+                    hint_row = await pool.fetchrow(
+                        "SELECT code, model, size, price, image_url, score FROM ai_photo_hints WHERE conversation_id = $1",
+                        conversation_id,
+                    )
+                except Exception as e:
+                    print(f"[PHOTO] Failed to fetch hint: {e}", flush=True)
+                    hint_row = None
+
+                if hint_row:
+                    code = hint_row["code"]
+                    hint_size = hint_row["size"] or ""
+                    price = hint_row["price"] or 0
+                    # Remove hint so it's one-shot
+                    try:
+                        await pool.execute(
+                            "DELETE FROM ai_photo_hints WHERE conversation_id = $1",
+                            conversation_id,
+                        )
+                    except Exception:
+                        pass
+
                     if size_wanted in hint_size:
-                        # Size matches — show matched product to customer
                         print(f"[PHOTO] AI match → show {code} to customer", flush=True)
                         text = (
                             f"[AI-მ იპოვა: {code}. გამოიძახე check_inventory(search='{code}') "
                             f"და უპასუხე: 'ეს მოდელი გვაქვს მარაგში, {size_wanted} ზომაში — {int(price)}₾ ✨ გნებავთ?']"
                         )
                     else:
-                        # AI found match but in different size
-                        print(f"[PHOTO] AI match size mismatch: wanted={size_wanted}, found={hint_size}", flush=True)
+                        print(f"[PHOTO] size mismatch: wanted={size_wanted} found={hint_size}", flush=True)
                         text = (
                             f"[AI ვერ იპოვა {size_wanted} ზომაში. უპასუხე: 'სამწუხაროდ ზუსტად ასეთი მოდელი "
                             f"{size_wanted} ზომაში არ გვაქვს ✨ სხვა მოდელები გაჩვენოთ?']"
                         )
-                else:
-                    # No AI match at all — tell bot
-                    print(f"[PHOTO] No AI match available for {conversation_id}", flush=True)
-                    text = (
-                        f"[AI ვერ იპოვა ზუსტი შესაბამისი. უპასუხე: 'სამწუხაროდ ზუსტად ასეთი მოდელი "
-                        f"არ გვაქვს ✨ სხვა მოდელები გაჩვენოთ?']"
-                    )
 
         # ── Customer name ──
         if customer_name:
