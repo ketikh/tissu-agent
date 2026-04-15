@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio as _asyncio
 import logging
+import os
 from google import genai
 from google.genai import types
 from src.config import GEMINI_API_KEY, LLM_MODEL
@@ -8,11 +9,26 @@ from src.config import GEMINI_API_KEY, LLM_MODEL
 _logger = logging.getLogger(__name__)
 _client: genai.Client | None = None
 
+# Vertex AI config — when set, uses Vertex AI instead of AI Studio API key
+VERTEX_PROJECT = os.getenv("VERTEX_PROJECT", "")
+VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "us-central1")
+
 
 def get_client() -> genai.Client:
     global _client
     if _client is None:
-        _client = genai.Client(api_key=GEMINI_API_KEY)
+        if VERTEX_PROJECT:
+            # Use Vertex AI (service account auth, billed to project's billing account)
+            _client = genai.Client(
+                vertexai=True,
+                project=VERTEX_PROJECT,
+                location=VERTEX_LOCATION,
+            )
+            print(f"[LLM] Using Vertex AI — project={VERTEX_PROJECT}, location={VERTEX_LOCATION}")
+        else:
+            # Fallback to AI Studio API key
+            _client = genai.Client(api_key=GEMINI_API_KEY)
+            print(f"[LLM] Using AI Studio API key")
     return _client
 
 
