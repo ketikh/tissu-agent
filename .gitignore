@@ -54,3 +54,4 @@ htmlcov/
 *.egg
 MANIFEST
 .playwright-mcp/
+secrets/

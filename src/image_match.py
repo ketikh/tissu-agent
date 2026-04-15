@@ -172,8 +172,7 @@ async def index_product(inventory_id: int, code: str, model: str, size: str, ima
             if back_embedding:
                 await pool.execute(
                     """INSERT INTO product_embeddings (inventory_id, code, tags, embedding, created_at)
-                       VALUES ($1, $2, $3, $4, $5)
-                       ON CONFLICT (inventory_id) DO UPDATE SET embedding = $4, created_at = $5""",
+                       VALUES ($1, $2, $3, $4, $5)""",
                     -inventory_id, code, tags_json, str(back_embedding), now,
                 )
 

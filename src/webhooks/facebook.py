@@ -95,12 +95,16 @@ async def _process_message(
                     # Always ask size + forward to owner. AI match info goes to owner as hint.
                     ai_hint = ""
                     try:
-                        from src.image_match import analyze_and_match
-                        match_result = await asyncio.wait_for(analyze_and_match(image_bytes), timeout=45)
+                        from src.vision_match import analyze_and_match
+                        match_result = await asyncio.wait_for(analyze_and_match(image_bytes), timeout=30)
                         if match_result.get("matched"):
                             code = match_result["code"]
                             score = match_result["score"]
-                            ai_hint = f"\n🤖 AI რეკომენდაცია: {code} ({int(score*100)}%)"
+                            alts = match_result.get("alternatives", [])
+                            alt_str = ""
+                            if alts:
+                                alt_str = " | " + ", ".join(f"{a['code']}={int(a['score']*100)}%" for a in alts[:2])
+                            ai_hint = f"\n🤖 AI რეკომენდაცია: {code} ({int(score*100)}%){alt_str}"
                             _ai_hints[conversation_id] = ai_hint
                             print(f"[PHOTO] AI hint: {code} (score={score})", flush=True)
                     except Exception as e:
