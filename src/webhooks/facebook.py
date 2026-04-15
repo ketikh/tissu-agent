@@ -92,25 +92,38 @@ async def _process_message(
                     _pending_photos[conversation_id] = image_bytes
                     print(f"[PHOTO] Saved: {conversation_id}, {len(image_bytes)} bytes", flush=True)
 
-                    # Always ask size + forward to owner. AI match info goes to owner as hint.
-                    ai_hint = ""
+                    # Run AI match — analyzes photo and compares to indexed products
                     try:
                         from src.vision_match import analyze_and_match
-                        match_result = await asyncio.wait_for(analyze_and_match(image_bytes), timeout=30)
-                        if match_result.get("matched"):
+                        match_result = await asyncio.wait_for(
+                            analyze_and_match(image_bytes),
+                            timeout=30,
+                        )
+                        if match_result and match_result.get("matched"):
                             code = match_result["code"]
                             score = match_result["score"]
+                            product = match_result.get("product", {})
                             alts = match_result.get("alternatives", [])
                             alt_str = ""
                             if alts:
                                 alt_str = " | " + ", ".join(f"{a['code']}={int(a['score']*100)}%" for a in alts[:2])
-                            ai_hint = f"\n🤖 AI რეკომენდაცია: {code} ({int(score*100)}%){alt_str}"
-                            _ai_hints[conversation_id] = ai_hint
-                            print(f"[PHOTO] AI hint: {code} (score={score})", flush=True)
+                            # Store richer hint with model + size + price
+                            _ai_hints[conversation_id] = {
+                                "code": code,
+                                "score": score,
+                                "model": product.get("model", ""),
+                                "size": product.get("size", ""),
+                                "price": product.get("price", 0),
+                                "image_url": product.get("image_url", ""),
+                                "text": f"\n🤖 AI რეკომენდაცია: {code} ({int(score*100)}%){alt_str}",
+                            }
+                            print(f"[PHOTO] AI hint stored: {code} (score={score})", flush=True)
+                        else:
+                            print(f"[PHOTO] AI no match", flush=True)
                     except Exception as e:
                         print(f"[PHOTO] AI match skipped: {e}", flush=True)
 
-                    text = "[კლიენტმა პროდუქტის ფოტო გამოგზავნა. უთხარი 'ერთი წუთით, გადავამოწმებ ✨ პატარა თუ დიდი ზომაში გაინტერესებთ?' სტილს ᲐᲠ ეკითხო! ზომა რომ გეცოდინება, forward_photo_to_owner გამოიძახე.]"
+                    text = "[კლიენტმა პროდუქტის ფოტო გამოგზავნა. ჯერ ეკითხე: 'პატარა თუ დიდი ზომაში გაინტერესებთ? ✨' სტილს ᲐᲠ ეკითხო! ზომა რომ გეცოდინება, გამოიძახე forward_photo_to_owner იმ ზომით და უპასუხე 'ერთი წუთით, გადავამოწმებ ✨'.]"
 
         # ── Link handling — forward to owner like photo ──
         elif text and re.search(r'https?://', text):

@@ -196,9 +196,8 @@ _ai_hints: dict[str, str] = {}
 
 
 async def forward_photo_to_owner(size: str, conversation_id: str = "") -> dict:
-    """Forward customer's pending photo to owner via WhatsApp with confirm/deny links."""
-    import logging
-    from src.notifications import send_whatsapp_image
+    """Forward customer's pending photo to owner via WhatsApp with AI match + confirm/deny."""
+    from src.notifications import send_whatsapp_image, send_whatsapp_text
 
     print(f"[PHOTO] forward_photo_to_owner called: size={size}, conv_id={conversation_id}")
     print(f"[PHOTO] Pending photos keys: {list(_pending_photos.keys())}")
@@ -213,15 +212,41 @@ async def forward_photo_to_owner(size: str, conversation_id: str = "") -> dict:
     public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
     confirm_url = f"{public_url}/api/photo-confirm/{conversation_id}"
     deny_url = f"{public_url}/api/photo-deny/{conversation_id}"
-
     admin_url = f"{public_url}/admin"
-    ai_hint = _ai_hints.pop(conversation_id, "")
-    sent = await send_whatsapp_image(
-        photo_bytes,
-        caption=f"📷 კლიენტი ეძებს ამ მოდელს, {size} ზომაში.{ai_hint}\n\n✅ გვაქვს:\n{confirm_url}\n\n❌ არ გვაქვს:\n{deny_url}\n\n📋 ადმინ პანელი:\n{admin_url}",
-    )
 
-    print(f"[PHOTO] WhatsApp send result: {sent}")
+    # Extract AI hint (now structured dict)
+    ai_data = _ai_hints.pop(conversation_id, None)
+    ai_hint_text = ""
+    ai_product_url = ""
+    if isinstance(ai_data, dict):
+        ai_hint_text = ai_data.get("text", "")
+        ai_product_url = ai_data.get("image_url", "")
+    elif isinstance(ai_data, str):
+        ai_hint_text = ai_data
+
+    # 1. Send customer's photo with AI recommendation + confirm/deny
+    caption = (
+        f"📷 კლიენტი ეძებს ამ მოდელს, {size} ზომაში.{ai_hint_text}\n\n"
+        f"✅ გვაქვს:\n{confirm_url}\n\n"
+        f"❌ არ გვაქვს:\n{deny_url}\n\n"
+        f"📋 ადმინ პანელი:\n{admin_url}"
+    )
+    sent = await send_whatsapp_image(photo_bytes, caption=caption)
+    print(f"[PHOTO] WhatsApp customer photo sent: {sent}")
+
+    # 2. If AI matched, also send the AI-recommended product photo so owner can visually compare
+    if ai_product_url:
+        try:
+            async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+                resp = await client.get(ai_product_url)
+                if resp.status_code == 200:
+                    await send_whatsapp_image(
+                        resp.content,
+                        caption=f"🤖 AI-ის რეკომენდაცია ↑ შეადარე კლიენტის ფოტოს",
+                    )
+                    print(f"[PHOTO] AI recommendation photo also sent")
+        except Exception as e:
+            print(f"[PHOTO] Failed to send AI recommendation photo: {e}")
 
     # Clean up
     _pending_photos.pop(conversation_id, None)
