@@ -99,7 +99,7 @@ async def _process_message(
                         from src.vision_match import analyze_and_match
                         match_result = await asyncio.wait_for(
                             analyze_and_match(image_bytes),
-                            timeout=30,
+                            timeout=45,
                         )
                         print(f"[PHOTO] AI match: matched={match_result.get('matched')} code={match_result.get('code')}", flush=True)
                         if match_result and match_result.get("matched"):

@@ -190,11 +190,12 @@ async def ensure_table():
 
 
 async def index_product(inventory_id: int, code: str, image_url: str, image_url_back: str = "") -> bool:
+    import asyncio
     try:
         pool = await get_db()
         now = datetime.now(timezone.utc).isoformat()
 
-        fp_front = fingerprint_from_url(image_url)
+        fp_front = await asyncio.to_thread(fingerprint_from_url, image_url)
         await pool.execute(
             "INSERT INTO product_fingerprints (inventory_id, code, fingerprint, created_at) VALUES ($1, $2, $3, $4)",
             inventory_id, code, json.dumps(fp_front), now,
@@ -202,7 +203,7 @@ async def index_product(inventory_id: int, code: str, image_url: str, image_url_
 
         if image_url_back:
             try:
-                fp_back = fingerprint_from_url(image_url_back)
+                fp_back = await asyncio.to_thread(fingerprint_from_url, image_url_back)
                 await pool.execute(
                     "INSERT INTO product_fingerprints (inventory_id, code, fingerprint, created_at) VALUES ($1, $2, $3, $4)",
                     -inventory_id, code, json.dumps(fp_back), now,
@@ -247,8 +248,10 @@ async def index_all_products() -> dict:
 
 async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     """Match a user photo against indexed products."""
+    import asyncio
     try:
-        user_fp = fingerprint_from_bytes(image_bytes)
+        # Run sync Cloud Vision call in thread to avoid blocking event loop
+        user_fp = await asyncio.to_thread(fingerprint_from_bytes, image_bytes)
     except Exception as e:
         logger.error(f"Fingerprint failed: {e}")
         return {"matched": False, "message": "ფოტოს ანალიზი ვერ მოხერხდა"}
