@@ -91,35 +91,61 @@ async def _process_message(
                     text = "[კლიენტმა გადახდის სქრინი გამოგზავნა. უთხარი 'მადლობა, გადავამოწმებ ✨' და ᲒᲐᲩᲔᲠᲓᲘ. მისამართს ᲐᲠ ეკითხო.]"
                 else:
                     _pending_photos[conversation_id] = image_bytes
-                    print(f"[PHOTO] Product photo received. Starting background AI match...", flush=True)
+                    print(f"[PHOTO] Product photo. Running AI match INLINE...", flush=True)
 
-                    # Start AI match in background — saves result to DB
-                    async def _run_ai_match(conv_id: str, img: bytes):
+                    # Tell customer we're checking (send immediately)
+                    if FB_PAGE_TOKEN:
                         try:
-                            from src.vision_match import analyze_and_match
-                            result = await analyze_and_match(img)
-                            print(f"[PHOTO] AI done: matched={result.get('matched')} code={result.get('code')}", flush=True)
-                            if result and result.get("matched"):
-                                product = result.get("product", {})
-                                pool = await get_db()
-                                now_iso = datetime.now(timezone.utc).isoformat()
-                                await pool.execute(
-                                    """INSERT INTO ai_photo_hints (conversation_id, code, model, size, price, image_url, score, created_at)
-                                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                                       ON CONFLICT (conversation_id) DO UPDATE SET
-                                         code=$2, model=$3, size=$4, price=$5, image_url=$6, score=$7, created_at=$8""",
-                                    conv_id, result["code"], product.get("model", ""),
-                                    product.get("size", ""), float(product.get("price", 0)),
-                                    product.get("image_url", ""), float(result["score"]), now_iso,
+                            async with httpx.AsyncClient(timeout=5) as _fc:
+                                await _fc.post(
+                                    "https://graph.facebook.com/v21.0/me/messages",
+                                    params={"access_token": FB_PAGE_TOKEN},
+                                    json={"recipient": {"id": sender_id}, "message": {"text": "ერთი წუთით, ვამოწმებ ✨"}},
                                 )
-                                print(f"[PHOTO] ✅ Hint saved: {result['code']}", flush=True)
-                        except Exception as e:
-                            print(f"[PHOTO] ❌ BG match failed: {type(e).__name__}: {e}", flush=True)
+                        except Exception:
+                            pass
 
-                    asyncio.create_task(_run_ai_match(conversation_id, image_bytes))
+                    # Run AI match INLINE — wait for result before proceeding
+                    ai_code = ""
+                    ai_product = {}
+                    try:
+                        from src.vision_match import analyze_and_match
+                        match_result = await asyncio.wait_for(analyze_and_match(image_bytes), timeout=60)
+                        print(f"[PHOTO] AI: matched={match_result.get('matched')} code={match_result.get('code')} score={match_result.get('score')}", flush=True)
+                        if match_result and match_result.get("matched"):
+                            ai_code = match_result["code"]
+                            ai_product = match_result.get("product", {})
+                    except asyncio.TimeoutError:
+                        print(f"[PHOTO] AI TIMEOUT (60s)", flush=True)
+                    except Exception as e:
+                        print(f"[PHOTO] AI ERROR: {type(e).__name__}: {e}", flush=True)
 
-                    # Ask size while AI runs in background
-                    text = "[კლიენტმა პროდუქტის ფოტო გამოგზავნა. მხოლოდ ეს უპასუხე: 'პატარა თუ დიდი ზომაში გაინტერესებთ? ✨']"
+                    if ai_code:
+                        # AI found match — tell bot to show it
+                        size = ai_product.get("size", "")
+                        price = int(ai_product.get("price", 0))
+                        text = (
+                            f"[AI-მ იპოვა მსგავსი: {ai_code} ({size}, {price}₾). "
+                            f"გამოიძახე check_inventory(search='{ai_code}') და უპასუხე: "
+                            f"'გადავამოწმეთ და ეს მოდელი გვაქვს მარაგში — {size}, {price}₾ ✨ გნებავთ?']"
+                        )
+                    else:
+                        # AI failed — forward to owner
+                        photo_bytes = _pending_photos.pop(conversation_id, None)
+                        if photo_bytes:
+                            public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
+                            try:
+                                await send_whatsapp_image(
+                                    photo_bytes,
+                                    caption=(
+                                        f"📷 კლიენტი ეძებს ამ მოდელს.\n\n"
+                                        f"✅ გვაქვს:\n{public_url}/api/photo-confirm/{conversation_id}\n\n"
+                                        f"❌ არ გვაქვს:\n{public_url}/api/photo-deny/{conversation_id}"
+                                    ),
+                                )
+                            except Exception:
+                                pass
+                        text = "[AI ვერ იპოვა. მფლობელს გადაეგზავნა. უპასუხე: 'გადავამოწმებ და მოგწერთ ✨']"
 
         # ── Link handling — forward to owner like photo ──
         elif text and re.search(r'https?://', text):
@@ -140,61 +166,7 @@ async def _process_message(
                 # Only a link, no text
                 text = "[კლიენტმა ბმული გამოგზავნა. მფლობელს გადაეგზავნა. უთხარი 'გადავამოწმებ ✨']"
 
-        # ── AI photo match: when user answers size, wait for and use AI result ──
-        if not image_url and text:
-            text_lower = text.lower().strip()
-            size_wanted = ""
-            if any(w in text_lower for w in ("პატარა", "პატარე", "პატარ", "small", "33")):
-                size_wanted = "პატარა"
-            elif any(w in text_lower for w in ("დიდი", "დიდ", "large", "big", "37")):
-                size_wanted = "დიდი"
-
-            if size_wanted:
-                # Wait for background AI match to finish (poll DB every 2s, max 30s)
-                hint_row = None
-                pool = await get_db()
-                for _wait in range(15):
-                    hint_row = await pool.fetchrow(
-                        "SELECT code, model, size, price, image_url, score FROM ai_photo_hints WHERE conversation_id = $1",
-                        conversation_id,
-                    )
-                    if hint_row:
-                        break
-                    await asyncio.sleep(2)
-
-                if hint_row:
-                    code = hint_row["code"]
-                    hint_size = hint_row["size"] or ""
-                    price = hint_row["price"] or 0
-                    await pool.execute("DELETE FROM ai_photo_hints WHERE conversation_id = $1", conversation_id)
-
-                    if size_wanted in hint_size:
-                        print(f"[PHOTO] ✅ AI match + size match → show {code}", flush=True)
-                        text = (
-                            f"[AI-მ იპოვა: {code}. გამოიძახე check_inventory(search='{code}') "
-                            f"და უპასუხე: 'ეს მოდელი გვაქვს მარაგში, {size_wanted} ზომაში — {int(price)}₾ ✨ გნებავთ?']"
-                        )
-                    else:
-                        print(f"[PHOTO] AI found {code} but size mismatch ({hint_size} vs {size_wanted})", flush=True)
-                        text = (
-                            f"[AI ვერ იპოვა {size_wanted} ზომაში. უპასუხე: 'სამწუხაროდ ეს მოდელი "
-                            f"{size_wanted} ზომაში არ გვაქვს ✨ სხვა მოდელები გაჩვენოთ?']"
-                        )
-                else:
-                    # AI match didn't finish or failed — forward to owner
-                    print(f"[PHOTO] AI hint not available after 30s — forwarding to owner", flush=True)
-                    photo_bytes = _pending_photos.pop(conversation_id, None)
-                    if photo_bytes:
-                        public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
-                        await send_whatsapp_image(
-                            photo_bytes,
-                            caption=(
-                                f"📷 კლიენტი ეძებს ამ მოდელს, {size_wanted} ზომაში.\n\n"
-                                f"✅ გვაქვს:\n{public_url}/api/photo-confirm/{conversation_id}\n\n"
-                                f"❌ არ გვაქვს:\n{public_url}/api/photo-deny/{conversation_id}"
-                            ),
-                        )
-                    text = "[მფლობელს გადაეგზავნა. უპასუხე: 'ერთი წუთით, გადავამოწმებ ✨']"
+        # (No injection needed — AI match runs inline with photo)
 
         # ── Customer name ──
         if customer_name:
