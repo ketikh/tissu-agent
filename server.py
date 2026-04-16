@@ -467,6 +467,56 @@ async def health_check():
     return {"status": "ok", "agents": ["support_sales", "marketing"], "version": "0.2.0"}
 
 
+# ── Diagnostic endpoint ──────────────────────────────────────
+
+@app.get("/api/test-vision")
+async def test_vision():
+    """Test Cloud Vision API + product matching on Railway."""
+    results = {}
+
+    # Step 1: Check credentials
+    import os
+    results["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "NOT SET")
+    results["GOOGLE_CREDENTIALS_JSON_exists"] = bool(os.getenv("GOOGLE_CREDENTIALS_JSON"))
+
+    # Step 2: Try Cloud Vision
+    try:
+        from google.cloud import vision
+        client = vision.ImageAnnotatorClient()
+        image = vision.Image()
+        image.source.image_uri = "https://res.cloudinary.com/dw2yuqjrr/image/upload/v1774992584/tissu/tissu_strap_21.jpg"
+        response = client.label_detection(image=image, max_results=3)
+        results["vision_api"] = "OK"
+        results["labels"] = [l.description for l in response.label_annotations[:3]]
+    except Exception as e:
+        results["vision_api"] = f"FAIL: {type(e).__name__}: {str(e)[:200]}"
+
+    # Step 3: Try analyze_and_match
+    try:
+        import httpx as _httpx
+        from src.vision_match import analyze_and_match
+        url = "https://res.cloudinary.com/dw2yuqjrr/image/upload/v1774992584/tissu/tissu_strap_21.jpg"
+        async with _httpx.AsyncClient(follow_redirects=True) as c:
+            img = (await c.get(url)).content
+        match = await analyze_and_match(img)
+        results["analyze_and_match"] = "OK"
+        results["matched"] = match.get("matched")
+        results["code"] = match.get("code")
+        results["score"] = match.get("score")
+    except Exception as e:
+        results["analyze_and_match"] = f"FAIL: {type(e).__name__}: {str(e)[:200]}"
+
+    # Step 4: Check fingerprints
+    try:
+        pool = await get_db()
+        row = await pool.fetchrow("SELECT COUNT(*) as c FROM product_fingerprints")
+        results["fingerprints_count"] = row["c"]
+    except Exception as e:
+        results["fingerprints_count"] = f"FAIL: {e}"
+
+    return results
+
+
 # ── Seed Data ────────────────────────────────────────────────
 
 async def seed_knowledge_base():
