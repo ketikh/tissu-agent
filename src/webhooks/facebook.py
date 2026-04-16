@@ -133,7 +133,7 @@ async def _process_message(
                         print(f"[PHOTO] ❌ AI match EXCEPTION: {type(e).__name__}: {e}", flush=True)
                         traceback.print_exc()
 
-                    text = "[კლიენტმა პროდუქტის ფოტო გამოგზავნა. ჯერ ეკითხე: 'პატარა თუ დიდი ზომაში გაინტერესებთ? ✨' სტილს ᲐᲠ ეკითხო! ზომა რომ გეცოდინება, გამოიძახე forward_photo_to_owner იმ ზომით და უპასუხე 'ერთი წუთით, გადავამოწმებ ✨'.]"
+                    text = "[კლიენტმა პროდუქტის ფოტო გამოგზავნა. მხოლოდ ეს უპასუხე: 'პატარა თუ დიდი ზომაში გაინტერესებთ? ✨']"
 
         # ── Link handling — forward to owner like photo ──
         elif text and re.search(r'https?://', text):
@@ -179,12 +179,8 @@ async def _process_message(
                     code = hint_row["code"]
                     hint_size = hint_row["size"] or ""
                     price = hint_row["price"] or 0
-                    # Remove hint so it's one-shot
                     try:
-                        await pool.execute(
-                            "DELETE FROM ai_photo_hints WHERE conversation_id = $1",
-                            conversation_id,
-                        )
+                        await pool.execute("DELETE FROM ai_photo_hints WHERE conversation_id = $1", conversation_id)
                     except Exception:
                         pass
 
@@ -197,9 +193,16 @@ async def _process_message(
                     else:
                         print(f"[PHOTO] size mismatch: wanted={size_wanted} found={hint_size}", flush=True)
                         text = (
-                            f"[AI ვერ იპოვა {size_wanted} ზომაში. უპასუხე: 'სამწუხაროდ ზუსტად ასეთი მოდელი "
+                            f"[AI ვერ იპოვა {size_wanted} ზომაში. უპასუხე: 'სამწუხაროდ ეს მოდელი "
                             f"{size_wanted} ზომაში არ გვაქვს ✨ სხვა მოდელები გაჩვენოთ?']"
                         )
+                else:
+                    # AI match failed or wasn't available — still respond meaningfully
+                    print(f"[PHOTO] No AI hint in DB — fallback", flush=True)
+                    text = (
+                        f"[AI ვერ იპოვა ზუსტი შესაბამისი. უპასუხე: 'სამწუხაროდ ზუსტად ასეთი "
+                        f"მოდელი ვერ მოიძებნა ✨ სხვა {size_wanted} ზომის მოდელები გაჩვენოთ?']"
+                    )
 
         # ── Customer name ──
         if customer_name:
