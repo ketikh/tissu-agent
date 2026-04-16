@@ -197,12 +197,24 @@ async def _process_message(
                             f"{size_wanted} ზომაში არ გვაქვს ✨ სხვა მოდელები გაჩვენოთ?']"
                         )
                 else:
-                    # AI match failed or wasn't available — still respond meaningfully
-                    print(f"[PHOTO] No AI hint in DB — fallback", flush=True)
-                    text = (
-                        f"[AI ვერ იპოვა ზუსტი შესაბამისი. უპასუხე: 'სამწუხაროდ ზუსტად ასეთი "
-                        f"მოდელი ვერ მოიძებნა ✨ სხვა {size_wanted} ზომის მოდელები გაჩვენოთ?']"
-                    )
+                    # AI match failed — forward photo to owner via WhatsApp for manual check
+                    print(f"[PHOTO] No AI hint — forwarding to owner via WhatsApp", flush=True)
+                    photo_bytes = _pending_photos.get(conversation_id)
+                    if photo_bytes:
+                        public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
+                        confirm_url = f"{public_url}/api/photo-confirm/{conversation_id}"
+                        deny_url = f"{public_url}/api/photo-deny/{conversation_id}"
+                        await send_whatsapp_image(
+                            photo_bytes,
+                            caption=(
+                                f"📷 კლიენტი ეძებს ამ მოდელს, {size_wanted} ზომაში.\n"
+                                f"AI ვერ იპოვა ავტომატურად.\n\n"
+                                f"✅ გვაქვს:\n{confirm_url}\n\n"
+                                f"❌ არ გვაქვს:\n{deny_url}"
+                            ),
+                        )
+                        _pending_photos.pop(conversation_id, None)
+                    text = "[მფლობელს გადაეგზავნა გადასამოწმებლად. უპასუხე: 'ერთი წუთით, გადავამოწმებ ✨']"
 
         # ── Customer name ──
         if customer_name:
