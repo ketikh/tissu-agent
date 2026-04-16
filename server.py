@@ -491,20 +491,40 @@ async def test_vision():
     except Exception as e:
         results["vision_api"] = f"FAIL: {type(e).__name__}: {str(e)[:200]}"
 
-    # Step 3: Try analyze_and_match
+    # Step 3: Try analyze_and_match + save to ai_photo_hints
     try:
         import httpx as _httpx
         from src.vision_match import analyze_and_match
+        from datetime import datetime as _dt, timezone as _tz
         url = "https://res.cloudinary.com/dw2yuqjrr/image/upload/v1774992584/tissu/tissu_strap_21.jpg"
         async with _httpx.AsyncClient(follow_redirects=True) as c:
             img = (await c.get(url)).content
+        results["image_bytes"] = len(img)
         match = await analyze_and_match(img)
         results["analyze_and_match"] = "OK"
         results["matched"] = match.get("matched")
         results["code"] = match.get("code")
         results["score"] = match.get("score")
+        # Try saving to ai_photo_hints (same as facebook.py does)
+        if match.get("matched"):
+            product = match.get("product", {})
+            now = _dt.now(_tz.utc).isoformat()
+            await pool.execute(
+                """INSERT INTO ai_photo_hints (conversation_id, code, model, size, price, image_url, score, created_at)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                   ON CONFLICT (conversation_id) DO UPDATE SET code=$2""",
+                "test_diagnostic", match["code"], product.get("model", ""),
+                product.get("size", ""), float(product.get("price", 0)),
+                product.get("image_url", ""), float(match["score"]), now,
+            )
+            # Read it back
+            check = await pool.fetchrow("SELECT code, score FROM ai_photo_hints WHERE conversation_id = 'test_diagnostic'")
+            results["hint_saved"] = check["code"] if check else "FAIL"
+            await pool.execute("DELETE FROM ai_photo_hints WHERE conversation_id = 'test_diagnostic'")
     except Exception as e:
-        results["analyze_and_match"] = f"FAIL: {type(e).__name__}: {str(e)[:200]}"
+        import traceback as _tb
+        results["analyze_and_match"] = f"FAIL: {type(e).__name__}: {str(e)[:300]}"
+        results["traceback"] = _tb.format_exc()[-500:]
 
     # Step 4: Check fingerprints
     try:

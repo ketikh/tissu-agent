@@ -159,9 +159,9 @@ async def _process_message(
         if not image_url and text:
             text_lower = text.lower().strip()
             size_wanted = ""
-            if "პატარა" in text_lower:
+            if any(w in text_lower for w in ("პატარა", "პატარე", "პატარ", "small", "33")):
                 size_wanted = "პატარა"
-            elif "დიდი" in text_lower:
+            elif any(w in text_lower for w in ("დიდი", "დიდ", "large", "big", "37")):
                 size_wanted = "დიდი"
 
             if size_wanted:
