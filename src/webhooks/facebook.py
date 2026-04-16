@@ -91,48 +91,34 @@ async def _process_message(
                     text = "[კლიენტმა გადახდის სქრინი გამოგზავნა. უთხარი 'მადლობა, გადავამოწმებ ✨' და ᲒᲐᲩᲔᲠᲓᲘ. მისამართს ᲐᲠ ეკითხო.]"
                 else:
                     _pending_photos[conversation_id] = image_bytes
-                    print(f"[PHOTO] Saved: {conversation_id}, {len(image_bytes)} bytes", flush=True)
+                    print(f"[PHOTO] Product photo received. Starting background AI match...", flush=True)
 
-                    # Run AI match — analyzes photo and compares to indexed products
-                    print(f"[PHOTO] Starting AI match for conv_id={conversation_id}", flush=True)
-                    try:
-                        from src.vision_match import analyze_and_match
-                        match_result = await asyncio.wait_for(
-                            analyze_and_match(image_bytes),
-                            timeout=120,
-                        )
-                        print(f"[PHOTO] AI match: matched={match_result.get('matched')} code={match_result.get('code')}", flush=True)
-                        if match_result and match_result.get("matched"):
-                            code = match_result["code"]
-                            score = match_result["score"]
-                            product = match_result.get("product", {})
-                            # Persist hint in database (survives cross-request state loss)
-                            pool = await get_db()
-                            now_iso = datetime.now(timezone.utc).isoformat()
-                            await pool.execute(
-                                """INSERT INTO ai_photo_hints (conversation_id, code, model, size, price, image_url, score, created_at)
-                                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                                   ON CONFLICT (conversation_id) DO UPDATE SET
-                                     code=$2, model=$3, size=$4, price=$5, image_url=$6, score=$7, created_at=$8""",
-                                conversation_id,
-                                code,
-                                product.get("model", ""),
-                                product.get("size", ""),
-                                float(product.get("price", 0)),
-                                product.get("image_url", ""),
-                                float(score),
-                                now_iso,
-                            )
-                            print(f"[PHOTO] ✅ AI hint saved to DB: {code}", flush=True)
-                        else:
-                            print(f"[PHOTO] AI no match", flush=True)
-                    except asyncio.TimeoutError:
-                        print(f"[PHOTO] AI match TIMEOUT (30s)", flush=True)
-                    except Exception as e:
-                        import traceback
-                        print(f"[PHOTO] ❌ AI match EXCEPTION: {type(e).__name__}: {e}", flush=True)
-                        traceback.print_exc()
+                    # Start AI match in background — saves result to DB
+                    async def _run_ai_match(conv_id: str, img: bytes):
+                        try:
+                            from src.vision_match import analyze_and_match
+                            result = await analyze_and_match(img)
+                            print(f"[PHOTO] AI done: matched={result.get('matched')} code={result.get('code')}", flush=True)
+                            if result and result.get("matched"):
+                                product = result.get("product", {})
+                                pool = await get_db()
+                                now_iso = datetime.now(timezone.utc).isoformat()
+                                await pool.execute(
+                                    """INSERT INTO ai_photo_hints (conversation_id, code, model, size, price, image_url, score, created_at)
+                                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                                       ON CONFLICT (conversation_id) DO UPDATE SET
+                                         code=$2, model=$3, size=$4, price=$5, image_url=$6, score=$7, created_at=$8""",
+                                    conv_id, result["code"], product.get("model", ""),
+                                    product.get("size", ""), float(product.get("price", 0)),
+                                    product.get("image_url", ""), float(result["score"]), now_iso,
+                                )
+                                print(f"[PHOTO] ✅ Hint saved: {result['code']}", flush=True)
+                        except Exception as e:
+                            print(f"[PHOTO] ❌ BG match failed: {type(e).__name__}: {e}", flush=True)
 
+                    asyncio.create_task(_run_ai_match(conversation_id, image_bytes))
+
+                    # Ask size while AI runs in background
                     text = "[კლიენტმა პროდუქტის ფოტო გამოგზავნა. მხოლოდ ეს უპასუხე: 'პატარა თუ დიდი ზომაში გაინტერესებთ? ✨']"
 
         # ── Link handling — forward to owner like photo ──
@@ -154,8 +140,7 @@ async def _process_message(
                 # Only a link, no text
                 text = "[კლიენტმა ბმული გამოგზავნა. მფლობელს გადაეგზავნა. უთხარი 'გადავამოწმებ ✨']"
 
-        # ── AI photo match: when user answers size after sending photo ──
-        # Read persisted hint from database (survives cross-request state loss)
+        # ── AI photo match: when user answers size, wait for and use AI result ──
         if not image_url and text:
             text_lower = text.lower().strip()
             size_wanted = ""
@@ -165,56 +150,51 @@ async def _process_message(
                 size_wanted = "დიდი"
 
             if size_wanted:
-                try:
-                    pool = await get_db()
+                # Wait for background AI match to finish (poll DB every 2s, max 30s)
+                hint_row = None
+                pool = await get_db()
+                for _wait in range(15):
                     hint_row = await pool.fetchrow(
                         "SELECT code, model, size, price, image_url, score FROM ai_photo_hints WHERE conversation_id = $1",
                         conversation_id,
                     )
-                except Exception as e:
-                    print(f"[PHOTO] Failed to fetch hint: {e}", flush=True)
-                    hint_row = None
+                    if hint_row:
+                        break
+                    await asyncio.sleep(2)
 
                 if hint_row:
                     code = hint_row["code"]
                     hint_size = hint_row["size"] or ""
                     price = hint_row["price"] or 0
-                    try:
-                        await pool.execute("DELETE FROM ai_photo_hints WHERE conversation_id = $1", conversation_id)
-                    except Exception:
-                        pass
+                    await pool.execute("DELETE FROM ai_photo_hints WHERE conversation_id = $1", conversation_id)
 
                     if size_wanted in hint_size:
-                        print(f"[PHOTO] AI match → show {code} to customer", flush=True)
+                        print(f"[PHOTO] ✅ AI match + size match → show {code}", flush=True)
                         text = (
                             f"[AI-მ იპოვა: {code}. გამოიძახე check_inventory(search='{code}') "
                             f"და უპასუხე: 'ეს მოდელი გვაქვს მარაგში, {size_wanted} ზომაში — {int(price)}₾ ✨ გნებავთ?']"
                         )
                     else:
-                        print(f"[PHOTO] size mismatch: wanted={size_wanted} found={hint_size}", flush=True)
+                        print(f"[PHOTO] AI found {code} but size mismatch ({hint_size} vs {size_wanted})", flush=True)
                         text = (
                             f"[AI ვერ იპოვა {size_wanted} ზომაში. უპასუხე: 'სამწუხაროდ ეს მოდელი "
                             f"{size_wanted} ზომაში არ გვაქვს ✨ სხვა მოდელები გაჩვენოთ?']"
                         )
                 else:
-                    # AI match failed — forward photo to owner via WhatsApp for manual check
-                    print(f"[PHOTO] No AI hint — forwarding to owner via WhatsApp", flush=True)
-                    photo_bytes = _pending_photos.get(conversation_id)
+                    # AI match didn't finish or failed — forward to owner
+                    print(f"[PHOTO] AI hint not available after 30s — forwarding to owner", flush=True)
+                    photo_bytes = _pending_photos.pop(conversation_id, None)
                     if photo_bytes:
                         public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
-                        confirm_url = f"{public_url}/api/photo-confirm/{conversation_id}"
-                        deny_url = f"{public_url}/api/photo-deny/{conversation_id}"
                         await send_whatsapp_image(
                             photo_bytes,
                             caption=(
-                                f"📷 კლიენტი ეძებს ამ მოდელს, {size_wanted} ზომაში.\n"
-                                f"AI ვერ იპოვა ავტომატურად.\n\n"
-                                f"✅ გვაქვს:\n{confirm_url}\n\n"
-                                f"❌ არ გვაქვს:\n{deny_url}"
+                                f"📷 კლიენტი ეძებს ამ მოდელს, {size_wanted} ზომაში.\n\n"
+                                f"✅ გვაქვს:\n{public_url}/api/photo-confirm/{conversation_id}\n\n"
+                                f"❌ არ გვაქვს:\n{public_url}/api/photo-deny/{conversation_id}"
                             ),
                         )
-                        _pending_photos.pop(conversation_id, None)
-                    text = "[მფლობელს გადაეგზავნა გადასამოწმებლად. უპასუხე: 'ერთი წუთით, გადავამოწმებ ✨']"
+                    text = "[მფლობელს გადაეგზავნა. უპასუხე: 'ერთი წუთით, გადავამოწმებ ✨']"
 
         # ── Customer name ──
         if customer_name:
