@@ -129,6 +129,24 @@ async def _process_message(
                         await _log(f"step_ERROR_{type(e).__name__}_{str(e)[:100]}")
 
                     if ai_code:
+                        # Check if we already know the size from previous conversation
+                        prev_size = ""
+                        try:
+                            prev_msgs = await _debug_pool.fetch(
+                                "SELECT content FROM messages WHERE conversation_id = $1 AND role = 'user' ORDER BY created_at DESC LIMIT 5",
+                                conversation_id,
+                            )
+                            for pm in prev_msgs:
+                                c = (pm["content"] or "").lower()
+                                if "პატარა" in c or "პატარ" in c:
+                                    prev_size = "პატარა"
+                                    break
+                                elif "დიდი" in c or "დიდ" in c:
+                                    prev_size = "დიდი"
+                                    break
+                        except Exception:
+                            pass
+
                         # Get ALL linked models from product_pairs (transitive: A↔B, B↔C → A,B,C)
                         all_codes = set([ai_code])
                         try:
@@ -160,13 +178,20 @@ async def _process_message(
                         except Exception as e:
                             await _log(f"step6_save_error={e}")
 
-                        # Ask size only
-                        text = (
-                            f"[კლიენტმა ფოტო გამოგზავნა. ზუსტად ეს უპასუხე: "
-                            f"'რა ზომაში გადაგიმოწმოთ? ✨\\n\\n"
-                            f"📦 პატარა (33x25სმ) — 69₾\\n"
-                            f"📦 დიდი (37x27სმ) — 74₾']"
-                        )
+                        if prev_size:
+                            # We know size from before — short question
+                            text = (
+                                f"[კლიენტმა ახალი ფოტო გამოგზავნა. ადრე {prev_size} ზომა აირჩია. "
+                                f"ზუსტად ეს უპასუხე: 'ესეც {prev_size} ზომაში გადაგიმოწმოთ? ✨']"
+                            )
+                        else:
+                            # First time — ask size with prices
+                            text = (
+                                f"[კლიენტმა ფოტო გამოგზავნა. ზუსტად ეს უპასუხე: "
+                                f"'რა ზომაში გადაგიმოწმოთ? ✨\\n\\n"
+                                f"📦 პატარა (33x25სმ) — 69₾\\n"
+                                f"📦 დიდი (37x27სმ) — 74₾']"
+                            )
                     else:
                         # AI failed or low score — forward to owner via WhatsApp
                         await _log("step6_forwarding_to_owner")
