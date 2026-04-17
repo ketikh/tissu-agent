@@ -234,12 +234,20 @@ async def _gemini_visual_compare(user_image: bytes, candidate_urls: list[str]) -
                     pass
 
         parts.append(types.Part(text=(
-            "Which candidate product BEST matches the customer's photo? "
-            "Focus ONLY on: 1) FABRIC PATTERN (floral, geometric, striped, solid, plaid, tropical) "
-            "2) COLOR PALETTE (exact colors, not just 'blue' but 'navy blue with yellow accents') "
-            "3) TEXTURE (quilted, smooth, woven). "
-            "Ignore background, lighting, angle. Look at the BAG SURFACE PATTERN. "
-            "Answer with ONLY a number: 1, 2, or 3. If NONE match the pattern, answer: 0"
+            "TASK: Match the customer's laptop-bag photo to exactly one of the candidate products. "
+            "The bag must be the SAME PRODUCT — same fabric, same pattern, same colors. "
+            "A similar shape with different colors is NOT a match.\n\n"
+            "COMPARE ON ALL FOUR DIMENSIONS:\n"
+            "1) DOMINANT COLORS — exact hue, not just 'blue'. Orange ≠ yellow. Navy ≠ royal blue. "
+            "Burgundy ≠ red. Mint ≠ teal. If the customer photo is orange and the candidate is yellow, it's NOT a match.\n"
+            "2) PATTERN TYPE — solid / floral / geometric / striped / plaid / tropical / abstract / animal. "
+            "Different pattern type = NOT a match.\n"
+            "3) PATTERN SCALE & COLOR ARRANGEMENT — same motifs arranged the same way, same accent colors.\n"
+            "4) FABRIC TEXTURE — canvas / denim / quilted / smooth. Different texture = NOT a match.\n\n"
+            "IGNORE: background, lighting, angle, hands, shadows. Judge only the bag surface.\n\n"
+            "BE STRICT. When in doubt, answer 0. It is better to return 'no match' than to return "
+            "a wrong product of a similar shape but different color.\n\n"
+            "Answer with ONLY ONE DIGIT: 1, 2, or 3 for the matching candidate, or 0 if none match."
         )))
 
         resp = client.models.generate_content(

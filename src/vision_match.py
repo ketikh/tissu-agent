@@ -391,14 +391,12 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
             if code not in color_by_code or sim > color_by_code[code]:
                 color_by_code[code] = sim
 
-    # ── Combine scores: CLIP only ──
-    # Color blending via Cloud Vision dominant-colors is unreliable for real
-    # customer photos — background clutter dominates the palette and drags
-    # even exact shape matches below threshold. Back to CLIP-only until we
-    # can do proper bg-removed colour analysis.
+    # ── Combine scores: CLIP only (embedding pre-filter stage) ──
+    # CLIP gives us top shape/pattern candidates fast. Fine-grained color/texture
+    # discrimination happens later via the Gemini re-ranker.
     combined: dict[str, float] = dict(clip_scores) if clip_scores else dict(vision_scores)
     if clip_scores:
-        print(f"[MATCH] CLIP-only: top={max(clip_scores.values()):.3f}", flush=True)
+        print(f"[MATCH] CLIP-only (pre-filter): top={max(clip_scores.values()):.3f}", flush=True)
 
     # Build scored list with row data
     code_to_row = {}
@@ -421,8 +419,49 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     ranked = sorted(seen.values(), key=lambda x: x[0], reverse=True)
     best_score, best = ranked[0]
 
-    # Threshold for CLIP similarity (0.85+ = exact, 0.75+ = very similar)
-    if best_score < 0.75:
+    # Pre-filter: if CLIP can't even find a decent candidate, give up early.
+    if best_score < 0.65:
+        return {
+            "matched": False,
+            "message": "ზუსტი შესაბამისი ვერ მოიძებნა",
+            "closest_code": best["code"],
+            "score": round(best_score, 2),
+        }
+
+    # ── Stage 2: Gemini visual re-ranker ──
+    # CLIP narrows to top-3. Gemini then inspects pattern, color palette,
+    # fabric texture — the dimensions CLIP embeddings miss — and picks the
+    # true match. Skip when CLIP is near-certain (saves a call).
+    top_candidates = ranked[:3]
+    use_gemini = best_score < 0.95 and len(top_candidates) >= 1
+
+    if use_gemini:
+        try:
+            from src.image_match import _gemini_visual_compare
+            candidate_urls = [r["image_url"] for _, r in top_candidates if r.get("image_url")]
+            if candidate_urls:
+                gemini_pick = await _gemini_visual_compare(image_bytes, candidate_urls)
+                print(f"[MATCH] Gemini re-rank: pick={gemini_pick} (out of {len(candidate_urls)} candidates)", flush=True)
+                if isinstance(gemini_pick, int) and 1 <= gemini_pick <= len(top_candidates):
+                    chosen_score, chosen_row = top_candidates[gemini_pick - 1]
+                    best_score, best = chosen_score, chosen_row
+                    print(f"[MATCH] Gemini chose #{gemini_pick}: {best['code']} (CLIP={chosen_score:.3f})", flush=True)
+                elif gemini_pick == 0:
+                    # Gemini says none of the CLIP candidates visually match.
+                    # Trust Gemini unless CLIP is very confident (0.90+).
+                    if best_score < 0.90:
+                        return {
+                            "matched": False,
+                            "message": "ვიზუალური შედარებით ვერ მოიძებნა",
+                            "closest_code": best["code"],
+                            "score": round(best_score, 2),
+                        }
+                    print(f"[MATCH] Gemini rejected but CLIP confident ({best_score:.3f}) — keeping {best['code']}", flush=True)
+        except Exception as e:
+            print(f"[MATCH] Gemini re-rank error (falling back to CLIP): {e}", flush=True)
+
+    # Final threshold check after re-rank.
+    if best_score < 0.70:
         return {
             "matched": False,
             "message": "ზუსტი შესაბამისი ვერ მოიძებნა",
