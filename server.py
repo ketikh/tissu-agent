@@ -532,6 +532,25 @@ async def reindex_catalog(full: bool = False):
     return result
 
 
+@app.post("/api/clear-conversation/{conversation_id}")
+async def clear_conversation(conversation_id: str):
+    """Wipe messages, AI hints, and tokens for one conversation so the bot
+    starts fresh. Useful for re-testing the photo flow as a known customer."""
+    pool = await get_db()
+    stats: dict = {}
+    stats["messages"] = await pool.execute("DELETE FROM messages WHERE conversation_id = $1", conversation_id)
+    stats["ai_photo_hints"] = await pool.execute("DELETE FROM ai_photo_hints WHERE conversation_id = $1", conversation_id)
+    try:
+        stats["confirm_tokens"] = await pool.execute("DELETE FROM confirm_tokens WHERE conversation_id = $1", conversation_id)
+    except Exception:
+        pass
+    try:
+        stats["conversation"] = await pool.execute("DELETE FROM conversations WHERE id = $1", conversation_id)
+    except Exception:
+        pass
+    return {"ok": True, "conversation_id": conversation_id, "stats": stats}
+
+
 @app.post("/api/reindex/{code}")
 async def reindex_one(code: str):
     """Re-index a single product by code (useful when stored embedding is wrong)."""
