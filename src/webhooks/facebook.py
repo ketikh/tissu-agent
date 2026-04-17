@@ -182,10 +182,10 @@ async def _process_message(
                                 if age_min > 60:
                                     continue
                                 c = (pm["content"] or "").lower()
-                                if "პატარა" in c or "პატარ" in c:
+                                if any(w in c for w in ("პატარა", "პატარ", "patara", "small")):
                                     prev_size = "პატარა"
                                     break
-                                elif "დიდი" in c or "დიდ" in c:
+                                elif any(w in c for w in ("დიდი", "დიდ", "didi", "large")):
                                     prev_size = "დიდი"
                                     break
                             await _log(f"step5a_prev_size={prev_size or 'NONE'}")
@@ -291,9 +291,15 @@ async def _process_message(
         if not image_url and text:
             text_lower = text.lower().strip()
             size_wanted = ""
-            if any(w in text_lower for w in ("პატარა", "პატარე", "პატარ", "small", "33")):
+            if any(w in text_lower for w in (
+                "პატარა", "პატარე", "პატარ", "small", "33",
+                "patara", "patarа", "patra",  # Latin transliterations
+            )):
                 size_wanted = "პატარა"
-            elif any(w in text_lower for w in ("დიდი", "დიდ", "large", "big", "37")):
+            elif any(w in text_lower for w in (
+                "დიდი", "დიდ", "large", "big", "37",
+                "didi", "did", "didia",  # Latin transliterations
+            )):
                 size_wanted = "დიდი"
 
             # If user just confirmed ("კი"/"დიახ") after bot asked "ესეც X ზომაში გადაგიმოწმოთ?",
