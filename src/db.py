@@ -139,6 +139,16 @@ async def init_db():
                 updated_at TEXT NOT NULL
             );
         """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS confirm_tokens (
+                token TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                used INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                used_at TEXT
+            );
+        """)
 
 
 async def save_message(conversation_id: str, role: str, content: str, tool_calls: list | None = None):

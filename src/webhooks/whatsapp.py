@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -24,6 +26,43 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 FB_PAGE_TOKEN = os.getenv("FB_PAGE_TOKEN", "")
+PUBLIC_URL = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
+
+
+async def create_confirm_token(conversation_id: str, action: str) -> str:
+    """Mint a single-use token bound to (conversation_id, action)."""
+    token = secrets.token_urlsafe(16)
+    pool = await get_db()
+    await pool.execute(
+        "INSERT INTO confirm_tokens (token, conversation_id, action, used, created_at) VALUES ($1, $2, $3, 0, $4)",
+        token, conversation_id, action, datetime.now(timezone.utc).isoformat(),
+    )
+    return token
+
+
+async def consume_confirm_token(token: str, expected_action: str) -> str | None:
+    """Atomically mark a token used. Returns conversation_id on success, None
+    if the token is unknown, already consumed, or bound to a different action."""
+    pool = await get_db()
+    row = await pool.fetchrow(
+        "UPDATE confirm_tokens SET used = 1, used_at = $1 "
+        "WHERE token = $2 AND action = $3 AND used = 0 "
+        "RETURNING conversation_id",
+        datetime.now(timezone.utc).isoformat(), token, expected_action,
+    )
+    return row["conversation_id"] if row else None
+
+
+def build_confirm_url(action: str, token: str) -> str:
+    return f"{PUBLIC_URL}/api/{action}/{token}"
+
+
+_EXPIRED_HTML = (
+    "<html><body style='font-family:sans-serif;padding:40px;text-align:center'>"
+    "<h1>⏱️ ბმული უკვე გამოყენებულია</h1>"
+    "<p>ეს ლინკი ერთჯერადია. თუ დაგჭირდათ, გთხოვთ კვლავ დაგვიკავშირდეთ.</p>"
+    "</body></html>"
+)
 
 # Anti-duplicate tracking
 _wa_processed_mids: dict[str, float] = {}
@@ -235,27 +274,36 @@ async def wa_webhook_receive(request: Request):
     return {"status": "ok"}
 
 
-@router.get("/api/owner-confirm/{conversation_id}")
-async def owner_confirm(conversation_id: str):
-    """Owner confirms payment via link in WhatsApp."""
+@router.get("/api/owner-confirm/{token}")
+async def owner_confirm(token: str):
+    """Owner confirms payment — one-time link."""
+    conversation_id = await consume_confirm_token(token, "owner-confirm")
+    if not conversation_id:
+        return HTMLResponse(_EXPIRED_HTML, status_code=410)
     sender_id = _extract_sender_id(conversation_id)
     reply = await _handle_confirmation(conversation_id)
     await _send_to_customer(sender_id, reply)
     return HTMLResponse("<h1>✅ დადასტურებულია!</h1><p>კლიენტს ეცნობა.</p>")
 
 
-@router.get("/api/owner-deny/{conversation_id}")
-async def owner_deny(conversation_id: str):
-    """Owner denies payment via link in WhatsApp."""
+@router.get("/api/owner-deny/{token}")
+async def owner_deny(token: str):
+    """Owner denies payment — one-time link."""
+    conversation_id = await consume_confirm_token(token, "owner-deny")
+    if not conversation_id:
+        return HTMLResponse(_EXPIRED_HTML, status_code=410)
     sender_id = _extract_sender_id(conversation_id)
     reply = await _handle_denial(conversation_id)
     await _send_to_customer(sender_id, reply)
     return HTMLResponse("<h1>❌ უარყოფილია</h1><p>კლიენტს ეცნობა.</p>")
 
 
-@router.get("/api/photo-confirm/{conversation_id}")
-async def photo_confirm(conversation_id: str):
-    """Owner confirms product is in stock (photo match)."""
+@router.get("/api/photo-confirm/{token}")
+async def photo_confirm(token: str):
+    """Owner confirms product is in stock (photo match) — one-time link."""
+    conversation_id = await consume_confirm_token(token, "photo-confirm")
+    if not conversation_id:
+        return HTMLResponse(_EXPIRED_HTML, status_code=410)
     sender_id = _extract_sender_id(conversation_id)
     agent = get_support_sales_agent()
     result = await run_agent(
@@ -268,9 +316,12 @@ async def photo_confirm(conversation_id: str):
     return HTMLResponse("<h1>✅ მარაგშია!</h1><p>კლიენტს ეცნობა.</p>")
 
 
-@router.get("/api/photo-deny/{conversation_id}")
-async def photo_deny(conversation_id: str):
-    """Owner says product is not in stock (photo match)."""
+@router.get("/api/photo-deny/{token}")
+async def photo_deny(token: str):
+    """Owner says product is not in stock (photo match) — one-time link."""
+    conversation_id = await consume_confirm_token(token, "photo-deny")
+    if not conversation_id:
+        return HTMLResponse(_EXPIRED_HTML, status_code=410)
     sender_id = _extract_sender_id(conversation_id)
     agent = get_support_sales_agent()
     result = await run_agent(

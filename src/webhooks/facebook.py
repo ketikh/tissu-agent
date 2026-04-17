@@ -18,6 +18,7 @@ from src.engine import run_agent
 from src.notifications import send_whatsapp_image, send_whatsapp_text
 from src.tools.support import _pending_photos, _ai_hints
 from src.vision import download_image, is_payment_receipt
+from src.webhooks.whatsapp import build_confirm_url, create_confirm_token
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,10 @@ _sent_inventory: dict[str, set[str]] = {}
 # Buffers for text↔photo pairing
 _pending_text: dict[str, dict] = {}   # sender_id -> {text, mid, ...} — text waiting for photo
 _pending_photo: dict[str, dict] = {}  # sender_id -> {image_url, mid, ...} — photo waiting for text
+
+# When AI fails to match a photo we ask the customer for size first; we keep the
+# bytes here and only forward to WhatsApp once we know which size to send.
+_pending_failed_photos: dict[str, bytes] = {}
 
 _PHOTO_HINT = re.compile(r'(გაქვთ|მოდელი|ჩანთა|ასეთი|მსგავსი|ეს\s*არის|have|this)', re.IGNORECASE)
 
@@ -87,6 +92,8 @@ async def _process_message(
 
         # ── Photo handling ──
         if image_url:
+            # A new photo replaces whatever old photo was pending size confirmation
+            _pending_failed_photos.pop(conversation_id, None)
             image_bytes = await download_image(image_url)
             if not image_bytes:
                 text = "[კლიენტმა ფოტო გამოგზავნა მაგრამ ვერ დამუშავდა. უთხარი 'გადავამოწმებ და მოგწერთ ✨']"
@@ -94,8 +101,8 @@ async def _process_message(
                 is_receipt = await is_payment_receipt(image_bytes, conversation_id)
                 if is_receipt:
                     cname = customer_name or "კლიენტი"
-                    confirm_url = f"{PUBLIC_URL}/api/owner-confirm/{conversation_id}"
-                    deny_url = f"{PUBLIC_URL}/api/owner-deny/{conversation_id}"
+                    confirm_url = build_confirm_url("owner-confirm", await create_confirm_token(conversation_id, "owner-confirm"))
+                    deny_url = build_confirm_url("owner-deny", await create_confirm_token(conversation_id, "owner-deny"))
                     await send_whatsapp_image(
                         image_bytes,
                         caption=f"📷 {cname} — გადახდის ქვითარი\n\n✅ ვადასტურებ:\n{confirm_url}\n\n❌ არ ვადასტურებ:\n{deny_url}",
@@ -248,27 +255,22 @@ async def _process_message(
                             )
                         except Exception:
                             pass
-                        # AI failed or low score — forward to owner via WhatsApp
-                        await _log("step6_forwarding_to_owner")
+                        # Hold the photo and ask the customer for size first.
+                        # Once they answer with "პატარა"/"დიდი" the size-filter branch
+                        # below will forward it to WhatsApp with size context.
                         photo_bytes = _pending_photos.get(conversation_id)
                         if photo_bytes:
-                            public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
-                            admin_url = f"{public_url}/admin"
-                            wa_sent = await send_whatsapp_image(
-                                photo_bytes,
-                                caption=(
-                                    f"📷 კლიენტი ეძებს ამ მოდელს.\n"
-                                    f"AI ვერ იპოვა ზუსტი შესაბამისი.\n\n"
-                                    f"✅ გვაქვს:\n{public_url}/api/photo-confirm/{conversation_id}\n\n"
-                                    f"❌ არ გვაქვს:\n{public_url}/api/photo-deny/{conversation_id}\n\n"
-                                    f"📋 ადმინ პანელი:\n{admin_url}"
-                                ),
-                            )
-                            await _log(f"step7_whatsapp_sent={wa_sent}")
+                            _pending_failed_photos[conversation_id] = photo_bytes
                             _pending_photos.pop(conversation_id, None)
+                            await _log("step6_awaiting_size_before_owner")
                         else:
                             await _log("step6_NO_PHOTO_BYTES")
-                        text = "[მფლობელს გადაეგზავნა. უპასუხე: 'ვამოწმებ და მალე მოგწერთ ✨']"
+                        text = (
+                            "[AI ვერ იპოვა ზუსტი შესაბამისი. ზუსტად ეს უპასუხე: "
+                            "'რა ზომა გაინტერესებთ? ✨\\n\\n"
+                            "📦 პატარა (33x25სმ) — 69₾\\n"
+                            "📦 დიდი (37x27სმ) — 74₾']"
+                        )
 
         # ── Link handling — forward to owner like photo ──
         elif text and re.search(r'https?://', text):
@@ -284,7 +286,10 @@ async def _process_message(
             await send_whatsapp_text(wa_msg)
             if user_text:
                 # User also wrote something ("ეს გაქვთ?") — let bot respond to the question
-                text = f"[კლიენტმა ბმული გამოგზავნა პროდუქტის. მფლობელს გადაეგზავნა. კლიენტი ეკითხება: '{user_text}'. ეკითხე ზომა: პატარა თუ დიდი?]"
+                text = (
+                    f"[კლიენტმა ბმული გამოგზავნა პროდუქტის. მფლობელს გადაეგზავნა. კლიენტი ეკითხება: '{user_text}'. "
+                    f"ზუსტად ეს უპასუხე: 'რა ზომა გაინტერესებთ? ✨\\n\\n📦 პატარა (33x25სმ) — 69₾\\n📦 დიდი (37x27სმ) — 74₾']"
+                )
             else:
                 # Only a link, no text
                 text = "[კლიენტმა ბმული გამოგზავნა. მფლობელს გადაეგზავნა. უთხარი 'გადავამოწმებ ✨']"
@@ -316,6 +321,31 @@ async def _process_message(
                             size_wanted = "დიდი"
                 except Exception:
                     pass
+
+            # Size answered for a photo that AI previously failed to match →
+            # forward it to WhatsApp now, with the size we just learned.
+            if size_wanted and conversation_id in _pending_failed_photos:
+                pending_bytes = _pending_failed_photos.pop(conversation_id)
+                try:
+                    public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
+                    admin_url = f"{public_url}/admin"
+                    confirm_url = build_confirm_url("photo-confirm", await create_confirm_token(conversation_id, "photo-confirm"))
+                    deny_url = build_confirm_url("photo-deny", await create_confirm_token(conversation_id, "photo-deny"))
+                    await send_whatsapp_image(
+                        pending_bytes,
+                        caption=(
+                            f"📷 კლიენტი ეძებს ამ მოდელს.\n"
+                            f"📐 ზომა: {size_wanted}\n"
+                            f"AI ვერ იპოვა ზუსტი შესაბამისი.\n\n"
+                            f"✅ გვაქვს:\n{confirm_url}\n\n"
+                            f"❌ არ გვაქვს:\n{deny_url}\n\n"
+                            f"📋 ადმინ პანელი:\n{admin_url}"
+                        ),
+                    )
+                    print(f"[PHOTO] Forwarded to owner with size={size_wanted}", flush=True)
+                except Exception as e:
+                    print(f"[PHOTO] Delayed owner forward error: {e}", flush=True)
+                text = "[AI ვერ იპოვა. ზომა მიეცა მფლობელს. ზუსტად ეს უპასუხე: 'ვამოწმებ და მალე მოგწერთ ✨']"
 
             if size_wanted:
                 try:

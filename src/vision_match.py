@@ -391,15 +391,21 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
             if code not in color_by_code or sim > color_by_code[code]:
                 color_by_code[code] = sim
 
-    # ── Combine scores: CLIP × color (fallback to whichever exists) ──
+    # ── Combine scores: CLIP × color with safety net ──
+    # CLIP ≥ 0.90 is trusted alone (shape match is exact, color is just noise from
+    # different backgrounds/lighting). Below 0.90, blend with color similarity as a
+    # tie-breaker for fuzzier matches.
     combined: dict[str, float] = {}
     if clip_scores and color_by_code:
         for code, clip_sim in clip_scores.items():
             color_sim = color_by_code.get(code, 0.0)
-            combined[code] = clip_sim * 0.7 + color_sim * 0.3
+            if clip_sim >= 0.90:
+                combined[code] = clip_sim
+            else:
+                combined[code] = clip_sim * 0.7 + color_sim * 0.3
         top_before = max(clip_scores.values())
         top_after = max(combined.values())
-        print(f"[MATCH] Color re-rank: CLIP top={top_before:.2f} → blended top={top_after:.2f}", flush=True)
+        print(f"[MATCH] Color re-rank (CLIP≥0.90 trusted): CLIP top={top_before:.2f} → final top={top_after:.2f}", flush=True)
     elif clip_scores:
         combined = dict(clip_scores)
     else:

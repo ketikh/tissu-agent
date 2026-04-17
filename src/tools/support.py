@@ -171,9 +171,12 @@ async def notify_owner(reason: str, customer_name: str = "", customer_phone: str
                 # Only add confirm/deny links for order-related notifications
                 _needs_confirm = any(kw in reason.lower() for kw in ("შეკვეთა", "გადახდა", "ჩარიცხ", "order", "payment"))
                 if public_url and conversation_id and _needs_confirm:
+                    from src.webhooks.whatsapp import build_confirm_url, create_confirm_token
+                    confirm_url = build_confirm_url("owner-confirm", await create_confirm_token(conversation_id, "owner-confirm"))
+                    deny_url = build_confirm_url("owner-deny", await create_confirm_token(conversation_id, "owner-deny"))
                     msg_parts.append("")
-                    msg_parts.append(f"✅ ვადასტურებ:\n{public_url}/api/owner-confirm/{conversation_id}")
-                    msg_parts.append(f"❌ არ ვადასტურებ:\n{public_url}/api/owner-deny/{conversation_id}")
+                    msg_parts.append(f"✅ ვადასტურებ:\n{confirm_url}")
+                    msg_parts.append(f"❌ არ ვადასტურებ:\n{deny_url}")
 
                 await client.post(wa_url, headers=headers, json={
                     "messaging_product": "whatsapp", "to": owner_number,
@@ -216,9 +219,10 @@ async def forward_photo_to_owner(size: str, conversation_id: str = "") -> dict:
 
     print(f"[PHOTO] Photo found: {len(photo_bytes)} bytes")
 
+    from src.webhooks.whatsapp import build_confirm_url, create_confirm_token
     public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
-    confirm_url = f"{public_url}/api/photo-confirm/{conversation_id}"
-    deny_url = f"{public_url}/api/photo-deny/{conversation_id}"
+    confirm_url = build_confirm_url("photo-confirm", await create_confirm_token(conversation_id, "photo-confirm"))
+    deny_url = build_confirm_url("photo-deny", await create_confirm_token(conversation_id, "photo-deny"))
     admin_url = f"{public_url}/admin"
 
     # Extract AI hint (now structured dict)
