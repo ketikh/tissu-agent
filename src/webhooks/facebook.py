@@ -304,7 +304,14 @@ async def _process_message(
 
             # If user just confirmed ("კი"/"დიახ") after bot asked "ესეც X ზომაში გადაგიმოწმოთ?",
             # infer size from the last bot message.
-            if not size_wanted and text_lower in ("კი", "დიახ", "ok", "კარგი", "yes", "ჰო", "ჰოო"):
+            _yes_words = (
+                "კი", "დიახ", "ok", "კარგი", "yes", "ჰო", "ჰოო", "კიიი",
+                "ki", "diax", "diakh", "ho", "hoo", "kargi", "okey", "okei",
+            )
+            text_yes = any(text_lower == w for w in _yes_words) or text_lower.startswith(
+                ("კი ", "დიახ ", "ki ", "diax ", "ho ", "yes ")
+            )
+            if not size_wanted and text_yes:
                 try:
                     _pool_hist = await get_db()
                     last_bot = await _pool_hist.fetchrow(
