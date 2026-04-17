@@ -103,22 +103,26 @@ def _tags_to_text(tags: dict, code: str = "", model: str = "", size: str = "") -
     return " ".join(parts)
 
 
-async def generate_embedding_from_image(image_url: str = "", image_bytes: bytes = b"") -> list[float]:
-    """Generate CLIP image embedding via microservice."""
+async def generate_embedding_from_image(image_url: str = "", image_bytes: bytes = b"", remove_bg: bool = True) -> list[float]:
+    """Generate CLIP image embedding via microservice. Uses background
+    removal by default so props, flowers, and backgrounds don't contaminate
+    the product embedding — customer photos and catalog photos must be
+    processed the same way or scores won't be comparable."""
     if not CLIP_SERVICE_URL:
         # Fallback to Gemini text embedding if CLIP not available
         return await _gemini_text_embedding("laptop bag product")
 
     try:
-        async with httpx.AsyncClient(timeout=90) as client:
+        async with httpx.AsyncClient(timeout=120) as client:
+            payload: dict = {"remove_bg": remove_bg}
             if image_url:
-                resp = await client.post(f"{CLIP_SERVICE_URL}/embed", json={"image_url": image_url})
+                payload["image_url"] = image_url
             elif image_bytes:
                 import base64
-                b64 = base64.b64encode(image_bytes).decode()
-                resp = await client.post(f"{CLIP_SERVICE_URL}/embed", json={"image_base64": b64})
+                payload["image_base64"] = base64.b64encode(image_bytes).decode()
             else:
                 return []
+            resp = await client.post(f"{CLIP_SERVICE_URL}/embed", json=payload)
 
             if resp.status_code == 200:
                 return resp.json()["embedding"]
