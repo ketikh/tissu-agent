@@ -93,17 +93,8 @@ async def _process_message(
                     _pending_photos[conversation_id] = image_bytes
                     print(f"[PHOTO] Product photo. Running AI match INLINE...", flush=True)
 
-                    # Tell customer we're checking (send immediately)
-                    if FB_PAGE_TOKEN:
-                        try:
-                            async with httpx.AsyncClient(timeout=5) as _fc:
-                                await _fc.post(
-                                    "https://graph.facebook.com/v21.0/me/messages",
-                                    params={"access_token": FB_PAGE_TOKEN},
-                                    json={"recipient": {"id": sender_id}, "message": {"text": "ერთი წუთით, ვამოწმებ ✨"}},
-                                )
-                        except Exception:
-                            pass
+                    # Send typing indicator while AI processes
+                    await _send_typing_on(sender_id)
 
                     # Run AI match INLINE — wait for result before proceeding
                     ai_code = ""
@@ -153,7 +144,7 @@ async def _process_message(
                                 )
                             except Exception:
                                 pass
-                        text = "[AI ვერ იპოვა. მფლობელს გადაეგზავნა. უპასუხე: 'გადავამოწმებ და მოგწერთ ✨']"
+                        text = "[მფლობელს გადაეგზავნა. უპასუხე: 'ვამოწმებ და მოგწერთ ✨' — მეტი არაფერი!]"
 
         # ── Link handling — forward to owner like photo ──
         elif text and re.search(r'https?://', text):
