@@ -265,9 +265,9 @@ async def _process_message(
                                 found_codes = ",".join(r["code"] for r in matching)
                                 print(f"[PHOTO] Size filter: wanted={size_wanted} found={found_codes}", flush=True)
                                 text = (
-                                    f"[გადავამოწმეთ და {size_wanted} ზომაში ეს გვაქვს: {found_codes}. "
+                                    f"[{size_wanted} ზომაში ეს მოვიძიეთ: {found_codes}. "
                                     f"გამოიძახე check_inventory(search='{found_codes}') და უპასუხე: "
-                                    f"'გადავამოწმეთ და {size_wanted} ზომაში ეს ვიპოვეთ ✨ მოგეწონებათ?']"
+                                    f"'{size_wanted} ზომაში ეს მოდელი მოვიძიეთ ✨ გნებავთ?']"
                                 )
                             else:
                                 # Check other size
