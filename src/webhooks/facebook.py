@@ -148,50 +148,48 @@ async def _process_message(
                     except Exception as e:
                         await _log(f"step_ERROR_{type(e).__name__}_{str(e)[:100]}")
 
-                    if ai_code:
-                        # Reuse the customer's most-recent size choice when it's
-                        # within the last 60 minutes. That time window is enough to
-                        # bridge multiple photos in the same shopping session while
-                        # preventing leaks from sessions days ago.
-                        prev_size = ""
-                        try:
-                            prev_msgs = await _debug_pool.fetch(
-                                "SELECT content, created_at FROM messages "
-                                "WHERE conversation_id = $1 AND role = 'user' "
-                                "ORDER BY created_at DESC LIMIT 30",
-                                conversation_id,
-                            )
-                            now_utc = datetime.now(timezone.utc)
-                            for pm in prev_msgs:
-                                created = pm["created_at"] if pm and "created_at" in pm else None
-                                # created_at is stored as ISO string — parse it
+                    # Reuse the customer's most-recent size choice (within 60 min)
+                    # — used for BOTH AI-match and AI-fail branches so we don't
+                    # ask the customer the same question twice in one session.
+                    prev_size = ""
+                    try:
+                        prev_msgs = await _debug_pool.fetch(
+                            "SELECT content, created_at FROM messages "
+                            "WHERE conversation_id = $1 AND role = 'user' "
+                            "ORDER BY created_at DESC LIMIT 30",
+                            conversation_id,
+                        )
+                        now_utc = datetime.now(timezone.utc)
+                        for pm in prev_msgs:
+                            created = pm["created_at"] if pm and "created_at" in pm else None
+                            age_min = 0.0
+                            try:
+                                if isinstance(created, str):
+                                    created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                                elif hasattr(created, "tzinfo"):
+                                    created_dt = created
+                                else:
+                                    created_dt = None
+                                if created_dt is not None:
+                                    if created_dt.tzinfo is None:
+                                        created_dt = created_dt.replace(tzinfo=timezone.utc)
+                                    age_min = (now_utc - created_dt).total_seconds() / 60
+                            except Exception:
                                 age_min = 0.0
-                                try:
-                                    if isinstance(created, str):
-                                        created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
-                                    elif hasattr(created, "tzinfo"):
-                                        created_dt = created
-                                    else:
-                                        created_dt = None
-                                    if created_dt is not None:
-                                        if created_dt.tzinfo is None:
-                                            created_dt = created_dt.replace(tzinfo=timezone.utc)
-                                        age_min = (now_utc - created_dt).total_seconds() / 60
-                                except Exception:
-                                    age_min = 0.0
-                                if age_min > 60:
-                                    continue
-                                c = (pm["content"] or "").lower()
-                                if any(w in c for w in ("პატარა", "პატარ", "patara", "small")):
-                                    prev_size = "პატარა"
-                                    break
-                                elif any(w in c for w in ("დიდი", "დიდ", "didi", "large")):
-                                    prev_size = "დიდი"
-                                    break
-                            await _log(f"step5a_prev_size={prev_size or 'NONE'}")
-                        except Exception as e:
-                            await _log(f"step5a_error={str(e)[:80]}")
+                            if age_min > 60:
+                                continue
+                            c = (pm["content"] or "").lower()
+                            if any(w in c for w in ("პატარა", "პატარ", "patara", "small")):
+                                prev_size = "პატარა"
+                                break
+                            elif any(w in c for w in ("დიდი", "დიდ", "didi", "large")):
+                                prev_size = "დიდი"
+                                break
+                        await _log(f"step5a_prev_size={prev_size or 'NONE'}")
+                    except Exception as e:
+                        await _log(f"step5a_error={str(e)[:80]}")
 
+                    if ai_code:
                         # Get ALL linked models from product_pairs (transitive: A↔B, B↔C → A,B,C)
                         all_codes = set([ai_code])
                         try:
@@ -247,22 +245,49 @@ async def _process_message(
                             )
                         except Exception:
                             pass
-                        # Hold the photo and ask the customer for size first.
-                        # Once they answer with "პატარა"/"დიდი" the size-filter branch
-                        # below will forward it to WhatsApp with size context.
                         photo_bytes = _pending_photos.get(conversation_id)
-                        if photo_bytes:
+                        if prev_size and photo_bytes:
+                            # Size already known from this session — forward the photo
+                            # to the owner right away with size context, don't ask again.
+                            try:
+                                public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
+                                admin_url = f"{public_url}/admin"
+                                confirm_url = build_confirm_url("photo-confirm", await create_confirm_token(conversation_id, "photo-confirm"))
+                                deny_url = build_confirm_url("photo-deny", await create_confirm_token(conversation_id, "photo-deny"))
+                                await send_whatsapp_image(
+                                    photo_bytes,
+                                    caption=(
+                                        f"📷 კლიენტი ეძებს ამ მოდელს.\n"
+                                        f"📐 ზომა: {prev_size}\n"
+                                        f"AI ვერ იპოვა ზუსტი შესაბამისი.\n\n"
+                                        f"✅ გვაქვს:\n{confirm_url}\n\n"
+                                        f"❌ არ გვაქვს:\n{deny_url}\n\n"
+                                        f"📋 ადმინ პანელი:\n{admin_url}"
+                                    ),
+                                )
+                                await _log(f"step6_forwarded_with_prev_size={prev_size}")
+                            except Exception as e:
+                                await _log(f"step6_direct_forward_error={str(e)[:80]}")
+                            _pending_photos.pop(conversation_id, None)
+                            text = (
+                                "[AI ვერ იპოვა. ზომა უკვე ცნობილია. ზუსტად ეს უპასუხე: "
+                                "'ვამოწმებ და მალე მოგწერთ ✨']"
+                            )
+                        elif photo_bytes:
+                            # First photo in the session and AI failed — we don't know the
+                            # customer's size yet. Hold the photo and ask first.
                             _pending_failed_photos[conversation_id] = photo_bytes
                             _pending_photos.pop(conversation_id, None)
                             await _log("step6_awaiting_size_before_owner")
+                            text = (
+                                "[AI ვერ იპოვა ზუსტი შესაბამისი. ზუსტად ეს უპასუხე: "
+                                "'რა ზომა გაინტერესებთ? ✨\\n\\n"
+                                "📦 პატარა (33x25სმ) — 69₾\\n"
+                                "📦 დიდი (37x27სმ) — 74₾']"
+                            )
                         else:
                             await _log("step6_NO_PHOTO_BYTES")
-                        text = (
-                            "[AI ვერ იპოვა ზუსტი შესაბამისი. ზუსტად ეს უპასუხე: "
-                            "'რა ზომა გაინტერესებთ? ✨\\n\\n"
-                            "📦 პატარა (33x25სმ) — 69₾\\n"
-                            "📦 დიდი (37x27სმ) — 74₾']"
-                        )
+                            text = "[ფოტო ვერ დამუშავდა. ზუსტად ეს უპასუხე: 'გადავამოწმებ და მალე მოგწერთ ✨']"
 
         # ── Link handling — forward to owner like photo ──
         elif text and re.search(r'https?://', text):
