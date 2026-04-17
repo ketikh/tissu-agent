@@ -478,16 +478,32 @@ async def add_pair(request: Request):
     code_b = data["code_b"].upper().strip()
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
-    # Store both directions
-    await pool.execute(
-        "INSERT INTO product_pairs (code_a, code_b, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-        code_a, code_b, now,
-    )
-    await pool.execute(
-        "INSERT INTO product_pairs (code_a, code_b, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-        code_b, code_a, now,
-    )
-    return {"success": True, "pair": f"{code_a} ↔ {code_b}"}
+
+    # Find all codes already connected to A or B (transitive group)
+    group = set([code_a, code_b])
+    to_check = [code_a, code_b]
+    while to_check:
+        current = to_check.pop(0)
+        rows = await pool.fetch("SELECT code_b FROM product_pairs WHERE code_a = $1", current)
+        for r in rows:
+            if r["code_b"] not in group:
+                group.add(r["code_b"])
+                to_check.append(r["code_b"])
+
+    # Connect ALL members of the group to each other
+    group = sorted(group)
+    for i, a in enumerate(group):
+        for b in group[i+1:]:
+            await pool.execute(
+                "INSERT INTO product_pairs (code_a, code_b, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+                a, b, now,
+            )
+            await pool.execute(
+                "INSERT INTO product_pairs (code_a, code_b, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+                b, a, now,
+            )
+
+    return {"success": True, "group": group}
 
 
 @app.delete("/api/pairs/{pair_id}")

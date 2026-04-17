@@ -129,18 +129,25 @@ async def _process_message(
                         await _log(f"step_ERROR_{type(e).__name__}_{str(e)[:100]}")
 
                     if ai_code:
-                        # Get linked pair from product_pairs table (hand-curated, not AI guess)
-                        all_codes = [ai_code]
+                        # Get ALL linked models from product_pairs (transitive: A↔B, B↔C → A,B,C)
+                        all_codes = set([ai_code])
                         try:
-                            pair_rows = await _debug_pool.fetch(
-                                "SELECT code_b FROM product_pairs WHERE code_a = $1", ai_code
-                            )
-                            for pr in pair_rows:
-                                if pr["code_b"] not in all_codes:
-                                    all_codes.append(pr["code_b"])
+                            # BFS to find all connected codes
+                            to_check = [ai_code]
+                            while to_check:
+                                current = to_check.pop(0)
+                                pair_rows = await _debug_pool.fetch(
+                                    "SELECT code_b FROM product_pairs WHERE code_a = $1", current
+                                )
+                                for pr in pair_rows:
+                                    if pr["code_b"] not in all_codes:
+                                        all_codes.add(pr["code_b"])
+                                        to_check.append(pr["code_b"])
                         except Exception:
                             pass
+                        all_codes = sorted(all_codes)
                         codes_str = ",".join(all_codes)
+                        await _log(f"step5b_linked_codes={codes_str}")
                         try:
                             now_iso = datetime.now(timezone.utc).isoformat()
                             await _debug_pool.execute(
