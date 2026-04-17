@@ -327,6 +327,7 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
 
     # ── Method 1: Cloud Vision fingerprint comparison ──
     vision_scores = {}
+    user_fp: dict | None = None
     try:
         user_fp = await asyncio.to_thread(fingerprint_from_bytes, image_bytes)
         for row in rows:
@@ -365,12 +366,43 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     except Exception as e:
         logger.warning(f"CLIP matching failed: {e}")
 
-    # ── Combine scores: CLIP only (Vision was hurting accuracy) ──
-    combined = {}
-    if clip_scores:
+    # ── Color re-ranking ──
+    # CLIP alone matches shape/pattern but ignores color, so an orange bag
+    # and a yellow bag with the same pattern score nearly identically.
+    # We blend CLIP (shape/semantic, 70%) with dominant-color similarity (30%).
+    color_by_code: dict[str, float] = {}
+    user_colors: list[dict] = []
+    try:
+        user_colors = (user_fp or {}).get("colors", [])
+    except Exception:
+        user_colors = []
+
+    if user_colors:
+        for row in rows:
+            fp = row["fingerprint"]
+            if isinstance(fp, str):
+                try:
+                    fp = json.loads(fp)
+                except Exception:
+                    continue
+            prod_colors = fp.get("colors", []) if isinstance(fp, dict) else []
+            sim = _color_similarity(user_colors, prod_colors)
+            code = row["code"]
+            if code not in color_by_code or sim > color_by_code[code]:
+                color_by_code[code] = sim
+
+    # ── Combine scores: CLIP × color (fallback to whichever exists) ──
+    combined: dict[str, float] = {}
+    if clip_scores and color_by_code:
+        for code, clip_sim in clip_scores.items():
+            color_sim = color_by_code.get(code, 0.0)
+            combined[code] = clip_sim * 0.7 + color_sim * 0.3
+        top_before = max(clip_scores.values())
+        top_after = max(combined.values())
+        print(f"[MATCH] Color re-rank: CLIP top={top_before:.2f} → blended top={top_after:.2f}", flush=True)
+    elif clip_scores:
         combined = dict(clip_scores)
     else:
-        # Fallback to Vision if CLIP failed
         combined = dict(vision_scores)
 
     # Build scored list with row data

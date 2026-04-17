@@ -151,6 +151,7 @@ async def _process_message(
                             photo_flow_keywords = (
                                 "გადაგიმოწმოთ", "მოვიძიეთ", "ვიპოვე", "რა ზომაში",
                                 "ზომაში ეს მოდელი", "ზომაში არ გვაქვს",
+                                "შეარჩიეთ", "კოდი მოგვწერეთ",
                             )
                             last_bot = await _debug_pool.fetchrow(
                                 "SELECT content, created_at FROM messages "
