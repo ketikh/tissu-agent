@@ -131,7 +131,8 @@ async def _process_message(
                     if ai_code:
                         # Save ALL similar codes to DB for size filtering later
                         alts = match_result.get("alternatives", [])
-                        all_codes = [ai_code] + [a["code"] for a in alts if a.get("score", 0) >= 0.75]
+                        # Max 2 total — same print can exist in strap + zipper only
+                        all_codes = [ai_code] + [a["code"] for a in alts[:1] if a.get("score", 0) >= 0.75]
                         codes_str = ",".join(all_codes)
                         try:
                             now_iso = datetime.now(timezone.utc).isoformat()
