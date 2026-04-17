@@ -115,10 +115,18 @@ async def _process_message(
                         if match_result and match_result.get("matched"):
                             ai_code = match_result["code"]
                             ai_product = match_result.get("product", {})
+                        else:
+                            # Send debug info via WhatsApp
+                            msg = match_result.get("message", "no message") if match_result else "null result"
+                            score = match_result.get("score", 0) if match_result else 0
+                            closest = match_result.get("closest_code", "?") if match_result else "?"
+                            await send_whatsapp_text(f"🟡 AI match result: {msg}\nscore={score} closest={closest}")
                     except asyncio.TimeoutError:
                         print(f"[PHOTO] AI TIMEOUT (60s)", flush=True)
+                        await send_whatsapp_text(f"🔴 AI TIMEOUT (60s)")
                     except Exception as e:
                         print(f"[PHOTO] AI ERROR: {type(e).__name__}: {e}", flush=True)
+                        await send_whatsapp_text(f"🔴 AI ERROR: {type(e).__name__}: {str(e)[:200]}")
 
                     if ai_code:
                         # AI found match — tell bot to show it
