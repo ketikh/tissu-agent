@@ -238,8 +238,9 @@ async def _gemini_visual_compare(user_image: bytes, candidate_urls: list[str]) -
                     pass
 
         parts.append(types.Part(text=(
-            "TASK: Match the customer's laptop-bag photo to exactly one of the candidate products. "
-            "The bag must be the SAME PRODUCT — same fabric, same pattern, same colors. "
+            "TASK: Match the customer's laptop-bag photo to exactly one of the candidate reference photos. "
+            "Some products have multiple reference photos (front + back) — treat each numbered reference as a "
+            "separate candidate. The bag must be the SAME PRODUCT — same fabric, same pattern, same colors. "
             "A similar shape with different colors is NOT a match.\n\n"
             "COMPARE ON ALL FOUR DIMENSIONS:\n"
             "1) DOMINANT COLORS — exact hue, not just 'blue'. Orange ≠ yellow. Navy ≠ royal blue. "
@@ -248,10 +249,12 @@ async def _gemini_visual_compare(user_image: bytes, candidate_urls: list[str]) -
             "Different pattern type = NOT a match.\n"
             "3) PATTERN SCALE & COLOR ARRANGEMENT — same motifs arranged the same way, same accent colors.\n"
             "4) FABRIC TEXTURE — canvas / denim / quilted / smooth. Different texture = NOT a match.\n\n"
-            "IGNORE: background, lighting, angle, hands, shadows. Judge only the bag surface.\n\n"
+            "IGNORE: background, lighting, angle, hands, shadows, props, flowers, tables. "
+            "Judge only the bag surface. If the customer photo shows the bag at an odd angle, "
+            "mentally rotate/unfold it before comparing.\n\n"
             "BE STRICT. When in doubt, answer 0. It is better to return 'no match' than to return "
             "a wrong product of a similar shape but different color.\n\n"
-            "Answer with ONLY ONE DIGIT (1-5) for the matching candidate, or 0 if none match."
+            "Answer with ONLY the candidate number (e.g. 1, 2, 3, ...) for the best match, or 0 if none match."
         )))
 
         resp = client.models.generate_content(
@@ -259,10 +262,11 @@ async def _gemini_visual_compare(user_image: bytes, candidate_urls: list[str]) -
             contents=[types.Content(role="user", parts=parts)],
         )
         answer = (resp.text or "").strip()
-        # Extract number
-        for ch in answer:
-            if ch.isdigit():
-                return int(ch)
+        # Extract first contiguous number (supports 1, 2, ..., 10+ candidates)
+        import re as _re
+        m = _re.search(r"\d+", answer)
+        if m:
+            return int(m.group(0))
         return None
     except Exception as e:
         logger.error(f"Visual compare failed: {e}")

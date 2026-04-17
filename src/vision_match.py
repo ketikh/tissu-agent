@@ -442,14 +442,29 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     if use_gemini:
         try:
             from src.image_match import _gemini_visual_compare
-            candidate_urls = [r["image_url"] for _, r in top_candidates if r.get("image_url")]
+            # Feed Gemini BOTH front and back of each candidate when available.
+            # More angles per product mean customer shots from odd angles still
+            # have a shot of matching — saves the owner from uploading extra
+            # reference photos manually.
+            candidate_urls: list[str] = []
+            candidate_map: list[int] = []  # maps gemini pick index → top_candidates index
+            for idx, (_, r) in enumerate(top_candidates):
+                front = r.get("image_url") or ""
+                back = r.get("image_url_back") or ""
+                if front:
+                    candidate_urls.append(front)
+                    candidate_map.append(idx)
+                if back:
+                    candidate_urls.append(back)
+                    candidate_map.append(idx)
             if candidate_urls:
                 gemini_pick = await _gemini_visual_compare(image_bytes, candidate_urls)
-                print(f"[MATCH] Gemini re-rank: pick={gemini_pick} (out of {len(candidate_urls)} candidates)", flush=True)
-                if isinstance(gemini_pick, int) and 1 <= gemini_pick <= len(top_candidates):
-                    chosen_score, chosen_row = top_candidates[gemini_pick - 1]
+                print(f"[MATCH] Gemini re-rank: pick={gemini_pick} (out of {len(candidate_urls)} ref photos for {len(top_candidates)} products)", flush=True)
+                if isinstance(gemini_pick, int) and 1 <= gemini_pick <= len(candidate_urls):
+                    chosen_idx = candidate_map[gemini_pick - 1]
+                    chosen_score, chosen_row = top_candidates[chosen_idx]
                     best_score, best = chosen_score, chosen_row
-                    print(f"[MATCH] Gemini chose #{gemini_pick}: {best['code']} (CLIP={chosen_score:.3f})", flush=True)
+                    print(f"[MATCH] Gemini chose ref#{gemini_pick} → product {best['code']} (CLIP={chosen_score:.3f})", flush=True)
                 elif gemini_pick == 0:
                     # Gemini said none of the CLIP top-3 visually match (e.g. yellow
                     # customer photo vs purple stored product). Trust Gemini — a

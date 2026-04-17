@@ -286,6 +286,29 @@ async def _process_message(
                 # Only a link, no text
                 text = "[კლიენტმა ბმული გამოგზავნა. მფლობელს გადაეგზავნა. უთხარი 'გადავამოწმებ ✨']"
 
+        # ── Photo-incoming signal (text only, photo may arrive next) ──
+        # Customers often type "ესეც", "ეს გაქვთ?", "შეამოწმეთ ეს", etc. immediately
+        # before sending a photo. If the buffer timeout elapses, the agent sees only
+        # the text and — when it's mid-order — can jump to "which bank?". Catching
+        # these phrases up-front prevents the mis-interpretation. We only trigger on
+        # SHORT messages that don't also contain a size word (otherwise "შეამოწმე
+        # პატარა ზომაში" would be hijacked away from the size filter).
+        if not image_url and text:
+            _raw = text.strip().lower()
+            _compact = _raw.replace("?", "").replace("!", "").strip()
+            _has_size = any(w in _compact for w in ("პატარა", "დიდი", "patara", "didi", "small", "large"))
+            _photo_signals = (
+                "ესე", "ესეც", "ესეთი", "ეს გაქვთ", "ეს მაქვს", "ესეთი გაქვთ", "ეს?",
+                "შეამოწმ", "გადაამოწმ", "გადამიმოწმ",
+                "eseti", "esec", "ese", "check this", "this one",
+            )
+            _is_photo_signal = (not _has_size) and len(_compact) < 30 and (
+                any(_compact == w for w in _photo_signals)
+                or any(_compact.startswith(w) for w in _photo_signals)
+            )
+            if _is_photo_signal:
+                text = "[კლიენტი ახალი ფოტოს გაგზავნას ცდილობს. ზუსტად ეს უპასუხე: 'გამომიგზავნეთ ფოტო ✨']"
+
         # ── When user answers size after photo → filter AI results by size ──
         force_inventory_codes = ""  # set when we already know exact codes to show
         if not image_url and text:
