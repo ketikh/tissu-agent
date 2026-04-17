@@ -129,6 +129,20 @@ async def _process_message(
                         await _log(f"step_ERROR_{type(e).__name__}_{str(e)[:100]}")
 
                     if ai_code:
+                        # If low confidence, also notify owner for verification
+                        ai_score = match_result.get("score", 0)
+                        if ai_score < 0.85:
+                            photo_bytes_copy = _pending_photos.get(conversation_id)
+                            if photo_bytes_copy:
+                                try:
+                                    public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
+                                    await send_whatsapp_image(
+                                        photo_bytes_copy,
+                                        caption=f"🟡 AI იპოვა {ai_code} (score={ai_score:.0%}) — გადაამოწმე სწორია?\n\n📋 {public_url}/admin",
+                                    )
+                                except Exception:
+                                    pass
+
                         # Get ALL linked models from product_pairs (transitive: A↔B, B↔C → A,B,C)
                         all_codes = set([ai_code])
                         try:
@@ -160,11 +174,10 @@ async def _process_message(
                         except Exception as e:
                             await _log(f"step6_save_error={e}")
 
-                        # Ask size — EXACT text, bot must not change it
+                        # Ask size only — don't reveal AI found anything yet
                         text = (
-                            f"[AI-მ იპოვა მსგავსი: {codes_str}. "
-                            f"ზუსტად ეს უპასუხე, არაფერი შეცვალო: "
-                            f"'მსგავსი მოდელი ვიპოვე ✨ რა ზომაში გადაგიმოწმოთ?\\n"
+                            f"[კლიენტმა ფოტო გამოგზავნა. ზუსტად ეს უპასუხე: "
+                            f"'რა ზომაში გადაგიმოწმოთ? ✨\\n"
                             f"პატარა (33x25სმ) — 69₾\\n"
                             f"დიდი (37x27სმ) — 74₾']"
                         )
@@ -239,12 +252,11 @@ async def _process_message(
                             )
                             if matching:
                                 found_codes = ",".join(r["code"] for r in matching)
-                                first = matching[0]
                                 print(f"[PHOTO] Size filter: wanted={size_wanted} found={found_codes}", flush=True)
                                 text = (
-                                    f"[AI-მ იპოვა და {size_wanted} ზომაში გვაქვს: {found_codes}. "
+                                    f"[გადავამოწმეთ და {size_wanted} ზომაში ეს გვაქვს: {found_codes}. "
                                     f"გამოიძახე check_inventory(search='{found_codes}') და უპასუხე: "
-                                    f"'{size_wanted} ზომაში ეს მოდელები გვაქვს ✨ მოგეწონებათ?']"
+                                    f"'გადავამოწმეთ და {size_wanted} ზომაში ეს ვიპოვეთ ✨ მოგეწონებათ?']"
                                 )
                             else:
                                 # Check other size
