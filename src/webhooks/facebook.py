@@ -142,23 +142,55 @@ async def _process_message(
                         await _log(f"step_ERROR_{type(e).__name__}_{str(e)[:100]}")
 
                     if ai_code:
-                        # Check if we already know the size from previous conversation
+                        # Only reuse a previously-chosen size when we're *still* inside
+                        # a photo flow from recent activity. Otherwise old sessions leak
+                        # their size preference into brand-new conversations.
                         prev_size = ""
                         try:
-                            prev_msgs = await _debug_pool.fetch(
-                                "SELECT content FROM messages WHERE conversation_id = $1 AND role = 'user' ORDER BY created_at DESC LIMIT 20",
+                            # Step A: is the previous bot turn a photo-flow state?
+                            photo_flow_keywords = (
+                                "გადაგიმოწმოთ", "მოვიძიეთ", "ვიპოვე", "რა ზომაში",
+                                "ზომაში ეს მოდელი", "ზომაში არ გვაქვს",
+                            )
+                            last_bot = await _debug_pool.fetchrow(
+                                "SELECT content, created_at FROM messages "
+                                "WHERE conversation_id = $1 AND role = 'assistant' "
+                                "ORDER BY created_at DESC LIMIT 1",
                                 conversation_id,
                             )
-                            for pm in prev_msgs:
-                                c = (pm["content"] or "").lower()
-                                if "პატარა" in c or "პატარ" in c:
-                                    prev_size = "პატარა"
-                                    break
-                                elif "დიდი" in c or "დიდ" in c:
-                                    prev_size = "დიდი"
-                                    break
-                        except Exception:
-                            pass
+                            in_photo_flow = False
+                            if last_bot and last_bot["content"]:
+                                lc = last_bot["content"]
+                                if any(kw in lc for kw in photo_flow_keywords):
+                                    in_photo_flow = True
+
+                            # Step B: find a recent size choice (within 60 min) by the user
+                            if in_photo_flow:
+                                prev_msgs = await _debug_pool.fetch(
+                                    "SELECT content, created_at FROM messages "
+                                    "WHERE conversation_id = $1 AND role = 'user' "
+                                    "ORDER BY created_at DESC LIMIT 20",
+                                    conversation_id,
+                                )
+                                now_utc = datetime.now(timezone.utc)
+                                for pm in prev_msgs:
+                                    created = pm.get("created_at") if isinstance(pm, dict) else pm["created_at"]
+                                    if created and hasattr(created, "tzinfo"):
+                                        if created.tzinfo is None:
+                                            created = created.replace(tzinfo=timezone.utc)
+                                        age_min = (now_utc - created).total_seconds() / 60
+                                        if age_min > 60:
+                                            continue
+                                    c = (pm["content"] or "").lower()
+                                    if "პატარა" in c or "პატარ" in c:
+                                        prev_size = "პატარა"
+                                        break
+                                    elif "დიდი" in c or "დიდ" in c:
+                                        prev_size = "დიდი"
+                                        break
+                            await _log(f"step5a_prev_size={prev_size or 'NONE'}_flow={in_photo_flow}")
+                        except Exception as e:
+                            await _log(f"step5a_error={str(e)[:80]}")
 
                         # Get ALL linked models from product_pairs (transitive: A↔B, B↔C → A,B,C)
                         all_codes = set([ai_code])
