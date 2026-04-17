@@ -419,6 +419,10 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     ranked = sorted(seen.values(), key=lambda x: x[0], reverse=True)
     best_score, best = ranked[0]
 
+    # Show top-5 with scores so we can see why expected codes are missing.
+    top5_debug = ", ".join(f"{r['code']}={s:.3f}" for s, r in ranked[:5])
+    print(f"[MATCH] CLIP top-5: {top5_debug}", flush=True)
+
     # Pre-filter: if CLIP can't even find a decent candidate, give up early.
     if best_score < 0.65:
         return {
@@ -429,10 +433,10 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
         }
 
     # ── Stage 2: Gemini visual re-ranker ──
-    # CLIP narrows to top-3. Gemini then inspects pattern, color palette,
+    # CLIP narrows to top-5. Gemini then inspects pattern, color palette,
     # fabric texture — the dimensions CLIP embeddings miss — and picks the
     # true match. Skip when CLIP is near-certain (saves a call).
-    top_candidates = ranked[:3]
+    top_candidates = ranked[:5]
     use_gemini = best_score < 0.95 and len(top_candidates) >= 1
 
     if use_gemini:

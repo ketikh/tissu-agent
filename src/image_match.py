@@ -247,7 +247,7 @@ async def _gemini_visual_compare(user_image: bytes, candidate_urls: list[str]) -
             "IGNORE: background, lighting, angle, hands, shadows. Judge only the bag surface.\n\n"
             "BE STRICT. When in doubt, answer 0. It is better to return 'no match' than to return "
             "a wrong product of a similar shape but different color.\n\n"
-            "Answer with ONLY ONE DIGIT: 1, 2, or 3 for the matching candidate, or 0 if none match."
+            "Answer with ONLY ONE DIGIT (1-5) for the matching candidate, or 0 if none match."
         )))
 
         resp = client.models.generate_content(
