@@ -84,6 +84,7 @@
     </div>
     <div class="tabs">
         <button class="active" onclick="showTab('inventory')">მარაგი</button>
+        <button onclick="showTab('pairs')">🔗 წყვილები</button>
         <button onclick="showTab('extra-photos')">📷 ფოტოები</button>
         <button onclick="showTab('leads')">ლიდები</button>
         <button onclick="showTab('orders')">შეკვეთები</button>
@@ -104,6 +105,19 @@
                 <button class="btn btn-sm" style="background:#e74c3c;color:white" onclick="setFilter('size','დიდი')">დიდი</button>
             </div>
             <div class="product-grid" id="inv-grid"></div>
+        </div>
+        <div id="tab-pairs" class="section">
+            <div class="card">
+                <h2>🔗 დაკავშირებული მოდელები (იგივე პრინტი)</h2>
+                <p style="color:#95a5a6;margin-bottom:15px">ფხრიწიანი + თასმიანი ერთი პრინტით — AI ავტომატურად ორივეს აჩვენებს</p>
+                <div style="display:flex;gap:10px;margin-bottom:15px;align-items:center">
+                    <select id="pair-a" style="padding:8px;border:1px solid #ddd;border-radius:4px"></select>
+                    <span style="font-size:20px">↔</span>
+                    <select id="pair-b" style="padding:8px;border:1px solid #ddd;border-radius:4px"></select>
+                    <button onclick="addPair()" style="padding:8px 20px;background:#3498db;color:white;border:none;border-radius:4px;cursor:pointer">დაკავშირება</button>
+                </div>
+                <table><thead><tr><th>მოდელი A</th><th></th><th>მოდელი B</th><th></th></tr></thead><tbody id="pairs-table"></tbody></table>
+            </div>
         </div>
         <div id="tab-extra-photos" class="section">
             <div class="card">
@@ -391,6 +405,37 @@
             loadData();
         }
 
+        // ── Pairs Tab ──
+        async function loadPairs() {
+            const inv = await fetch(API+'/api/inventory').then(r=>r.json());
+            const codes = [...new Set(inv.inventory.map(i=>i.code).filter(c=>c))].sort();
+            ['pair-a','pair-b'].forEach(id => {
+                document.getElementById(id).innerHTML = codes.map(c=>`<option value="${c}">${c}</option>`).join('');
+            });
+            const data = await fetch(API+'/api/pairs').then(r=>r.json());
+            const seen = new Set();
+            const tbody = document.getElementById('pairs-table');
+            tbody.innerHTML = data.pairs.filter(p => {
+                const key = [p.code_a,p.code_b].sort().join('-');
+                if(seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            }).map(p => `<tr><td><b>${p.code_a}</b></td><td>↔</td><td><b>${p.code_b}</b></td><td><button onclick="deletePair(${p.id})" style="background:#e74c3c;color:white;border:none;border-radius:3px;padding:2px 8px;cursor:pointer">✕</button></td></tr>`).join('');
+            if(!data.pairs.length) tbody.innerHTML = '<tr><td colspan="4" style="color:#95a5a6">ჯერ წყვილები არ დამატებულა</td></tr>';
+        }
+
+        async function addPair() {
+            const a = document.getElementById('pair-a').value;
+            const b = document.getElementById('pair-b').value;
+            if(a===b) { alert('ორი სხვადასხვა კოდი აირჩიე'); return; }
+            await fetch(API+'/api/pairs', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({code_a:a,code_b:b})});
+            loadPairs();
+        }
+
+        async function deletePair(id) {
+            if(confirm('წავშალოთ?')) { await fetch(API+'/api/pairs/'+id,{method:'DELETE'}); loadPairs(); }
+        }
+
         // ── Extra Photos Tab ──
         async function loadExtraPhotos() {
             // Fill code dropdown from inventory
@@ -437,11 +482,12 @@
             }
         }
 
-        // Override showTab to load extra photos
+        // Override showTab to load dynamic tabs
         const _origShowTab = showTab;
         showTab = function(name) {
             _origShowTab(name);
             if(name === 'extra-photos') loadExtraPhotos();
+            if(name === 'pairs') loadPairs();
         };
 
         loadData();

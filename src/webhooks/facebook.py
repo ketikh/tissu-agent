@@ -129,10 +129,17 @@ async def _process_message(
                         await _log(f"step_ERROR_{type(e).__name__}_{str(e)[:100]}")
 
                     if ai_code:
-                        # Save ALL similar codes to DB for size filtering later
-                        alts = match_result.get("alternatives", [])
-                        # Max 2 total — same print can exist in strap + zipper only
-                        all_codes = [ai_code] + [a["code"] for a in alts[:1] if a.get("score", 0) >= 0.75]
+                        # Get linked pair from product_pairs table (hand-curated, not AI guess)
+                        all_codes = [ai_code]
+                        try:
+                            pair_rows = await _debug_pool.fetch(
+                                "SELECT code_b FROM product_pairs WHERE code_a = $1", ai_code
+                            )
+                            for pr in pair_rows:
+                                if pr["code_b"] not in all_codes:
+                                    all_codes.append(pr["code_b"])
+                        except Exception:
+                            pass
                         codes_str = ",".join(all_codes)
                         try:
                             now_iso = datetime.now(timezone.utc).isoformat()
@@ -146,13 +153,12 @@ async def _process_message(
                         except Exception as e:
                             await _log(f"step6_save_error={e}")
 
-                        # Ask size — bot will use hint when user answers
+                        # Ask size
                         text = (
-                            f"[AI-მ იპოვა მსგავსი მოდელები: {codes_str}. "
-                            f"ეკითხე ზომა: 'გვაქვს ორი ზომა:\\n"
+                            f"[AI-მ იპოვა მსგავსი: {codes_str}. "
+                            f"ეკითხე ზომა: 'რა ზომაში გადაგიმოწმოთ?\\n"
                             f"პატარა (33x25სმ) — 69₾\\n"
-                            f"დიდი (37x27სმ) — 74₾\\n"
-                            f"რომელი ზომა გაინტერესებთ? ✨']"
+                            f"დიდი (37x27სმ) — 74₾ ✨']"
                         )
                     else:
                         # AI failed or low score — forward to owner via WhatsApp

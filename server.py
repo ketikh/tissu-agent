@@ -462,6 +462,43 @@ async def decrease_stock_for_order(order_id: int):
     return {"success": True, "code": item_code}
 
 
+# ── Product Pairs (same print, different style) ─────────────
+
+@app.get("/api/pairs")
+async def list_pairs():
+    pool = await get_db()
+    rows = await pool.fetch("SELECT * FROM product_pairs ORDER BY code_a")
+    return {"pairs": [dict(r) for r in rows]}
+
+
+@app.post("/api/pairs")
+async def add_pair(request: Request):
+    data = await request.json()
+    code_a = data["code_a"].upper().strip()
+    code_b = data["code_b"].upper().strip()
+    pool = await get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    # Store both directions
+    await pool.execute(
+        "INSERT INTO product_pairs (code_a, code_b, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+        code_a, code_b, now,
+    )
+    await pool.execute(
+        "INSERT INTO product_pairs (code_a, code_b, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+        code_b, code_a, now,
+    )
+    return {"success": True, "pair": f"{code_a} ↔ {code_b}"}
+
+
+@app.delete("/api/pairs/{pair_id}")
+async def delete_pair(pair_id: int):
+    pool = await get_db()
+    row = await pool.fetchrow("SELECT code_a, code_b FROM product_pairs WHERE id = $1", pair_id)
+    if row:
+        await pool.execute("DELETE FROM product_pairs WHERE (code_a=$1 AND code_b=$2) OR (code_a=$2 AND code_b=$1)", row["code_a"], row["code_b"])
+    return {"success": True}
+
+
 @app.get("/api/health")
 async def health_check():
     return {"status": "ok", "agents": ["support_sales", "marketing"], "version": "0.2.0"}
