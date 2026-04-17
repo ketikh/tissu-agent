@@ -120,7 +120,7 @@ async def _process_message(
                             ai_product = match_result.get("product", {})
                             await _log(f"step5_SUCCESS_{ai_code}")
                         else:
-                            await _log(f"step5_NO_MATCH_{match_result.get('message','?')}")
+                            await _log(f"step5_NO_MATCH_score={match_result.get('score','?')}_closest={match_result.get('closest_code','?')}_msg={match_result.get('message','?')}")
                     except asyncio.TimeoutError:
                         await _log("step_ERROR_TIMEOUT_60s")
                     except Exception as e:
