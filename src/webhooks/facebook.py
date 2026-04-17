@@ -115,7 +115,7 @@ async def _process_message(
                         await _log("step2_importing_vision_match")
                         from src.vision_match import analyze_and_match
                         await _log("step3_calling_analyze_and_match")
-                        match_result = await asyncio.wait_for(analyze_and_match(image_bytes), timeout=60)
+                        match_result = await asyncio.wait_for(analyze_and_match(image_bytes), timeout=120)
                         await _log(f"step4_result_matched={match_result.get('matched')}_code={match_result.get('code')}_score={match_result.get('score')}")
                         if match_result and match_result.get("matched"):
                             ai_code = match_result["code"]

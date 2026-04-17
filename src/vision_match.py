@@ -340,28 +340,28 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     except Exception as e:
         logger.warning(f"Vision fingerprint failed: {e}")
 
-    # ── Method 2: CLIP visual embedding comparison ──
+    # ── Method 2: CLIP visual embedding — use pre-stored embeddings from product_embeddings ──
     clip_scores = {}
     try:
         user_clip = await _get_clip_embedding(image_bytes)
         if user_clip:
-            # Get CLIP embeddings for top candidates (by image URL)
-            seen_codes = set()
-            for row in rows:
-                code = row["code"]
-                if code in seen_codes:
-                    continue
-                seen_codes.add(code)
-                img_url = row.get("image_url", "")
-                if not img_url:
-                    continue
-                try:
-                    prod_clip = await _get_clip_embedding_url(img_url)
-                    if prod_clip:
-                        sim = _cosine_similarity(user_clip, prod_clip)
+            # Read pre-computed CLIP embeddings from product_embeddings table (pgvector)
+            clip_rows = await pool.fetch("""
+                SELECT code, embedding
+                FROM product_embeddings
+                WHERE embedding IS NOT NULL
+            """)
+            for cr in clip_rows:
+                code = cr["code"]
+                prod_emb = cr["embedding"]
+                if prod_emb:
+                    # pgvector returns string like "[0.1,0.2,...]" — parse it
+                    if isinstance(prod_emb, str):
+                        prod_emb = [float(x) for x in prod_emb.strip("[]").split(",")]
+                    sim = _cosine_similarity(user_clip, list(prod_emb))
+                    if code not in clip_scores or sim > clip_scores[code]:
                         clip_scores[code] = sim
-                except Exception:
-                    pass
+            print(f"[MATCH] CLIP scores: top={max(clip_scores.values()) if clip_scores else 0:.2f} ({len(clip_scores)} products)", flush=True)
     except Exception as e:
         logger.warning(f"CLIP matching failed: {e}")
 
