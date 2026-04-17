@@ -149,54 +149,46 @@ async def _process_message(
                         await _log(f"step_ERROR_{type(e).__name__}_{str(e)[:100]}")
 
                     if ai_code:
-                        # Only reuse a previously-chosen size when we're *still* inside
-                        # a photo flow from recent activity. Otherwise old sessions leak
-                        # their size preference into brand-new conversations.
+                        # Reuse the customer's most-recent size choice when it's
+                        # within the last 60 minutes. That time window is enough to
+                        # bridge multiple photos in the same shopping session while
+                        # preventing leaks from sessions days ago.
                         prev_size = ""
                         try:
-                            # Step A: is the previous bot turn a photo-flow state?
-                            photo_flow_keywords = (
-                                "გადაგიმოწმოთ", "მოვიძიეთ", "ვიპოვე", "რა ზომაში",
-                                "ზომაში ეს მოდელი", "ზომაში არ გვაქვს",
-                                "შეარჩიეთ", "კოდი მოგვწერეთ",
-                            )
-                            last_bot = await _debug_pool.fetchrow(
+                            prev_msgs = await _debug_pool.fetch(
                                 "SELECT content, created_at FROM messages "
-                                "WHERE conversation_id = $1 AND role = 'assistant' "
-                                "ORDER BY created_at DESC LIMIT 1",
+                                "WHERE conversation_id = $1 AND role = 'user' "
+                                "ORDER BY created_at DESC LIMIT 30",
                                 conversation_id,
                             )
-                            in_photo_flow = False
-                            if last_bot and last_bot["content"]:
-                                lc = last_bot["content"]
-                                if any(kw in lc for kw in photo_flow_keywords):
-                                    in_photo_flow = True
-
-                            # Step B: find a recent size choice (within 60 min) by the user
-                            if in_photo_flow:
-                                prev_msgs = await _debug_pool.fetch(
-                                    "SELECT content, created_at FROM messages "
-                                    "WHERE conversation_id = $1 AND role = 'user' "
-                                    "ORDER BY created_at DESC LIMIT 20",
-                                    conversation_id,
-                                )
-                                now_utc = datetime.now(timezone.utc)
-                                for pm in prev_msgs:
-                                    created = pm.get("created_at") if isinstance(pm, dict) else pm["created_at"]
-                                    if created and hasattr(created, "tzinfo"):
-                                        if created.tzinfo is None:
-                                            created = created.replace(tzinfo=timezone.utc)
-                                        age_min = (now_utc - created).total_seconds() / 60
-                                        if age_min > 60:
-                                            continue
-                                    c = (pm["content"] or "").lower()
-                                    if "პატარა" in c or "პატარ" in c:
-                                        prev_size = "პატარა"
-                                        break
-                                    elif "დიდი" in c or "დიდ" in c:
-                                        prev_size = "დიდი"
-                                        break
-                            await _log(f"step5a_prev_size={prev_size or 'NONE'}_flow={in_photo_flow}")
+                            now_utc = datetime.now(timezone.utc)
+                            for pm in prev_msgs:
+                                created = pm["created_at"] if pm and "created_at" in pm else None
+                                # created_at is stored as ISO string — parse it
+                                age_min = 0.0
+                                try:
+                                    if isinstance(created, str):
+                                        created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                                    elif hasattr(created, "tzinfo"):
+                                        created_dt = created
+                                    else:
+                                        created_dt = None
+                                    if created_dt is not None:
+                                        if created_dt.tzinfo is None:
+                                            created_dt = created_dt.replace(tzinfo=timezone.utc)
+                                        age_min = (now_utc - created_dt).total_seconds() / 60
+                                except Exception:
+                                    age_min = 0.0
+                                if age_min > 60:
+                                    continue
+                                c = (pm["content"] or "").lower()
+                                if "პატარა" in c or "პატარ" in c:
+                                    prev_size = "პატარა"
+                                    break
+                                elif "დიდი" in c or "დიდ" in c:
+                                    prev_size = "დიდი"
+                                    break
+                            await _log(f"step5a_prev_size={prev_size or 'NONE'}")
                         except Exception as e:
                             await _log(f"step5a_error={str(e)[:80]}")
 

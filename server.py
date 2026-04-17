@@ -520,6 +520,34 @@ async def health_check():
     return {"status": "ok", "agents": ["support_sales", "marketing"], "version": "0.2.0"}
 
 
+@app.post("/api/reindex")
+async def reindex_catalog(full: bool = False):
+    """Re-index product catalog embeddings. Use full=true to wipe and re-embed all
+    products; otherwise only new/missing ones are indexed."""
+    from src.image_match import index_all_products
+    pool = await get_db()
+    if full:
+        await pool.execute("DELETE FROM product_embeddings")
+    result = await index_all_products()
+    return result
+
+
+@app.post("/api/reindex/{code}")
+async def reindex_one(code: str):
+    """Re-index a single product by code (useful when stored embedding is wrong)."""
+    from src.image_match import index_product
+    pool = await get_db()
+    row = await pool.fetchrow(
+        "SELECT id, code, model, size, image_url, image_url_back FROM inventory WHERE UPPER(code) = UPPER($1) LIMIT 1",
+        code,
+    )
+    if not row:
+        return {"ok": False, "message": f"Code {code} not found"}
+    await pool.execute("DELETE FROM product_embeddings WHERE UPPER(code) = UPPER($1)", code)
+    ok = await index_product(row["id"], row["code"], row["model"], row["size"], row["image_url"], row.get("image_url_back", ""))
+    return {"ok": ok, "code": row["code"]}
+
+
 # ── Extra Photos (lifestyle/marketing) ──────────────────────
 
 @app.get("/api/extra-photos")
