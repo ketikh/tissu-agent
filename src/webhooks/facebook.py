@@ -160,12 +160,13 @@ async def _process_message(
                         except Exception as e:
                             await _log(f"step6_save_error={e}")
 
-                        # Ask size
+                        # Ask size — EXACT text, bot must not change it
                         text = (
                             f"[AI-მ იპოვა მსგავსი: {codes_str}. "
-                            f"ეკითხე ზომა: 'რა ზომაში გადაგიმოწმოთ?\\n"
+                            f"ზუსტად ეს უპასუხე, არაფერი შეცვალო: "
+                            f"'მსგავსი მოდელი ვიპოვე ✨ რა ზომაში გადაგიმოწმოთ?\\n"
                             f"პატარა (33x25სმ) — 69₾\\n"
-                            f"დიდი (37x27სმ) — 74₾ ✨']"
+                            f"დიდი (37x27სმ) — 74₾']"
                         )
                     else:
                         # AI failed or low score — forward to owner via WhatsApp
