@@ -265,41 +265,123 @@ async def index_all_products() -> dict:
     return {"indexed": success, "failed": failed, "total": len(rows)}
 
 
-async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
-    """Match a user photo against indexed products."""
-    import asyncio
+CLIP_SERVICE_URL = os.getenv("CLIP_SERVICE_URL", "https://katekh12-clip-embed.hf.space")
+
+
+async def _get_clip_embedding(image_bytes: bytes) -> list[float] | None:
+    """Get CLIP embedding from HuggingFace Space."""
+    import base64
     try:
-        # Run sync Cloud Vision call in thread to avoid blocking event loop
-        user_fp = await asyncio.to_thread(fingerprint_from_bytes, image_bytes)
+        b64 = base64.b64encode(image_bytes).decode()
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{CLIP_SERVICE_URL}/embed",
+                json={"image_base64": b64, "remove_bg": True},
+            )
+            if resp.status_code == 200:
+                return resp.json().get("embedding")
     except Exception as e:
-        logger.error(f"Fingerprint failed: {e}")
-        return {"matched": False, "message": "ფოტოს ანალიზი ვერ მოხერხდა"}
+        logger.warning(f"CLIP embedding failed: {e}")
+    return None
+
+
+async def _get_clip_embedding_url(image_url: str) -> list[float] | None:
+    """Get CLIP embedding for a URL."""
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{CLIP_SERVICE_URL}/embed",
+                json={"image_url": image_url, "remove_bg": True},
+            )
+            if resp.status_code == 200:
+                return resp.json().get("embedding")
+    except Exception as e:
+        logger.warning(f"CLIP URL embedding failed: {e}")
+    return None
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Cosine similarity between two vectors."""
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = sum(x * x for x in a) ** 0.5
+    norm_b = sum(x * x for x in b) ** 0.5
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
+    """Hybrid match: CLIP (visual) + Cloud Vision (semantic). Best of both."""
+    import asyncio
 
     pool = await get_db()
-    query = """
+    rows = await pool.fetch("""
         SELECT pf.code, pf.fingerprint, pf.inventory_id,
                i.model, i.size, i.price, i.image_url, i.image_url_back, i.stock
         FROM product_fingerprints pf
         JOIN inventory i ON i.id = ABS(pf.inventory_id)
         WHERE i.stock > 0
-    """
-    params = []
-    if size:
-        query += " AND i.size ILIKE $1"
-        params.append(f"%{size}%")
-
-    rows = await pool.fetch(query, *params)
+    """)
     if not rows:
         return {"matched": False, "message": "მარაგში ვერ მოიძებნა"}
 
-    # Score each candidate
-    scored = []
+    # ── Method 1: Cloud Vision fingerprint comparison ──
+    vision_scores = {}
+    try:
+        user_fp = await asyncio.to_thread(fingerprint_from_bytes, image_bytes)
+        for row in rows:
+            fp = row["fingerprint"]
+            if isinstance(fp, str):
+                fp = json.loads(fp)
+            score = compute_similarity(user_fp, fp)
+            code = row["code"]
+            if code not in vision_scores or score > vision_scores[code]:
+                vision_scores[code] = score
+    except Exception as e:
+        logger.warning(f"Vision fingerprint failed: {e}")
+
+    # ── Method 2: CLIP visual embedding comparison ──
+    clip_scores = {}
+    try:
+        user_clip = await _get_clip_embedding(image_bytes)
+        if user_clip:
+            # Get CLIP embeddings for top candidates (by image URL)
+            seen_codes = set()
+            for row in rows:
+                code = row["code"]
+                if code in seen_codes:
+                    continue
+                seen_codes.add(code)
+                img_url = row.get("image_url", "")
+                if not img_url:
+                    continue
+                try:
+                    prod_clip = await _get_clip_embedding_url(img_url)
+                    if prod_clip:
+                        sim = _cosine_similarity(user_clip, prod_clip)
+                        clip_scores[code] = sim
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.warning(f"CLIP matching failed: {e}")
+
+    # ── Combine scores: CLIP 70% + Vision 30% ──
+    combined = {}
+    all_codes = set(list(vision_scores.keys()) + list(clip_scores.keys()))
+    for code in all_codes:
+        v_score = vision_scores.get(code, 0)
+        c_score = clip_scores.get(code, 0)
+        # CLIP is much better for visual matching (screenshots, different angles)
+        combined[code] = c_score * 0.7 + v_score * 0.3
+
+    # Build scored list with row data
+    code_to_row = {}
     for row in rows:
-        fp = row["fingerprint"]
-        if isinstance(fp, str):
-            fp = json.loads(fp)
-        score = compute_similarity(user_fp, fp)
-        scored.append((score, row))
+        c = row["code"]
+        if c not in code_to_row:
+            code_to_row[c] = row
+
+    scored = [(combined.get(c, 0), code_to_row[c]) for c in code_to_row if c in combined]
 
     # Sort best first
     scored.sort(key=lambda x: x[0], reverse=True)
@@ -313,8 +395,8 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     ranked = sorted(seen.values(), key=lambda x: x[0], reverse=True)
     best_score, best = ranked[0]
 
-    # Threshold — 0.45 balances between finding matches and avoiding wrong ones
-    if best_score < 0.45:
+    # Threshold for hybrid (CLIP 70% + Vision 30%) — CLIP gives 0.7-0.95 for good matches
+    if best_score < 0.55:
         return {
             "matched": False,
             "message": "ზუსტი შესაბამისი ვერ მოიძებნა",
