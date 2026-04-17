@@ -289,6 +289,7 @@ async def _process_message(
                 text = "[კლიენტმა ბმული გამოგზავნა. მფლობელს გადაეგზავნა. უთხარი 'გადავამოწმებ ✨']"
 
         # ── When user answers size after photo → filter AI results by size ──
+        force_inventory_codes = ""  # set when we already know exact codes to show
         if not image_url and text:
             text_lower = text.lower().strip()
             size_wanted = ""
@@ -335,6 +336,7 @@ async def _process_message(
                             )
                             if matching:
                                 found_codes = ",".join(r["code"] for r in matching)
+                                force_inventory_codes = found_codes
                                 print(f"[PHOTO] Size filter: wanted={size_wanted} found={found_codes}", flush=True)
                                 text = (
                                     f"[{size_wanted} ზომაში ეს მოვიძიეთ: {found_codes}. "
@@ -350,6 +352,7 @@ async def _process_message(
                                 )
                                 if other:
                                     other_codes = ",".join(r["code"] for r in other)
+                                    force_inventory_codes = other_codes
                                     text = (
                                         f"[AI-მ იპოვა მაგრამ {size_wanted} ზომაში არ გვაქვს. "
                                         f"მხოლოდ {other_size} ზომაში გვაქვს: {other_codes}. "
@@ -379,6 +382,23 @@ async def _process_message(
             result = {"reply": "გადავამოწმებ და მოგწერთ ✨", "tool_calls_made": [], "tool_results_data": {}}
 
         print(f"[MSG] Agent replied: {result['reply'][:80]}...", flush=True)
+
+        # ── Force-populate inventory when size filter already knows exact codes ──
+        if force_inventory_codes:
+            trd = result.setdefault("tool_results_data", {})
+            inv = trd.get("check_inventory")
+            if not inv or not inv.get("found"):
+                try:
+                    from src.tools.support import check_inventory as _check_inv
+                    forced = await _check_inv(search=force_inventory_codes)
+                    if forced.get("found"):
+                        trd["check_inventory"] = forced
+                        print(f"[MSG] Force-injected inventory for codes={force_inventory_codes}", flush=True)
+                except Exception as e:
+                    print(f"[MSG] Force inventory error: {e}", flush=True)
+            # A size-filter match is a fresh answer — bypass the "already sent
+            # this category" dedup so the customer actually sees the photos.
+            result["_bypass_inventory_dedup"] = True
 
         # ── Send reply ──
         if not FB_PAGE_TOKEN:
@@ -437,8 +457,10 @@ async def _send_product_images(
     if not items:
         return
 
-    # Check if we already sent this exact category to this conversation
-    if conversation_id and len(items) > 1:
+    # Check if we already sent this exact category to this conversation.
+    # Bypass this check when the caller forced inventory based on a size-filter
+    # match — those are fresh answers for a specific photo, not re-listings.
+    if conversation_id and len(items) > 1 and not result.get("_bypass_inventory_dedup"):
         first = items[0]
         category_key = f"{first.get('model', '')}|{first.get('size', '')}"
         already_sent = _sent_inventory.get(conversation_id, set())
