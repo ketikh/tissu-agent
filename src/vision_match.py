@@ -365,14 +365,13 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     except Exception as e:
         logger.warning(f"CLIP matching failed: {e}")
 
-    # ── Combine scores: CLIP 70% + Vision 30% ──
+    # ── Combine scores: CLIP only (Vision was hurting accuracy) ──
     combined = {}
-    all_codes = set(list(vision_scores.keys()) + list(clip_scores.keys()))
-    for code in all_codes:
-        v_score = vision_scores.get(code, 0)
-        c_score = clip_scores.get(code, 0)
-        # CLIP is much better for visual matching (screenshots, different angles)
-        combined[code] = c_score * 0.7 + v_score * 0.3
+    if clip_scores:
+        combined = dict(clip_scores)
+    else:
+        # Fallback to Vision if CLIP failed
+        combined = dict(vision_scores)
 
     # Build scored list with row data
     code_to_row = {}
@@ -395,8 +394,8 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     ranked = sorted(seen.values(), key=lambda x: x[0], reverse=True)
     best_score, best = ranked[0]
 
-    # Threshold for hybrid (CLIP 70% + Vision 30%)
-    if best_score < 0.60:
+    # Threshold for CLIP similarity (0.85+ = exact, 0.75+ = very similar)
+    if best_score < 0.75:
         return {
             "matched": False,
             "message": "ზუსტი შესაბამისი ვერ მოიძებნა",
