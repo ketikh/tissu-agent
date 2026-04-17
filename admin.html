@@ -109,14 +109,14 @@
         <div id="tab-pairs" class="section">
             <div class="card">
                 <h2>🔗 დაკავშირებული მოდელები (იგივე პრინტი)</h2>
-                <p style="color:#95a5a6;margin-bottom:15px">ფხრიწიანი + თასმიანი ერთი პრინტით — AI ავტომატურად ორივეს აჩვენებს</p>
+                <p style="color:#95a5a6;margin-bottom:10px">მონიშნე ერთნაირი პრინტის მოდელები და დააჭირე "დაწყვილება"</p>
                 <div style="display:flex;gap:10px;margin-bottom:15px;align-items:center">
-                    <select id="pair-a" style="padding:8px;border:1px solid #ddd;border-radius:4px"></select>
-                    <span style="font-size:20px">↔</span>
-                    <select id="pair-b" style="padding:8px;border:1px solid #ddd;border-radius:4px"></select>
-                    <button onclick="addPair()" style="padding:8px 20px;background:#3498db;color:white;border:none;border-radius:4px;cursor:pointer">დაკავშირება</button>
+                    <button onclick="pairSelected()" style="padding:10px 25px;background:#3498db;color:white;border:none;border-radius:4px;cursor:pointer;font-size:15px">🔗 დაწყვილება</button>
+                    <span id="pair-selected-count" style="color:#95a5a6"></span>
                 </div>
-                <table><thead><tr><th>მოდელი A</th><th></th><th>მოდელი B</th><th></th></tr></thead><tbody id="pairs-table"></tbody></table>
+                <div id="pair-product-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:25px"></div>
+                <h3 style="margin-top:20px;border-top:1px solid #eee;padding-top:15px">არსებული ჯგუფები</h3>
+                <div id="pairs-groups" style="margin-top:10px"></div>
             </div>
         </div>
         <div id="tab-extra-photos" class="section">
@@ -406,34 +406,103 @@
         }
 
         // ── Pairs Tab ──
+        let _pairProducts = [];
         async function loadPairs() {
             const inv = await fetch(API+'/api/inventory').then(r=>r.json());
-            const codes = [...new Set(inv.inventory.map(i=>i.code).filter(c=>c))].sort();
-            ['pair-a','pair-b'].forEach(id => {
-                document.getElementById(id).innerHTML = codes.map(c=>`<option value="${c}">${c}</option>`).join('');
+            _pairProducts = inv.inventory.filter(i=>i.code && i.stock > 0).sort((a,b)=>a.code.localeCompare(b.code));
+            const pubUrl = API;
+            const grid = document.getElementById('pair-product-grid');
+            grid.innerHTML = _pairProducts.map(p => {
+                const img = p.image_url ? (p.image_url.startsWith('http') ? p.image_url : pubUrl+p.image_url) : '';
+                return `<label style="border:2px solid #eee;border-radius:8px;overflow:hidden;cursor:pointer;text-align:center;position:relative" id="pair-label-${p.code}">
+                    <input type="checkbox" value="${p.code}" class="pair-check" onchange="updatePairCount()" style="position:absolute;top:5px;left:5px;width:18px;height:18px">
+                    ${img ? `<img src="${img}" style="width:100%;height:90px;object-fit:cover">` : '<div style="height:90px;background:#f0f0f0"></div>'}
+                    <div style="padding:4px;font-size:12px"><b>${p.code}</b></div>
+                </label>`;
+            }).join('');
+            updatePairCount();
+            loadPairGroups();
+        }
+
+        function updatePairCount() {
+            const checked = document.querySelectorAll('.pair-check:checked').length;
+            document.getElementById('pair-selected-count').textContent = checked > 0 ? `${checked} მონიშნული` : '';
+            // Highlight checked
+            document.querySelectorAll('.pair-check').forEach(cb => {
+                const label = cb.closest('label');
+                label.style.borderColor = cb.checked ? '#3498db' : '#eee';
+                label.style.boxShadow = cb.checked ? '0 0 0 2px #3498db' : 'none';
             });
+        }
+
+        async function pairSelected() {
+            const checked = [...document.querySelectorAll('.pair-check:checked')].map(cb=>cb.value);
+            if(checked.length < 2) { alert('მინიმუმ 2 მოდელი მონიშნე'); return; }
+            // Pair first with all others
+            for(let i = 1; i < checked.length; i++) {
+                await fetch(API+'/api/pairs', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({code_a:checked[0],code_b:checked[i]})});
+            }
+            // Uncheck all
+            document.querySelectorAll('.pair-check').forEach(cb=>{cb.checked=false});
+            updatePairCount();
+            loadPairGroups();
+            alert('დაწყვილდა ✅');
+        }
+
+        async function loadPairGroups() {
             const data = await fetch(API+'/api/pairs').then(r=>r.json());
-            const seen = new Set();
-            const tbody = document.getElementById('pairs-table');
-            tbody.innerHTML = data.pairs.filter(p => {
-                const key = [p.code_a,p.code_b].sort().join('-');
-                if(seen.has(key)) return false;
-                seen.add(key);
-                return true;
-            }).map(p => `<tr><td><b>${p.code_a}</b></td><td>↔</td><td><b>${p.code_b}</b></td><td><button onclick="deletePair(${p.id})" style="background:#e74c3c;color:white;border:none;border-radius:3px;padding:2px 8px;cursor:pointer">✕</button></td></tr>`).join('');
-            if(!data.pairs.length) tbody.innerHTML = '<tr><td colspan="4" style="color:#95a5a6">ჯერ წყვილები არ დამატებულა</td></tr>';
+            // Build groups via BFS
+            const adj = {};
+            data.pairs.forEach(p => {
+                if(!adj[p.code_a]) adj[p.code_a] = new Set();
+                if(!adj[p.code_b]) adj[p.code_b] = new Set();
+                adj[p.code_a].add(p.code_b);
+                adj[p.code_b].add(p.code_a);
+            });
+            const visited = new Set();
+            const groups = [];
+            Object.keys(adj).sort().forEach(code => {
+                if(visited.has(code)) return;
+                const group = [];
+                const queue = [code];
+                while(queue.length) {
+                    const c = queue.shift();
+                    if(visited.has(c)) continue;
+                    visited.add(c);
+                    group.push(c);
+                    (adj[c]||[]).forEach(n => { if(!visited.has(n)) queue.push(n); });
+                }
+                groups.push(group.sort());
+            });
+            const container = document.getElementById('pairs-groups');
+            if(!groups.length) { container.innerHTML = '<p style="color:#95a5a6">ჯერ ჯგუფები არ არის</p>'; return; }
+            const pubUrl = API;
+            container.innerHTML = groups.map((g,gi) => {
+                const items = g.map(code => {
+                    const p = _pairProducts.find(x=>x.code===code);
+                    const img = p?.image_url ? (p.image_url.startsWith('http') ? p.image_url : pubUrl+p.image_url) : '';
+                    return `<div style="text-align:center;width:100px">
+                        ${img ? `<img src="${img}" style="width:90px;height:70px;object-fit:cover;border-radius:4px">` : ''}
+                        <div style="font-size:11px"><b>${code}</b></div>
+                    </div>`;
+                }).join('<span style="font-size:20px;color:#3498db">↔</span>');
+                return `<div style="display:flex;align-items:center;gap:5px;padding:10px;margin-bottom:10px;background:#f8f9fa;border-radius:8px;flex-wrap:wrap">
+                    ${items}
+                    <button onclick="deleteGroup(${JSON.stringify(g).replace(/"/g,'&quot;')})" style="margin-left:auto;background:#e74c3c;color:white;border:none;border-radius:4px;padding:5px 10px;cursor:pointer;font-size:12px">✕ ჯგუფი</button>
+                </div>`;
+            }).join('');
         }
 
-        async function addPair() {
-            const a = document.getElementById('pair-a').value;
-            const b = document.getElementById('pair-b').value;
-            if(a===b) { alert('ორი სხვადასხვა კოდი აირჩიე'); return; }
-            await fetch(API+'/api/pairs', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({code_a:a,code_b:b})});
-            loadPairs();
-        }
-
-        async function deletePair(id) {
-            if(confirm('წავშალოთ?')) { await fetch(API+'/api/pairs/'+id,{method:'DELETE'}); loadPairs(); }
+        async function deleteGroup(codes) {
+            if(!confirm('ეს ჯგუფი წაიშლება?')) return;
+            // Delete all pairs involving these codes
+            const data = await fetch(API+'/api/pairs').then(r=>r.json());
+            for(const p of data.pairs) {
+                if(codes.includes(p.code_a) && codes.includes(p.code_b)) {
+                    await fetch(API+'/api/pairs/'+p.id, {method:'DELETE'});
+                }
+            }
+            loadPairGroups();
         }
 
         // ── Extra Photos Tab ──
