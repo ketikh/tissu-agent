@@ -294,8 +294,8 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     ranked = sorted(seen.values(), key=lambda x: x[0], reverse=True)
     best_score, best = ranked[0]
 
-    # Threshold — lowered because customer photos differ from catalog (angle, lighting, bg)
-    if best_score < 0.30:
+    # Threshold — must be reasonably high to avoid wrong matches
+    if best_score < 0.50:
         return {
             "matched": False,
             "message": "ზუსტი შესაბამისი ვერ მოიძებნა",

@@ -136,22 +136,27 @@ async def _process_message(
                             f"'გადავამოწმეთ და ეს მოდელი გვაქვს მარაგში — {size}, {price}₾ ✨ გნებავთ?']"
                         )
                     else:
-                        # AI failed — forward to owner
-                        photo_bytes = _pending_photos.pop(conversation_id, None)
+                        # AI failed or low score — forward to owner via WhatsApp
+                        await _log("step6_forwarding_to_owner")
+                        photo_bytes = _pending_photos.get(conversation_id)
                         if photo_bytes:
                             public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
-                            try:
-                                await send_whatsapp_image(
-                                    photo_bytes,
-                                    caption=(
-                                        f"📷 კლიენტი ეძებს ამ მოდელს.\n\n"
-                                        f"✅ გვაქვს:\n{public_url}/api/photo-confirm/{conversation_id}\n\n"
-                                        f"❌ არ გვაქვს:\n{public_url}/api/photo-deny/{conversation_id}"
-                                    ),
-                                )
-                            except Exception:
-                                pass
-                        text = "[მფლობელს გადაეგზავნა. უპასუხე: 'ვამოწმებ და მოგწერთ ✨' — მეტი არაფერი!]"
+                            admin_url = f"{public_url}/admin"
+                            wa_sent = await send_whatsapp_image(
+                                photo_bytes,
+                                caption=(
+                                    f"📷 კლიენტი ეძებს ამ მოდელს.\n"
+                                    f"AI ვერ იპოვა ზუსტი შესაბამისი.\n\n"
+                                    f"✅ გვაქვს:\n{public_url}/api/photo-confirm/{conversation_id}\n\n"
+                                    f"❌ არ გვაქვს:\n{public_url}/api/photo-deny/{conversation_id}\n\n"
+                                    f"📋 ადმინ პანელი:\n{admin_url}"
+                                ),
+                            )
+                            await _log(f"step7_whatsapp_sent={wa_sent}")
+                            _pending_photos.pop(conversation_id, None)
+                        else:
+                            await _log("step6_NO_PHOTO_BYTES")
+                        text = "[მფლობელს გადაეგზავნა. უპასუხე: 'ვამოწმებ და მალე მოგწერთ ✨']"
 
         # ── Link handling — forward to owner like photo ──
         elif text and re.search(r'https?://', text):
