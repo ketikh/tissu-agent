@@ -95,11 +95,13 @@ async def _process_message(
 
                     # Log every step to database for debugging
                     _debug_pool = await get_db()
+                    _log_counter = [0]
                     async def _log(step: str):
+                        _log_counter[0] += 1
                         try:
                             await _debug_pool.execute(
-                                "INSERT INTO ai_photo_hints (conversation_id, code, model, size, price, image_url, score, created_at) VALUES ($1, $2, '', '', 0, '', 0, $3) ON CONFLICT (conversation_id) DO UPDATE SET code=$2, created_at=$3",
-                                f"debug_{conversation_id}", step, datetime.now(timezone.utc).isoformat(),
+                                "INSERT INTO ai_photo_hints (conversation_id, code, model, size, price, image_url, score, created_at) VALUES ($1, $2, '', '', 0, '', 0, $3)",
+                                f"debug_{_log_counter[0]}_{conversation_id[:30]}", step, datetime.now(timezone.utc).isoformat(),
                             )
                         except Exception:
                             pass
