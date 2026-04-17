@@ -129,26 +129,30 @@ async def _process_message(
                         await _log(f"step_ERROR_{type(e).__name__}_{str(e)[:100]}")
 
                     if ai_code:
-                        # AI found match + alternatives
-                        size = ai_product.get("size", "")
-                        price = int(ai_product.get("price", 0))
+                        # Save ALL similar codes to DB for size filtering later
                         alts = match_result.get("alternatives", [])
-                        # Only include alternatives with high scores
-                        good_alts = [a for a in alts if a.get("score", 0) >= 0.60]
-                        all_codes = [ai_code] + [a["code"] for a in good_alts[:1]]
-                        search_str = ",".join(all_codes)
-                        if len(all_codes) > 1:
-                            text = (
-                                f"[AI-მ იპოვა {len(all_codes)} მსგავსი მოდელი. "
-                                f"თითოეულისთვის გამოიძახე check_inventory(search=კოდი): {search_str}. "
-                                f"უპასუხე: 'ეს მოდელები მოგეწონებათ? ✨ შეარჩიეთ კოდი და მომწერეთ.']"
+                        all_codes = [ai_code] + [a["code"] for a in alts if a.get("score", 0) >= 0.75]
+                        codes_str = ",".join(all_codes)
+                        try:
+                            now_iso = datetime.now(timezone.utc).isoformat()
+                            await _debug_pool.execute(
+                                """INSERT INTO ai_photo_hints (conversation_id, code, model, size, price, image_url, score, created_at)
+                                   VALUES ($1, $2, '', '', 0, '', $3, $4)
+                                   ON CONFLICT (conversation_id) DO UPDATE SET code=$2, score=$3, created_at=$4""",
+                                conversation_id, codes_str, float(match_result.get("score", 0)), now_iso,
                             )
-                        else:
-                            text = (
-                                f"[AI-მ იპოვა მსგავსი: {ai_code} ({size}, {price}₾). "
-                                f"გამოიძახე check_inventory(search='{ai_code}') და უპასუხე: "
-                                f"'გადავამოწმეთ და ეს მოდელი გვაქვს მარაგში — {size}, {price}₾ ✨ გნებავთ?']"
-                            )
+                            await _log(f"step6_saved_codes={codes_str}")
+                        except Exception as e:
+                            await _log(f"step6_save_error={e}")
+
+                        # Ask size — bot will use hint when user answers
+                        text = (
+                            f"[AI-მ იპოვა მსგავსი მოდელები: {codes_str}. "
+                            f"ეკითხე ზომა: 'გვაქვს ორი ზომა:\\n"
+                            f"პატარა (33x25სმ) — 69₾\\n"
+                            f"დიდი (37x27სმ) — 74₾\\n"
+                            f"რომელი ზომა გაინტერესებთ? ✨']"
+                        )
                     else:
                         # AI failed or low score — forward to owner via WhatsApp
                         await _log("step6_forwarding_to_owner")
@@ -191,7 +195,61 @@ async def _process_message(
                 # Only a link, no text
                 text = "[კლიენტმა ბმული გამოგზავნა. მფლობელს გადაეგზავნა. უთხარი 'გადავამოწმებ ✨']"
 
-        # (No injection needed — AI match runs inline with photo)
+        # ── When user answers size after photo → filter AI results by size ──
+        if not image_url and text:
+            text_lower = text.lower().strip()
+            size_wanted = ""
+            if any(w in text_lower for w in ("პატარა", "პატარე", "პატარ", "small", "33")):
+                size_wanted = "პატარა"
+            elif any(w in text_lower for w in ("დიდი", "დიდ", "large", "big", "37")):
+                size_wanted = "დიდი"
+
+            if size_wanted:
+                try:
+                    _pool = await get_db()
+                    hint_row = await _pool.fetchrow(
+                        "SELECT code FROM ai_photo_hints WHERE conversation_id = $1", conversation_id,
+                    )
+                    if hint_row and hint_row["code"]:
+                        codes = [c.strip() for c in hint_row["code"].split(",")]
+                        await _pool.execute("DELETE FROM ai_photo_hints WHERE conversation_id = $1", conversation_id)
+
+                        # Filter by size — check which codes exist in this size
+                        if codes:
+                            placeholders = ",".join(f"${i+1}" for i in range(len(codes)))
+                            size_param_idx = len(codes) + 1
+                            matching = await _pool.fetch(
+                                f"SELECT code, model, size, price FROM inventory WHERE UPPER(code) IN ({placeholders}) AND size ILIKE ${size_param_idx} AND stock > 0",
+                                *codes, f"%{size_wanted}%",
+                            )
+                            if matching:
+                                found_codes = ",".join(r["code"] for r in matching)
+                                first = matching[0]
+                                print(f"[PHOTO] Size filter: wanted={size_wanted} found={found_codes}", flush=True)
+                                text = (
+                                    f"[AI-მ იპოვა და {size_wanted} ზომაში გვაქვს: {found_codes}. "
+                                    f"გამოიძახე check_inventory(search='{found_codes}') და უპასუხე: "
+                                    f"'{size_wanted} ზომაში ეს მოდელები გვაქვს ✨ მოგეწონებათ?']"
+                                )
+                            else:
+                                # Check other size
+                                other_size = "დიდი" if size_wanted == "პატარა" else "პატარა"
+                                other = await _pool.fetch(
+                                    f"SELECT code FROM inventory WHERE UPPER(code) IN ({placeholders}) AND size ILIKE ${size_param_idx} AND stock > 0",
+                                    *codes, f"%{other_size}%",
+                                )
+                                if other:
+                                    other_codes = ",".join(r["code"] for r in other)
+                                    text = (
+                                        f"[AI-მ იპოვა მაგრამ {size_wanted} ზომაში არ გვაქვს. "
+                                        f"მხოლოდ {other_size} ზომაში გვაქვს: {other_codes}. "
+                                        f"გამოიძახე check_inventory(search='{other_codes}') და უპასუხე: "
+                                        f"'სამწუხაროდ {size_wanted} ზომაში არ გვაქვს, მაგრამ {other_size} ზომაში ეს ვიპოვე ✨']"
+                                    )
+                                else:
+                                    text = f"[AI-მ ვერ იპოვა {size_wanted} ზომაში. უპასუხე: 'სამწუხაროდ ეს მოდელი {size_wanted} ზომაში არ გვაქვს ✨ სხვა მოდელები გაჩვენოთ?']"
+                except Exception as e:
+                    print(f"[PHOTO] Size filter error: {e}", flush=True)
 
         # ── Customer name ──
         if customer_name:
