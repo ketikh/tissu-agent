@@ -313,8 +313,8 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     ranked = sorted(seen.values(), key=lambda x: x[0], reverse=True)
     best_score, best = ranked[0]
 
-    # Threshold — balanced between accuracy and recall
-    if best_score < 0.55:
+    # Threshold — 0.45 balances between finding matches and avoiding wrong ones
+    if best_score < 0.45:
         return {
             "matched": False,
             "message": "ზუსტი შესაბამისი ვერ მოიძებნა",
