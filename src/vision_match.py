@@ -395,8 +395,8 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     ranked = sorted(seen.values(), key=lambda x: x[0], reverse=True)
     best_score, best = ranked[0]
 
-    # Threshold for hybrid (CLIP 70% + Vision 30%) — CLIP gives 0.7-0.95 for good matches
-    if best_score < 0.55:
+    # Threshold for hybrid (CLIP 70% + Vision 30%)
+    if best_score < 0.60:
         return {
             "matched": False,
             "message": "ზუსტი შესაბამისი ვერ მოიძებნა",

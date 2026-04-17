@@ -133,8 +133,9 @@ async def _process_message(
                         size = ai_product.get("size", "")
                         price = int(ai_product.get("price", 0))
                         alts = match_result.get("alternatives", [])
-                        # Build search query with all similar codes
-                        all_codes = [ai_code] + [a["code"] for a in alts[:2]]
+                        # Only include alternatives with high scores
+                        good_alts = [a for a in alts if a.get("score", 0) >= 0.60]
+                        all_codes = [ai_code] + [a["code"] for a in good_alts[:1]]
                         search_str = ",".join(all_codes)
                         if len(all_codes) > 1:
                             text = (
