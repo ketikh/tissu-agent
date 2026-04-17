@@ -467,6 +467,49 @@ async def health_check():
     return {"status": "ok", "agents": ["support_sales", "marketing"], "version": "0.2.0"}
 
 
+# ── Extra Photos (lifestyle/marketing) ──────────────────────
+
+@app.get("/api/extra-photos")
+async def list_extra_photos(code: str = ""):
+    pool = await get_db()
+    if code:
+        rows = await pool.fetch("SELECT * FROM product_extra_photos WHERE code = $1 ORDER BY created_at DESC", code)
+    else:
+        rows = await pool.fetch("SELECT * FROM product_extra_photos ORDER BY code, created_at DESC")
+    return {"photos": [dict(r) for r in rows]}
+
+
+@app.post("/api/extra-photos")
+async def add_extra_photo(
+    code: str = Form(...),
+    image: UploadFile = File(...),
+):
+    """Upload a lifestyle/marketing photo for a product."""
+    image_url = save_uploaded_image(image, f"extra_{code}")
+    pool = await get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    row = await pool.fetchrow(
+        "INSERT INTO product_extra_photos (inventory_id, code, image_url, photo_type, created_at) VALUES ((SELECT id FROM inventory WHERE UPPER(code) = UPPER($1) LIMIT 1), $1, $2, 'lifestyle', $3) RETURNING id",
+        code.upper(), image_url, now,
+    )
+
+    # Auto-index the new photo for AI matching
+    try:
+        from src.vision_match import index_extra_photo
+        await index_extra_photo(code.upper(), image_url)
+    except Exception as e:
+        print(f"[EXTRA] Indexing failed: {e}")
+
+    return {"id": row["id"], "image_url": image_url, "code": code}
+
+
+@app.delete("/api/extra-photos/{photo_id}")
+async def delete_extra_photo(photo_id: int):
+    pool = await get_db()
+    await pool.execute("DELETE FROM product_extra_photos WHERE id = $1", photo_id)
+    return {"success": True}
+
+
 # ── Diagnostic endpoint ──────────────────────────────────────
 
 @app.get("/api/test-vision")

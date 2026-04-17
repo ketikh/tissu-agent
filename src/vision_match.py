@@ -217,6 +217,25 @@ async def index_product(inventory_id: int, code: str, image_url: str, image_url_
         return False
 
 
+async def index_extra_photo(code: str, image_url: str) -> bool:
+    """Index a single lifestyle/marketing photo for a product."""
+    import asyncio
+    try:
+        fp = await asyncio.to_thread(fingerprint_from_url, image_url)
+        pool = await get_db()
+        now = datetime.now(timezone.utc).isoformat()
+        # Use negative ID to distinguish from main catalog photos
+        await pool.execute(
+            "INSERT INTO product_fingerprints (inventory_id, code, tags, embedding, created_at) VALUES ($1, $2, $3, '', $4)",
+            -abs(hash(image_url)) % 100000, code, json.dumps(fp), now,
+        )
+        print(f"[INDEX] Extra photo indexed: {code} → {image_url[:50]}", flush=True)
+        return True
+    except Exception as e:
+        logger.error(f"Extra photo index failed: {e}")
+        return False
+
+
 async def index_all_products() -> dict:
     await ensure_table()
     pool = await get_db()
@@ -294,8 +313,8 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     ranked = sorted(seen.values(), key=lambda x: x[0], reverse=True)
     best_score, best = ranked[0]
 
-    # Threshold — must be reasonably high to avoid wrong matches
-    if best_score < 0.50:
+    # Threshold — balanced between accuracy and recall
+    if best_score < 0.55:
         return {
             "matched": False,
             "message": "ზუსტი შესაბამისი ვერ მოიძებნა",

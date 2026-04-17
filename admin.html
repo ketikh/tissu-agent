@@ -84,6 +84,7 @@
     </div>
     <div class="tabs">
         <button class="active" onclick="showTab('inventory')">მარაგი</button>
+        <button onclick="showTab('extra-photos')">📷 ფოტოები</button>
         <button onclick="showTab('leads')">ლიდები</button>
         <button onclick="showTab('orders')">შეკვეთები</button>
         <button onclick="showTab('notifications')">შეტყობინებები</button>
@@ -103,6 +104,20 @@
                 <button class="btn btn-sm" style="background:#e74c3c;color:white" onclick="setFilter('size','დიდი')">დიდი</button>
             </div>
             <div class="product-grid" id="inv-grid"></div>
+        </div>
+        <div id="tab-extra-photos" class="section">
+            <div class="card">
+                <h2>📷 Marketing / Lifestyle ფოტოები</h2>
+                <p style="color:#95a5a6;margin-bottom:15px">სხვადასხვა გარემოში გადაღებული ფოტოები — AI ეძებს ამ ფოტოებშიც</p>
+                <div style="display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap">
+                    <select id="extra-code" style="padding:8px;border:1px solid #ddd;border-radius:4px">
+                        <option value="">აირჩიე კოდი...</option>
+                    </select>
+                    <input type="file" id="extra-file" accept="image/*" style="padding:5px">
+                    <button onclick="uploadExtraPhoto()" style="padding:8px 20px;background:#27ae60;color:white;border:none;border-radius:4px;cursor:pointer">ატვირთვა</button>
+                </div>
+                <div id="extra-photos-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:15px"></div>
+            </div>
         </div>
         <div id="tab-leads" class="section">
             <div class="card"><h2>ლიდები</h2><table><thead><tr><th>სახელი</th><th>ტელეფონი</th><th>Score</th><th>შენიშვნა</th><th>თარიღი</th></tr></thead><tbody id="leads-table"></tbody></table></div>
@@ -375,6 +390,59 @@
             await fetch(API+'/api/inventory', {method:'POST', body:fd});
             loadData();
         }
+
+        // ── Extra Photos Tab ──
+        async function loadExtraPhotos() {
+            // Fill code dropdown from inventory
+            const inv = await fetch(API+'/api/inventory').then(r=>r.json());
+            const sel = document.getElementById('extra-code');
+            const codes = [...new Set(inv.inventory.map(i=>i.code).filter(c=>c))].sort();
+            sel.innerHTML = '<option value="">აირჩიე კოდი...</option>' + codes.map(c=>`<option value="${c}">${c}</option>`).join('');
+
+            // Load existing extra photos
+            const data = await fetch(API+'/api/extra-photos').then(r=>r.json());
+            const grid = document.getElementById('extra-photos-grid');
+            if(!data.photos.length) {
+                grid.innerHTML = '<p style="color:#95a5a6">ჯერ ფოტოები არ ატვირთულა</p>';
+                return;
+            }
+            grid.innerHTML = data.photos.map(p => `
+                <div style="border:1px solid #eee;border-radius:8px;overflow:hidden;position:relative">
+                    <img src="${p.image_url.startsWith('http') ? p.image_url : API+p.image_url}" style="width:100%;height:150px;object-fit:cover">
+                    <div style="padding:8px">
+                        <b>${p.code}</b> <span style="color:#95a5a6;font-size:12px">${p.photo_type}</span>
+                        <button onclick="deleteExtraPhoto(${p.id})" style="float:right;background:#e74c3c;color:white;border:none;border-radius:3px;padding:2px 8px;cursor:pointer;font-size:11px">✕</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function uploadExtraPhoto() {
+            const code = document.getElementById('extra-code').value;
+            const file = document.getElementById('extra-file').files[0];
+            if(!code || !file) { alert('აირჩიე კოდი და ფოტო'); return; }
+            const fd = new FormData();
+            fd.append('code', code);
+            fd.append('image', file);
+            await fetch(API+'/api/extra-photos', {method:'POST', body:fd});
+            document.getElementById('extra-file').value = '';
+            loadExtraPhotos();
+            alert('ფოტო ატვირთულია და AI ინდექსში დაემატა ✅');
+        }
+
+        async function deleteExtraPhoto(id) {
+            if(confirm('წავშალოთ ეს ფოტო?')) {
+                await fetch(API+'/api/extra-photos/'+id, {method:'DELETE'});
+                loadExtraPhotos();
+            }
+        }
+
+        // Override showTab to load extra photos
+        const _origShowTab = showTab;
+        showTab = function(name) {
+            _origShowTab(name);
+            if(name === 'extra-photos') loadExtraPhotos();
+        };
 
         loadData();
     </script>
