@@ -91,33 +91,40 @@ async def _process_message(
                     text = "[კლიენტმა გადახდის სქრინი გამოგზავნა. უთხარი 'მადლობა, გადავამოწმებ ✨' და ᲒᲐᲩᲔᲠᲓᲘ. მისამართს ᲐᲠ ეკითხო.]"
                 else:
                     _pending_photos[conversation_id] = image_bytes
-                    print(f"[PHOTO] Product photo. Running AI match INLINE...", flush=True)
-
-                    # Send typing indicator while AI processes
                     await _send_typing_on(sender_id)
 
-                    # Run AI match INLINE — wait for result before proceeding
+                    # Log every step to database for debugging
+                    _debug_pool = await get_db()
+                    async def _log(step: str):
+                        try:
+                            await _debug_pool.execute(
+                                "INSERT INTO ai_photo_hints (conversation_id, code, model, size, price, image_url, score, created_at) VALUES ($1, $2, '', '', 0, '', 0, $3) ON CONFLICT (conversation_id) DO UPDATE SET code=$2, created_at=$3",
+                                f"debug_{conversation_id}", step, datetime.now(timezone.utc).isoformat(),
+                            )
+                        except Exception:
+                            pass
+
+                    await _log(f"step1_photo_received_{len(image_bytes)}_bytes")
+
+                    # Run AI match INLINE
                     ai_code = ""
                     ai_product = {}
                     try:
+                        await _log("step2_importing_vision_match")
                         from src.vision_match import analyze_and_match
+                        await _log("step3_calling_analyze_and_match")
                         match_result = await asyncio.wait_for(analyze_and_match(image_bytes), timeout=60)
-                        print(f"[PHOTO] AI: matched={match_result.get('matched')} code={match_result.get('code')} score={match_result.get('score')}", flush=True)
+                        await _log(f"step4_result_matched={match_result.get('matched')}_code={match_result.get('code')}_score={match_result.get('score')}")
                         if match_result and match_result.get("matched"):
                             ai_code = match_result["code"]
                             ai_product = match_result.get("product", {})
+                            await _log(f"step5_SUCCESS_{ai_code}")
                         else:
-                            # Send debug info via WhatsApp
-                            msg = match_result.get("message", "no message") if match_result else "null result"
-                            score = match_result.get("score", 0) if match_result else 0
-                            closest = match_result.get("closest_code", "?") if match_result else "?"
-                            await send_whatsapp_text(f"🟡 AI match result: {msg}\nscore={score} closest={closest}")
+                            await _log(f"step5_NO_MATCH_{match_result.get('message','?')}")
                     except asyncio.TimeoutError:
-                        print(f"[PHOTO] AI TIMEOUT (60s)", flush=True)
-                        await send_whatsapp_text(f"🔴 AI TIMEOUT (60s)")
+                        await _log("step_ERROR_TIMEOUT_60s")
                     except Exception as e:
-                        print(f"[PHOTO] AI ERROR: {type(e).__name__}: {e}", flush=True)
-                        await send_whatsapp_text(f"🔴 AI ERROR: {type(e).__name__}: {str(e)[:200]}")
+                        await _log(f"step_ERROR_{type(e).__name__}_{str(e)[:100]}")
 
                     if ai_code:
                         # AI found match — tell bot to show it
