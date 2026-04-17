@@ -129,14 +129,25 @@ async def _process_message(
                         await _log(f"step_ERROR_{type(e).__name__}_{str(e)[:100]}")
 
                     if ai_code:
-                        # AI found match — tell bot to show it
+                        # AI found match + alternatives
                         size = ai_product.get("size", "")
                         price = int(ai_product.get("price", 0))
-                        text = (
-                            f"[AI-მ იპოვა მსგავსი: {ai_code} ({size}, {price}₾). "
-                            f"გამოიძახე check_inventory(search='{ai_code}') და უპასუხე: "
-                            f"'გადავამოწმეთ და ეს მოდელი გვაქვს მარაგში — {size}, {price}₾ ✨ გნებავთ?']"
-                        )
+                        alts = match_result.get("alternatives", [])
+                        # Build search query with all similar codes
+                        all_codes = [ai_code] + [a["code"] for a in alts[:2]]
+                        search_str = ",".join(all_codes)
+                        if len(all_codes) > 1:
+                            text = (
+                                f"[AI-მ იპოვა {len(all_codes)} მსგავსი მოდელი. "
+                                f"თითოეულისთვის გამოიძახე check_inventory(search=კოდი): {search_str}. "
+                                f"უპასუხე: 'ეს მოდელები მოგეწონებათ? ✨ შეარჩიეთ კოდი და მომწერეთ.']"
+                            )
+                        else:
+                            text = (
+                                f"[AI-მ იპოვა მსგავსი: {ai_code} ({size}, {price}₾). "
+                                f"გამოიძახე check_inventory(search='{ai_code}') და უპასუხე: "
+                                f"'გადავამოწმეთ და ეს მოდელი გვაქვს მარაგში — {size}, {price}₾ ✨ გნებავთ?']"
+                            )
                     else:
                         # AI failed or low score — forward to owner via WhatsApp
                         await _log("step6_forwarding_to_owner")

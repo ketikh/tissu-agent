@@ -24,9 +24,16 @@ async def check_inventory(model: str = "", size: str = "", search: str = "") -> 
         params.append(f"%{size}%")
         idx += 1
     if search:
-        # Check if search looks like a product code (FP1, TP15, etc.)
+        # Check if search looks like product code(s) — single (FP1) or multiple (FP1,TP3,FD2)
         search_upper = search.strip().upper()
-        if any(search_upper.startswith(p) for p in ("FP", "TP", "FD", "TD")) and any(c.isdigit() for c in search_upper):
+        # Multiple codes separated by comma
+        if "," in search_upper:
+            codes = [c.strip() for c in search_upper.split(",") if c.strip()]
+            placeholders = ",".join(f"${idx + i}" for i in range(len(codes)))
+            query += f" AND UPPER(code) IN ({placeholders})"
+            params.extend(codes)
+            idx += len(codes)
+        elif any(search_upper.startswith(p) for p in ("FP", "TP", "FD", "TD")) and any(c.isdigit() for c in search_upper):
             query += f" AND UPPER(code) = ${idx}"
             params.append(search_upper)
             idx += 1
