@@ -315,15 +315,17 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     import asyncio
 
     pool = await get_db()
+    # Include sold-out products too — customers often send photos of items we
+    # just ran out of. We surface them with sold_out=True so the caller can tell
+    # the customer instead of treating the photo as unmatchable.
     rows = await pool.fetch("""
         SELECT pf.code, pf.fingerprint, pf.inventory_id,
                i.model, i.size, i.price, i.image_url, i.image_url_back, i.stock
         FROM product_fingerprints pf
         JOIN inventory i ON i.id = ABS(pf.inventory_id)
-        WHERE i.stock > 0
     """)
     if not rows:
-        return {"matched": False, "message": "მარაგში ვერ მოიძებნა"}
+        return {"matched": False, "message": "კატალოგი ცარიელია"}
 
     # ── Method 1: Cloud Vision fingerprint comparison ──
     vision_scores = {}
@@ -493,6 +495,7 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
         "matched": True,
         "code": best["code"],
         "score": round(best_score, 2),
+        "sold_out": int(best.get("stock") or 0) <= 0,
         "product": {
             "code": best["code"],
             "model": best["model"],
@@ -500,6 +503,7 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
             "price": best["price"],
             "image_url": best["image_url"],
             "image_url_back": best.get("image_url_back", ""),
+            "stock": int(best.get("stock") or 0),
         },
         "alternatives": [
             {"code": r["code"], "score": round(s, 2)}

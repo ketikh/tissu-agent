@@ -131,16 +131,18 @@ async def _process_message(
                     # Run AI match INLINE
                     ai_code = ""
                     ai_product = {}
+                    ai_sold_out = False
                     try:
                         await _log("step2_importing_vision_match")
                         from src.vision_match import analyze_and_match
                         await _log("step3_calling_analyze_and_match")
                         match_result = await asyncio.wait_for(analyze_and_match(image_bytes), timeout=120)
-                        await _log(f"step4_result_matched={match_result.get('matched')}_code={match_result.get('code')}_score={match_result.get('score')}")
+                        await _log(f"step4_result_matched={match_result.get('matched')}_code={match_result.get('code')}_score={match_result.get('score')}_sold_out={match_result.get('sold_out')}")
                         if match_result and match_result.get("matched"):
                             ai_code = match_result["code"]
                             ai_product = match_result.get("product", {})
-                            await _log(f"step5_SUCCESS_{ai_code}")
+                            ai_sold_out = bool(match_result.get("sold_out"))
+                            await _log(f"step5_SUCCESS_{ai_code}_sold_out={ai_sold_out}")
                         else:
                             await _log(f"step5_NO_MATCH_score={match_result.get('score','?')}_closest={match_result.get('closest_code','?')}_msg={match_result.get('message','?')}")
                     except asyncio.TimeoutError:
@@ -221,7 +223,47 @@ async def _process_message(
                         except Exception as e:
                             await _log(f"step6_save_error={e}")
 
-                        if prev_size:
+                        if ai_sold_out:
+                            # Shape/pattern matched, but the matched variant is sold out.
+                            # Tell the customer, then check whether any linked (same
+                            # design) code is still in stock. If yes, offer that. If
+                            # nothing is left, politely close and notify owner.
+                            linked_in_stock = await _debug_pool.fetch(
+                                f"SELECT code, size FROM inventory WHERE UPPER(code) = ANY($1) AND stock > 0",
+                                [c.upper() for c in all_codes],
+                            )
+                            if linked_in_stock:
+                                codes_in_stock = ",".join(r["code"] for r in linked_in_stock)
+                                force_inventory_codes = codes_in_stock
+                                text = (
+                                    f"[მოდელი იპოვე ({ai_code}) მაგრამ ამჟამად გათავდა. ეს მოდელის ვერსიები "
+                                    f"გვაქვს მარაგში: {codes_in_stock}. "
+                                    f"გამოიძახე check_inventory(search='{codes_in_stock}') და უპასუხე: "
+                                    f"'სამწუხაროდ ეს მოდელი ამჟამად გათავდა, მაგრამ მსგავსი მოდელი გვაქვს ✨ გნებავთ?']"
+                                )
+                            else:
+                                # Completely sold out — notify owner (one-time links) and close.
+                                try:
+                                    photo_bytes_so = _pending_photos.get(conversation_id)
+                                    if photo_bytes_so:
+                                        public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
+                                        admin_url = f"{public_url}/admin"
+                                        await send_whatsapp_image(
+                                            photo_bytes_so,
+                                            caption=(
+                                                f"📷 კლიენტმა ამ მოდელის ფოტო გამოაგზავნა.\n"
+                                                f"AI იპოვა: {ai_code} — მაგრამ ყველა ზომაში გათავდა.\n\n"
+                                                f"📋 ადმინ პანელი:\n{admin_url}"
+                                            ),
+                                        )
+                                        _pending_photos.pop(conversation_id, None)
+                                except Exception as e:
+                                    await _log(f"step6_soldout_notify_error={str(e)[:80]}")
+                                text = (
+                                    "[AI-მ იპოვა მაგრამ გათავდა. ზუსტად ეს უპასუხე: "
+                                    "'სამწუხაროდ ეს მოდელი ამჟამად გათავდა ✨ სხვა მოდელები გაჩვენოთ?']"
+                                )
+                        elif prev_size:
                             # We know size from before — short question
                             text = (
                                 f"[კლიენტმა ახალი ფოტო გამოგზავნა. ადრე {prev_size} ზომა აირჩია. "
@@ -408,14 +450,16 @@ async def _process_message(
                     )
                     if hint_row and hint_row["code"]:
                         codes = [c.strip() for c in hint_row["code"].split(",")]
-                        await _pool.execute("DELETE FROM ai_photo_hints WHERE conversation_id = $1", conversation_id)
+                        # Don't delete — keep hints so follow-ups like
+                        # "დიდიც გაქვთ?" after asking for small can still resolve
+                        # to the linked large version of the same product.
 
-                        # Filter by size — check which codes exist in this size
+                        # Filter by size — check which linked codes are IN STOCK in this size
                         if codes:
                             placeholders = ",".join(f"${i+1}" for i in range(len(codes)))
                             size_param_idx = len(codes) + 1
                             matching = await _pool.fetch(
-                                f"SELECT code, model, size, price FROM inventory WHERE UPPER(code) IN ({placeholders}) AND size ILIKE ${size_param_idx} AND stock > 0",
+                                f"SELECT code, model, size, price, stock FROM inventory WHERE UPPER(code) IN ({placeholders}) AND size ILIKE ${size_param_idx} AND stock > 0",
                                 *codes, f"%{size_wanted}%",
                             )
                             if matching:
@@ -428,14 +472,26 @@ async def _process_message(
                                     f"'{size_wanted} ზომაში ეს მოდელი მოვიძიეთ ✨ გნებავთ?']"
                                 )
                             else:
-                                # Check other size
+                                # Nothing in stock for requested size — is it sold out or
+                                # did the product simply never exist in that size?
+                                sold_out_in_size = await _pool.fetch(
+                                    f"SELECT code FROM inventory WHERE UPPER(code) IN ({placeholders}) AND size ILIKE ${size_param_idx} AND stock = 0",
+                                    *codes, f"%{size_wanted}%",
+                                )
                                 other_size = "დიდი" if size_wanted == "პატარა" else "პატარა"
-                                other = await _pool.fetch(
+                                other_in_stock = await _pool.fetch(
                                     f"SELECT code FROM inventory WHERE UPPER(code) IN ({placeholders}) AND size ILIKE ${size_param_idx} AND stock > 0",
                                     *codes, f"%{other_size}%",
                                 )
-                                if other:
-                                    other_codes = ",".join(r["code"] for r in other)
+                                if sold_out_in_size:
+                                    so_codes = ",".join(r["code"] for r in sold_out_in_size)
+                                    print(f"[PHOTO] Size filter: sold out for size={size_wanted} codes={so_codes}", flush=True)
+                                    text = (
+                                        f"[ეს მოდელი {size_wanted} ზომაში გვქონდა მაგრამ ამჟამად დასრულდა (stock=0). "
+                                        f"ზუსტად ეს უპასუხე: 'სამწუხაროდ {size_wanted} ზომაში ეს მოდელი ამჟამად გათავდა ✨ თუ გნებავთ, სხვა მოდელს გაჩვენებთ.']"
+                                    )
+                                elif other_in_stock:
+                                    other_codes = ",".join(r["code"] for r in other_in_stock)
                                     force_inventory_codes = other_codes
                                     text = (
                                         f"[AI-მ იპოვა მაგრამ {size_wanted} ზომაში არ გვაქვს. "
