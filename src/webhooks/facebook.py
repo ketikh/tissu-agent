@@ -43,9 +43,15 @@ _pending_photo: dict[str, dict] = {}  # sender_id -> {image_url, mid, ...} — p
 # bytes here and only forward to WhatsApp once we know which size to send.
 _pending_failed_photos: dict[str, bytes] = {}
 
+# When AI matches but the product is sold out, we ask the customer for size first
+# and only then announce it's out of stock for that size.
+_pending_soldout: dict[str, str] = {}  # conversation_id -> matched code
+
 _PHOTO_HINT = re.compile(r'(გაქვთ|მოდელი|ჩანთა|ასეთი|მსგავსი|ეს\s*არის|have|this)', re.IGNORECASE)
 
-BUFFER_SECONDS = 3
+# Longer buffer so the customer has time to attach a photo after typing
+# "ესეც" / "ეს გაქვთ?" etc. 3s was often too fast for humans.
+BUFFER_SECONDS = 6
 
 
 def _get_delivery_day() -> str:
@@ -94,6 +100,7 @@ async def _process_message(
         if image_url:
             # A new photo replaces whatever old photo was pending size confirmation
             _pending_failed_photos.pop(conversation_id, None)
+            _pending_soldout.pop(conversation_id, None)
             image_bytes = await download_image(image_url)
             if not image_bytes:
                 text = "[კლიენტმა ფოტო გამოგზავნა მაგრამ ვერ დამუშავდა. უთხარი 'გადავამოწმებ და მოგწერთ ✨']"
@@ -224,15 +231,27 @@ async def _process_message(
                             await _log(f"step6_save_error={e}")
 
                         if ai_sold_out:
-                            # Sold-out: tell the customer clearly and stop. Do NOT push
-                            # alternatives unless the customer asks. Pop pending photo
-                            # so we don't double-forward if the customer sends size next.
-                            _pending_photos.pop(conversation_id, None)
-                            await _log(f"step6_soldout_notified_{ai_code}")
-                            text = (
-                                "[AI-მ იპოვა მოდელი მაგრამ ამჟამად გათავებულია. ზუსტად ეს უპასუხე: "
-                                "'სამწუხაროდ ეს მოდელი ამჟამად გათავებულია ✨']"
-                            )
+                            # Matched, but sold out. Size must be confirmed BEFORE
+                            # we announce "sold out" — user wants size clarified on
+                            # every outcome, incl. sold-out and owner-forward cases.
+                            if prev_size:
+                                _pending_photos.pop(conversation_id, None)
+                                await _log(f"step6_soldout_with_prev_size={prev_size}_{ai_code}")
+                                text = (
+                                    f"[AI-მ იპოვა მოდელი მაგრამ {prev_size} ზომაში მარაგი ამოწურულია. ზუსტად ეს უპასუხე: "
+                                    f"'სამწუხაროდ {prev_size} ზომაში მარაგი ამოწურულია ✨']"
+                                )
+                            else:
+                                # Queue sold-out announcement until size is known.
+                                _pending_soldout[conversation_id] = ai_code
+                                _pending_photos.pop(conversation_id, None)
+                                await _log(f"step6_soldout_awaiting_size_{ai_code}")
+                                text = (
+                                    "[AI-მ იპოვა მაგრამ მარაგი ამოწურულია. ჯერ ზომა ვკითხოთ. ზუსტად ეს უპასუხე: "
+                                    "'რა ზომა გაინტერესებთ? ✨\\n\\n"
+                                    "📦 პატარა (33x25სმ) — 69₾\\n"
+                                    "📦 დიდი (37x27სმ) — 74₾']"
+                                )
                         elif prev_size:
                             # We know size from before — short question
                             text = (
@@ -387,6 +406,15 @@ async def _process_message(
                 except Exception:
                     pass
 
+            # Size answered after a sold-out match — announce it with the size.
+            if size_wanted and conversation_id in _pending_soldout:
+                so_code = _pending_soldout.pop(conversation_id)
+                print(f"[PHOTO] Sold-out with size={size_wanted} for {so_code}", flush=True)
+                text = (
+                    f"[AI-მ იპოვა მოდელი ({so_code}) მაგრამ {size_wanted} ზომაში მარაგი ამოწურულია. "
+                    f"ზუსტად ეს უპასუხე: 'სამწუხაროდ {size_wanted} ზომაში მარაგი ამოწურულია ✨']"
+                )
+
             # Size answered for a photo that AI previously failed to match →
             # forward it to WhatsApp now, with the size we just learned.
             if size_wanted and conversation_id in _pending_failed_photos:
@@ -458,7 +486,7 @@ async def _process_message(
                                     print(f"[PHOTO] Size filter: sold out for size={size_wanted} codes={so_codes}", flush=True)
                                     text = (
                                         f"[ეს მოდელი {size_wanted} ზომაში გვქონდა მაგრამ ამჟამად დასრულდა (stock=0). "
-                                        f"ზუსტად ეს უპასუხე: 'სამწუხაროდ {size_wanted} ზომაში ეს მოდელი ამჟამად გათავდა ✨ თუ გნებავთ, სხვა მოდელს გაჩვენებთ.']"
+                                        f"ზუსტად ეს უპასუხე: 'სამწუხაროდ {size_wanted} ზომაში მარაგი ამოწურულია ✨']"
                                     )
                                 elif other_in_stock:
                                     other_codes = ",".join(r["code"] for r in other_in_stock)

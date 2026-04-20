@@ -294,7 +294,7 @@ async def index_all_products() -> dict:
 CLIP_SERVICE_URL = os.getenv("CLIP_SERVICE_URL", "https://katekh12-clip-embed.hf.space")
 
 
-async def _get_clip_embedding(image_bytes: bytes) -> list[float] | None:
+async def _get_clip_embedding(image_bytes: bytes, remove_bg: bool = True) -> list[float] | None:
     """Get CLIP embedding from HuggingFace Space."""
     import base64
     try:
@@ -302,12 +302,12 @@ async def _get_clip_embedding(image_bytes: bytes) -> list[float] | None:
         async with httpx.AsyncClient(timeout=60) as client:
             resp = await client.post(
                 f"{CLIP_SERVICE_URL}/embed",
-                json={"image_base64": b64, "remove_bg": True},
+                json={"image_base64": b64, "remove_bg": remove_bg},
             )
             if resp.status_code == 200:
                 return resp.json().get("embedding")
     except Exception as e:
-        logger.warning(f"CLIP embedding failed: {e}")
+        logger.warning(f"CLIP embedding failed (remove_bg={remove_bg}): {e}")
     return None
 
 
@@ -380,9 +380,19 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     # ── Method 2: CLIP visual embedding — use pre-stored embeddings from product_embeddings ──
     clip_scores = {}
     try:
-        user_clip = await _get_clip_embedding(image_bytes)
-        if user_clip:
-            # Read pre-computed CLIP embeddings from product_embeddings table (pgvector)
+        # Try BOTH with and without background removal. Some customer photos
+        # confuse the bg-removal model (e.g. bag in a basket with lemons on top
+        # — it may crop the bag or fail silently). Taking the max score across
+        # the two embeddings makes matching robust to either failure mode.
+        user_clips: list[list[float]] = []
+        emb_rb = await _get_clip_embedding(image_bytes, remove_bg=True)
+        if emb_rb:
+            user_clips.append(emb_rb)
+        emb_raw = await _get_clip_embedding(image_bytes, remove_bg=False)
+        if emb_raw:
+            user_clips.append(emb_raw)
+
+        if user_clips:
             clip_rows = await pool.fetch("""
                 SELECT code, embedding
                 FROM product_embeddings
@@ -391,14 +401,15 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
             for cr in clip_rows:
                 code = cr["code"]
                 prod_emb = cr["embedding"]
-                if prod_emb:
-                    # pgvector returns string like "[0.1,0.2,...]" — parse it
-                    if isinstance(prod_emb, str):
-                        prod_emb = [float(x) for x in prod_emb.strip("[]").split(",")]
-                    sim = _cosine_similarity(user_clip, list(prod_emb))
-                    if code not in clip_scores or sim > clip_scores[code]:
-                        clip_scores[code] = sim
-            print(f"[MATCH] CLIP scores: top={max(clip_scores.values()) if clip_scores else 0:.2f} ({len(clip_scores)} products)", flush=True)
+                if not prod_emb:
+                    continue
+                if isinstance(prod_emb, str):
+                    prod_emb = [float(x) for x in prod_emb.strip("[]").split(",")]
+                # Take the best match across both user embeddings
+                best_sim = max(_cosine_similarity(uc, list(prod_emb)) for uc in user_clips)
+                if code not in clip_scores or best_sim > clip_scores[code]:
+                    clip_scores[code] = best_sim
+            print(f"[MATCH] CLIP scores ({len(user_clips)} user variants): top={max(clip_scores.values()) if clip_scores else 0:.3f} ({len(clip_scores)} products)", flush=True)
     except Exception as e:
         logger.warning(f"CLIP matching failed: {e}")
 
