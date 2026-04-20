@@ -470,17 +470,101 @@ async def _process_message(
 
                 if match_result.get("matched"):
                     ai_code = match_result["code"]
+                    # Compute prev_size for the link branch too — mirrors the
+                    # photo branch's lookup so a customer who already said
+                    # "პატარა" earlier in the session gets a short re-ask.
+                    prev_size = ""
+                    try:
+                        _db2 = await get_db()
+                        _msgs = await _db2.fetch(
+                            "SELECT content, created_at FROM messages WHERE conversation_id = $1 AND role = 'user' ORDER BY created_at DESC LIMIT 30",
+                            conversation_id,
+                        )
+                        _now = datetime.now(timezone.utc)
+                        for pm in _msgs:
+                            _c = (pm["content"] or "").lower()
+                            _created = pm["created_at"] if pm and "created_at" in pm else None
+                            _age = 0.0
+                            try:
+                                if isinstance(_created, str):
+                                    _dt = datetime.fromisoformat(_created.replace("Z", "+00:00"))
+                                elif hasattr(_created, "tzinfo"):
+                                    _dt = _created
+                                else:
+                                    _dt = None
+                                if _dt is not None:
+                                    if _dt.tzinfo is None:
+                                        _dt = _dt.replace(tzinfo=timezone.utc)
+                                    _age = (_now - _dt).total_seconds() / 60
+                            except Exception:
+                                _age = 0.0
+                            if _age > 60:
+                                continue
+                            if any(w in _c for w in ("პატარა", "პატარ", "patara", "small")):
+                                prev_size = "პატარა"
+                                break
+                            elif any(w in _c for w in ("დიდი", "დიდ", "didi", "large")):
+                                prev_size = "დიდი"
+                                break
+                    except Exception:
+                        pass
+
+                    # Persist linked codes in ai_photo_hints so the downstream
+                    # size filter can resolve "პატარა" / "დიდი" to the real
+                    # inventory rows — without this, the bot would fall back
+                    # to the agent which tries to ask for style next.
+                    try:
+                        _db = await get_db()
+                        linked: set[str] = {ai_code}
+                        to_check = [ai_code]
+                        while to_check:
+                            current = to_check.pop(0)
+                            pair_rows = await _db.fetch(
+                                "SELECT code_b FROM product_pairs WHERE code_a = $1", current,
+                            )
+                            for pr in pair_rows:
+                                if pr["code_b"] not in linked:
+                                    linked.add(pr["code_b"])
+                                    to_check.append(pr["code_b"])
+                        codes_str = ",".join(sorted(linked))
+                        now_iso = datetime.now(timezone.utc).isoformat()
+                        await _db.execute(
+                            """INSERT INTO ai_photo_hints (conversation_id, code, model, size, price, image_url, score, created_at)
+                               VALUES ($1, $2, '', '', 0, '', $3, $4)
+                               ON CONFLICT (conversation_id) DO UPDATE SET code=$2, score=$3, created_at=$4""",
+                            conversation_id, codes_str, float(match_result.get("score", 0)), now_iso,
+                        )
+                        print(f"[LINK] Saved hints for {conversation_id}: {codes_str}", flush=True)
+                    except Exception as e:
+                        print(f"[LINK] Hint-save error: {e}", flush=True)
+
                     if match_result.get("sold_out"):
-                        _pending_photos.pop(conversation_id, None)
-                        text = (
-                            f"[ლინკიდან იპოვა მოდელი ({ai_code}) მაგრამ მარაგი ამოწურულია. ზუსტად ეს უპასუხე: "
-                            f"'სამწუხაროდ ეს მოდელი ამჟამად მარაგი ამოწურულია ✨']"
-                        )
+                        if prev_size:
+                            _pending_photos.pop(conversation_id, None)
+                            text = (
+                                f"[ლინკიდან იპოვა მოდელი ({ai_code}) მაგრამ {prev_size} ზომაში მარაგი ამოწურულია. ზუსტად ეს უპასუხე: "
+                                f"'სამწუხაროდ {prev_size} ზომაში მარაგი ამოწურულია ✨']"
+                            )
+                        else:
+                            _pending_soldout[conversation_id] = ai_code
+                            _pending_photos.pop(conversation_id, None)
+                            text = (
+                                "[ლინკიდან იპოვა მოდელი მაგრამ მარაგი ამოწურულია. ჯერ ზომა ვკითხოთ. ზუსტად ეს უპასუხე: "
+                                "'რა ზომა გაინტერესებთ? ✨\\n\\n"
+                                "📦 პატარა (33x25სმ) — 69₾\\n"
+                                "📦 დიდი (37x27სმ) — 74₾']"
+                            )
                     else:
-                        text = (
-                            f"[ლინკიდან იპოვა მოდელი ({ai_code}). ზუსტად ეს უპასუხე: "
-                            f"'რა ზომაში გადაგიმოწმოთ? ✨\\n\\n📦 პატარა (33x25სმ) — 69₾\\n📦 დიდი (37x27სმ) — 74₾']"
-                        )
+                        if prev_size:
+                            text = (
+                                f"[ლინკიდან იპოვა მოდელი ({ai_code}). ადრე {prev_size} ზომა აირჩია. ზუსტად ეს უპასუხე: "
+                                f"'ესეც {prev_size} ზომაში გადაგიმოწმოთ? ✨']"
+                            )
+                        else:
+                            text = (
+                                f"[ლინკიდან იპოვა მოდელი ({ai_code}). ზუსტად ეს უპასუხე: "
+                                f"'რა ზომაში გადაგიმოწმოთ? ✨\\n\\n📦 პატარა (33x25სმ) — 69₾\\n📦 დიდი (37x27სმ) — 74₾']"
+                            )
                 else:
                     # Extracted the image but AI couldn't match — forward
                     # both link AND image to owner.
