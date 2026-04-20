@@ -28,6 +28,9 @@ VERIFY_TOKEN = "tissu_verify_2026"
 FB_PAGE_TOKEN = os.getenv("FB_PAGE_TOKEN", "")
 PUBLIC_URL = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
 PAGE_ID = "447377388462459"
+# Instagram Business Account ID — used to filter self-echoes on IG DMs.
+# Set this in Railway env after connecting IG to the Facebook Page.
+IG_USER_ID = os.getenv("IG_USER_ID", "")
 
 _processed_mids: dict[str, float] = {}
 
@@ -807,7 +810,8 @@ async def webhook_receive(request: Request):
             text = message.get("text", "")
             mid = message.get("mid", "")
 
-            if message.get("is_echo") or sender_id == PAGE_ID or not sender_id:
+            # Drop self-echoes: FB page, IG business account, or Meta's is_echo flag.
+            if message.get("is_echo") or sender_id == PAGE_ID or (IG_USER_ID and sender_id == IG_USER_ID) or not sender_id:
                 continue
 
             image_url = ""
