@@ -72,6 +72,7 @@ async def save_lead(name: str, phone: str = "", notes: str = "", score: int = 0,
 
 
 async def create_order(customer_name: str, customer_phone: str, customer_address: str, items: str, total: float, payment_method: str = "", notes: str = "") -> dict:
+    import re as _re
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
     row = await pool.fetchrow(
@@ -80,21 +81,55 @@ async def create_order(customer_name: str, customer_phone: str, customer_address
     )
     order_id = row["id"]
 
-    # Notify owner via WhatsApp about new order
+    # Extract purchased product codes from the items string and decrement their
+    # stock by one each. Stock reaching 0 automatically surfaces as "sold out"
+    # in the admin panel — no separate status flag needed.
+    sold_out_codes: list[str] = []
+    updated_codes: list[str] = []
+    codes = sorted(set(_re.findall(r'(?i)(?:FP|TP|FD|TD)\d+', items)))
+    for raw_code in codes:
+        code = raw_code.upper()
+        updated = await pool.fetchrow(
+            "UPDATE inventory SET stock = GREATEST(0, stock - 1), updated_at = $1 "
+            "WHERE UPPER(code) = $2 AND stock > 0 RETURNING stock",
+            now, code,
+        )
+        if updated is not None:
+            updated_codes.append(code)
+            if int(updated["stock"]) == 0:
+                sold_out_codes.append(code)
+
+    # Notify owner via WhatsApp about new order — include the product codes
+    # explicitly and flag anything that just went sold-out.
     from src.notifications import send_whatsapp_text
     public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
-    wa_msg = (
-        f"🛒 ახალი შეკვეთა #{order_id}!\n"
-        f"👤 {customer_name}\n"
-        f"📱 {customer_phone}\n"
-        f"📍 {customer_address}\n"
-        f"📦 {items}\n"
-        f"💰 {total}₾\n\n"
-        f"📋 ადმინ პანელი:\n{public_url}/admin"
-    )
-    await send_whatsapp_text(wa_msg)
+    code_line = f"🏷️ {', '.join(updated_codes)}" if updated_codes else ""
+    sold_line = f"⚠️ მარაგი ამოიწურა: {', '.join(sold_out_codes)}" if sold_out_codes else ""
+    parts = [
+        f"🛒 ახალი შეკვეთა #{order_id}!",
+        f"👤 {customer_name}",
+        f"📱 {customer_phone}",
+        f"📍 {customer_address}",
+    ]
+    if code_line:
+        parts.append(code_line)
+    parts.extend([
+        f"📦 {items}",
+        f"💰 {total}₾",
+    ])
+    if sold_line:
+        parts.append("")
+        parts.append(sold_line)
+    parts.append("")
+    parts.append(f"📋 ადმინ პანელი:\n{public_url}/admin")
+    await send_whatsapp_text("\n".join(parts))
 
-    return {"success": True, "order_id": order_id}
+    return {
+        "success": True,
+        "order_id": order_id,
+        "codes": updated_codes,
+        "sold_out": sold_out_codes,
+    }
 
 
 async def notify_owner(reason: str, customer_name: str = "", customer_phone: str = "", details: str = "", conversation_id: str = "") -> dict:
