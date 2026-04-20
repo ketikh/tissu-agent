@@ -341,14 +341,17 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     import asyncio
 
     pool = await get_db()
-    # Include sold-out products too — customers often send photos of items we
-    # just ran out of. We surface them with sold_out=True so the caller can tell
-    # the customer instead of treating the photo as unmatchable.
+    # Drive from inventory so every product with a photo is considered,
+    # including sold-out items and products that haven't had a Cloud Vision
+    # fingerprint computed yet. Cloud Vision fingerprint is optional — CLIP
+    # embeddings come from a separate table queried below.
     rows = await pool.fetch("""
-        SELECT pf.code, pf.fingerprint, pf.inventory_id,
-               i.model, i.size, i.price, i.image_url, i.image_url_back, i.stock
-        FROM product_fingerprints pf
-        JOIN inventory i ON i.id = ABS(pf.inventory_id)
+        SELECT i.code, i.id as inventory_id,
+               i.model, i.size, i.price, i.image_url, i.image_url_back, i.stock,
+               pf.fingerprint
+        FROM inventory i
+        LEFT JOIN product_fingerprints pf ON ABS(pf.inventory_id) = i.id
+        WHERE i.image_url IS NOT NULL AND i.image_url != ''
     """)
     if not rows:
         return {"matched": False, "message": "კატალოგი ცარიელია"}
@@ -360,8 +363,13 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
         user_fp = await asyncio.to_thread(fingerprint_from_bytes, image_bytes)
         for row in rows:
             fp = row["fingerprint"]
+            if fp is None:
+                continue  # product has no Cloud Vision fingerprint yet
             if isinstance(fp, str):
-                fp = json.loads(fp)
+                try:
+                    fp = json.loads(fp)
+                except Exception:
+                    continue
             score = compute_similarity(user_fp, fp)
             code = row["code"]
             if code not in vision_scores or score > vision_scores[code]:
