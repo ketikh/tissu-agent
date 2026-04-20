@@ -187,7 +187,9 @@ async def index_product(inventory_id: int, code: str, model: str, size: str, ima
 
 
 async def index_all_products() -> dict:
-    """Index all products that have images but no embeddings yet."""
+    """Index all products that have images but no embeddings yet.
+    Includes sold-out items so we can still identify them from customer
+    photos and say 'sorry, this one is out of stock'."""
     pool = await get_db()
 
     # Get products with images that haven't been indexed
@@ -195,7 +197,7 @@ async def index_all_products() -> dict:
         SELECT i.id, i.code, i.model, i.size, i.image_url, i.image_url_back
         FROM inventory i
         LEFT JOIN product_embeddings pe ON pe.inventory_id = i.id
-        WHERE i.image_url != '' AND i.image_url IS NOT NULL AND i.stock > 0 AND pe.id IS NULL
+        WHERE i.image_url != '' AND i.image_url IS NOT NULL AND pe.id IS NULL
         ORDER BY i.code
     """)
 
