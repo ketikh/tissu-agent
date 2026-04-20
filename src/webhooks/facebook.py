@@ -62,9 +62,62 @@ _PHOTO_HINT = re.compile(r'(გაქვთ|მოდელი|ჩანთა|�
 BUFFER_SECONDS = 6
 
 
+async def _fetch_fb_photo_via_graph(url: str) -> bytes:
+    """If the URL is a Facebook photo page (has fbid=), use Graph API to fetch
+    the image directly — normal HTTP fetch returns 400 without a session."""
+    if not FB_PAGE_TOKEN:
+        return b""
+    from urllib.parse import urlparse, parse_qs
+    parsed = urlparse(url)
+    if "facebook.com" not in parsed.netloc:
+        return b""
+    qs = parse_qs(parsed.query)
+    fbid = (qs.get("fbid") or qs.get("story_fbid") or [""])[0]
+    if not fbid:
+        # Try path like /photo/123456
+        parts = [p for p in parsed.path.split("/") if p]
+        for p in parts:
+            if p.isdigit() and len(p) > 10:
+                fbid = p
+                break
+    if not fbid:
+        return b""
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            meta = await client.get(
+                f"https://graph.facebook.com/v21.0/{fbid}",
+                params={"fields": "images", "access_token": FB_PAGE_TOKEN},
+            )
+            data = meta.json()
+            images = data.get("images", [])
+            if not images:
+                print(f"[LINK] Graph fbid={fbid} no images: {data}", flush=True)
+                return b""
+            # Pick the largest (first entry is usually the largest)
+            img_url = images[0].get("source", "")
+            if not img_url:
+                return b""
+            img = await client.get(img_url)
+            if img.status_code == 200 and len(img.content) > 500:
+                print(f"[LINK] Graph API fetched fbid={fbid} ({len(img.content)} bytes)", flush=True)
+                return img.content
+    except Exception as e:
+        print(f"[LINK] Graph API fetch error: {e}", flush=True)
+    return b""
+
+
 async def _extract_og_image(url: str) -> bytes:
     """Fetch the URL and pull the product photo from its OpenGraph / Twitter
-    card meta tags. Returns the image bytes, or b"" if nothing usable found."""
+    card meta tags. Returns the image bytes, or b"" if nothing usable found.
+    Facebook photo pages are routed through the Graph API because the public
+    HTML returns 400 to anonymous clients."""
+    # Facebook photo page → Graph API shortcut
+    if "facebook.com/photo" in url or ("facebook.com" in url and "fbid=" in url):
+        fb_bytes = await _fetch_fb_photo_via_graph(url)
+        if fb_bytes:
+            return fb_bytes
+        # fall through to generic og:image attempt below
+
     headers = {
         # Mimic a real browser — some sites (Instagram, Facebook) refuse bot UAs.
         "User-Agent": (
@@ -73,6 +126,10 @@ async def _extract_og_image(url: str) -> bytes:
         ),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9,ka;q=0.8",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Upgrade-Insecure-Requests": "1",
     }
     try:
         async with httpx.AsyncClient(timeout=15, follow_redirects=True, headers=headers) as client:
@@ -95,6 +152,7 @@ async def _extract_og_image(url: str) -> bytes:
                     img_url = m.group(1)
                     break
             if not img_url:
+                print(f"[LINK] No og:image meta tag in HTML from {url[:80]}", flush=True)
                 return b""
             # Resolve relative URLs
             if img_url.startswith("//"):
@@ -108,7 +166,9 @@ async def _extract_og_image(url: str) -> bytes:
 
             img_resp = await client.get(img_url)
             if img_resp.status_code == 200 and len(img_resp.content) > 500:
+                print(f"[LINK] og:image fetched ({len(img_resp.content)} bytes) from {url[:80]}", flush=True)
                 return img_resp.content
+            print(f"[LINK] og:image HTTP {img_resp.status_code}, {len(img_resp.content)}B from {img_url[:80]}", flush=True)
             return b""
     except Exception as e:
         print(f"[LINK] og:image error: {e}", flush=True)
