@@ -224,45 +224,15 @@ async def _process_message(
                             await _log(f"step6_save_error={e}")
 
                         if ai_sold_out:
-                            # Shape/pattern matched, but the matched variant is sold out.
-                            # Tell the customer, then check whether any linked (same
-                            # design) code is still in stock. If yes, offer that. If
-                            # nothing is left, politely close and notify owner.
-                            linked_in_stock = await _debug_pool.fetch(
-                                f"SELECT code, size FROM inventory WHERE UPPER(code) = ANY($1) AND stock > 0",
-                                [c.upper() for c in all_codes],
+                            # Sold-out: tell the customer clearly and stop. Do NOT push
+                            # alternatives unless the customer asks. Pop pending photo
+                            # so we don't double-forward if the customer sends size next.
+                            _pending_photos.pop(conversation_id, None)
+                            await _log(f"step6_soldout_notified_{ai_code}")
+                            text = (
+                                "[AI-მ იპოვა მოდელი მაგრამ ამჟამად გათავებულია. ზუსტად ეს უპასუხე: "
+                                "'სამწუხაროდ ეს მოდელი ამჟამად გათავებულია ✨']"
                             )
-                            if linked_in_stock:
-                                codes_in_stock = ",".join(r["code"] for r in linked_in_stock)
-                                force_inventory_codes = codes_in_stock
-                                text = (
-                                    f"[მოდელი იპოვე ({ai_code}) მაგრამ ამჟამად გათავდა. ეს მოდელის ვერსიები "
-                                    f"გვაქვს მარაგში: {codes_in_stock}. "
-                                    f"გამოიძახე check_inventory(search='{codes_in_stock}') და უპასუხე: "
-                                    f"'სამწუხაროდ ეს მოდელი ამჟამად გათავდა, მაგრამ მსგავსი მოდელი გვაქვს ✨ გნებავთ?']"
-                                )
-                            else:
-                                # Completely sold out — notify owner (one-time links) and close.
-                                try:
-                                    photo_bytes_so = _pending_photos.get(conversation_id)
-                                    if photo_bytes_so:
-                                        public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
-                                        admin_url = f"{public_url}/admin"
-                                        await send_whatsapp_image(
-                                            photo_bytes_so,
-                                            caption=(
-                                                f"📷 კლიენტმა ამ მოდელის ფოტო გამოაგზავნა.\n"
-                                                f"AI იპოვა: {ai_code} — მაგრამ ყველა ზომაში გათავდა.\n\n"
-                                                f"📋 ადმინ პანელი:\n{admin_url}"
-                                            ),
-                                        )
-                                        _pending_photos.pop(conversation_id, None)
-                                except Exception as e:
-                                    await _log(f"step6_soldout_notify_error={str(e)[:80]}")
-                                text = (
-                                    "[AI-მ იპოვა მაგრამ გათავდა. ზუსტად ეს უპასუხე: "
-                                    "'სამწუხაროდ ეს მოდელი ამჟამად გათავდა ✨ სხვა მოდელები გაჩვენოთ?']"
-                                )
                         elif prev_size:
                             # We know size from before — short question
                             text = (

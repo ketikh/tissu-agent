@@ -218,18 +218,44 @@ async def index_product(inventory_id: int, code: str, image_url: str, image_url_
 
 
 async def index_extra_photo(code: str, image_url: str) -> bool:
-    """Index a single lifestyle/marketing photo for a product."""
+    """Index a single lifestyle/marketing photo for a product. Stores the
+    fingerprint against the product's real inventory_id so analyze_and_match's
+    JOIN picks it up — a previous version used a hash-derived fake ID and the
+    extra photos were never reached."""
     import asyncio
     try:
-        fp = await asyncio.to_thread(fingerprint_from_url, image_url)
         pool = await get_db()
+        inv = await pool.fetchrow(
+            "SELECT id FROM inventory WHERE UPPER(code) = UPPER($1) LIMIT 1", code,
+        )
+        if not inv:
+            print(f"[INDEX] Extra photo skipped — no inventory row for {code}", flush=True)
+            return False
+        fp = await asyncio.to_thread(fingerprint_from_url, image_url)
         now = datetime.now(timezone.utc).isoformat()
-        # Use negative ID to distinguish from main catalog photos
+        # Negative sign marks "extra photo" variant (same convention as back image)
+        # while keeping ABS(inventory_id) resolvable via the JOIN.
         await pool.execute(
-            "INSERT INTO product_fingerprints (inventory_id, code, tags, embedding, created_at) VALUES ($1, $2, $3, '', $4)",
-            -abs(hash(image_url)) % 100000, code, json.dumps(fp), now,
+            "INSERT INTO product_fingerprints (inventory_id, code, fingerprint, created_at) VALUES ($1, $2, $3, $4)",
+            -int(inv["id"]), code, json.dumps(fp), now,
         )
         print(f"[INDEX] Extra photo indexed: {code} → {image_url[:50]}", flush=True)
+
+        # Also store CLIP embedding in product_embeddings so extra photos
+        # participate in CLIP similarity searches.
+        try:
+            from src.image_match import generate_embedding_from_image
+            embedding = await generate_embedding_from_image(image_url=image_url)
+            if embedding:
+                await pool.execute(
+                    """INSERT INTO product_embeddings (inventory_id, code, tags, embedding, created_at)
+                       VALUES ($1, $2, '', $3, $4)""",
+                    -int(inv["id"]), code, str(embedding), now,
+                )
+                print(f"[INDEX] Extra CLIP embedding stored: {code}", flush=True)
+        except Exception as e:
+            print(f"[INDEX] Extra CLIP embedding failed: {e}", flush=True)
+
         return True
     except Exception as e:
         logger.error(f"Extra photo index failed: {e}")
