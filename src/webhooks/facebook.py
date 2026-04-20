@@ -35,6 +35,11 @@ _processed_mids: dict[str, float] = {}
 # Key: conversation_id, Value: set of "model|size" combos already sent
 _sent_inventory: dict[str, set[str]] = {}
 
+# Track individual product codes whose photos have been sent to each conversation.
+# Avoids re-sending a photo the customer already saw — when they ask
+# "დიდიც გაქვთ?" after seeing the small size, bot confirms in text only.
+_sent_codes: dict[str, set[str]] = {}
+
 # Buffers for text↔photo pairing
 _pending_text: dict[str, dict] = {}   # sender_id -> {text, mid, ...} — text waiting for photo
 _pending_photo: dict[str, dict] = {}  # sender_id -> {image_url, mid, ...} — photo waiting for text
@@ -608,14 +613,27 @@ async def _send_product_images(
         already_sent.add(category_key)
         _sent_inventory[conversation_id] = already_sent
 
+    # Filter out codes the customer has already seen in this conversation.
+    # When they ask "დიდიც გაქვთ?" after seeing FP6, we'd resolve to FD2 via
+    # pairs — but FP6's photos were already sent. If they haven't seen FD2
+    # yet, we still send FD2, otherwise everything is text-only.
+    already_seen_codes = _sent_codes.get(conversation_id, set()) if conversation_id else set()
+    prefiltered_items = [it for it in items if (it.get("code") or "").upper() not in already_seen_codes]
+    if conversation_id and not prefiltered_items:
+        print(f"[PHOTO] All codes already shown in this session — skipping photo send", flush=True)
+        return
+    items_to_send = prefiltered_items if prefiltered_items else items
+
     sent_codes: set[str] = set()
     photos_sent = 0
-    for item in items:
+    for item in items_to_send:
         code = item.get("code", "")
         front = item.get("image_url", "")
         if not front or not code or code in sent_codes:
             continue
         sent_codes.add(code)
+        if conversation_id:
+            _sent_codes.setdefault(conversation_id, set()).add(code.upper())
 
         try:
             await client.post(fb_api, params=fb_params, json={
@@ -646,8 +664,9 @@ async def _send_product_images(
             except Exception:
                 pass
 
-    # After photos — tell customer to pick a code
-    if photos_sent > 0 and len(items) > 1:
+    # After photos — tell customer to pick a code, but only when >1 new photo
+    # was actually sent (don't prompt if only one new code was shown).
+    if photos_sent > 1:
         try:
             await client.post(fb_api, params=fb_params, json={
                 "recipient": {"id": sender_id},
