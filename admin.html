@@ -902,14 +902,15 @@
                             <div style="font-size:18px;font-weight:700;color:${hasSale ? 'var(--hi-ink)' : 'var(--text)'};font-variant-numeric:tabular-nums">${sp}₾</div>
                         </div>
                     </div>
-                    <div class="price-input-group sale" style="margin-top:10px;width:100%">
-                        <input type="number" step="0.5" min="0" value="${i.sale_price ?? ''}" placeholder="ახალი ფასი" id="salecard-${i.id}"
-                            style="flex:1;width:auto;font-size:13px"
-                            onkeydown="if(event.key==='Enter') this.nextElementSibling.nextElementSibling.click()"
-                            onchange="setSalePrice(${i.id}, this.value, this)">
-                        <span class="price-suffix">₾</span>
-                        <button class="price-check" onclick="const inp=document.getElementById('salecard-${i.id}'); setSalePrice(${i.id}, inp.value, inp); loadSale()" title="შენახვა">✓</button>
-                        <button class="btn btn-ghost btn-sm" onclick="toggleSale(${i.id}, false)" title="ფასდაკლებიდან ამოღება" style="margin-left:4px">გაუქმება</button>
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;flex-wrap:wrap">
+                        <div class="price-input-group sale">
+                            <input type="number" step="0.5" min="0" value="${i.sale_price ?? ''}" placeholder="ახალი ფასი" id="salecard-${i.id}"
+                                onkeydown="if(event.key==='Enter') this.nextElementSibling.nextElementSibling.click()"
+                                onchange="setSalePrice(${i.id}, this.value, this)">
+                            <span class="price-suffix">₾</span>
+                            <button class="price-check" onclick="const inp=document.getElementById('salecard-${i.id}'); setSalePrice(${i.id}, inp.value, inp); loadSale()" title="შენახვა">✓</button>
+                        </div>
+                        <button class="btn btn-ghost btn-sm" onclick="toggleSale(${i.id}, false)" title="ფასდაკლებიდან ამოღება">გაუქმება</button>
                     </div>
                 </div>
             </div>`;
