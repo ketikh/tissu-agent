@@ -520,6 +520,29 @@ async def health_check():
     return {"status": "ok", "agents": ["support_sales", "marketing"], "version": "0.2.0"}
 
 
+# ── Insights (admin signals) ────────────────────────────────
+
+@app.get("/api/insights/complaints")
+async def insights_complaints():
+    """Customer messages that look like complaints (wrong match, wants operator)."""
+    from src.insights import list_complaints
+    return {"complaints": await list_complaints()}
+
+
+@app.get("/api/insights/faqs")
+async def insights_faqs():
+    """Most frequent customer questions — candidates for canned answers."""
+    from src.insights import list_faq_candidates
+    return {"faqs": await list_faq_candidates()}
+
+
+@app.get("/api/insights/product-requests")
+async def insights_product_requests():
+    """Customer asks for categories we don't carry — stocking hints for owner."""
+    from src.insights import list_product_requests
+    return {"requests": await list_product_requests()}
+
+
 @app.post("/api/reindex")
 async def reindex_catalog(full: bool = False):
     """Re-index product catalog embeddings. Use full=true to wipe and re-embed all

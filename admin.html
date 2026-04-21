@@ -89,6 +89,7 @@
         <button onclick="showTab('leads')">ლიდები</button>
         <button onclick="showTab('orders')">შეკვეთები</button>
         <button onclick="showTab('notifications')">შეტყობინებები</button>
+        <button onclick="showTab('insights')">📊 ინსაიტები</button>
     </div>
     <div class="container">
         <div id="tab-inventory" class="section active">
@@ -141,6 +142,32 @@
         </div>
         <div id="tab-notifications" class="section">
             <div class="card"><h2>შეტყობინებები</h2><table><thead><tr><th>თემა</th><th>პრიორიტეტი</th><th>სტატუსი</th><th>თარიღი</th></tr></thead><tbody id="notif-table"></tbody></table></div>
+        </div>
+        <div id="tab-insights" class="section">
+            <div class="card">
+                <h2>⚠️ ხარვეზები / უკმაყოფილო კლიენტები</h2>
+                <p style="color:#95a5a6;margin-bottom:10px">შეტყობინებები სადაც კლიენტი ფიქრობს რომ ბოტმა არასწორი უპასუხა ან ცოცხალ ოპერატორს ითხოვს</p>
+                <table>
+                    <thead><tr><th>თარიღი</th><th>Conversation</th><th>ბოტის წინა პასუხი</th><th>კლიენტის პასუხი</th></tr></thead>
+                    <tbody id="complaints-table"></tbody>
+                </table>
+            </div>
+            <div class="card" style="margin-top:20px">
+                <h2>❓ ხშირი კითხვები</h2>
+                <p style="color:#95a5a6;margin-bottom:10px">კლიენტები რასაც ხშირად გვეკითხებიან — კარგი კანდიდატები ბოტში ჩაწერილი პასუხებისთვის</p>
+                <table>
+                    <thead><tr><th style="width:60px">რაოდ.</th><th>კითხვა</th><th style="width:180px">ბოლო კითხვა</th></tr></thead>
+                    <tbody id="faqs-table"></tbody>
+                </table>
+            </div>
+            <div class="card" style="margin-top:20px">
+                <h2>🛍️ მოთხოვნილი პროდუქტები (არ გვაქვს)</h2>
+                <p style="color:#95a5a6;margin-bottom:10px">რას გვეკითხებიან კლიენტები რაც არ გვიყიდია — კარგი მინიშნება რა დავამატოთ სამომავლოდ</p>
+                <table>
+                    <thead><tr><th>კატეგორია</th><th style="width:80px">კითხვები</th><th style="width:80px">კლიენტები</th><th>მაგალითი</th><th style="width:140px">ბოლოს</th></tr></thead>
+                    <tbody id="requests-table"></tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -289,6 +316,40 @@
             </tr>`).join('') || '<tr><td colspan="8">ჯერ არ არის</td></tr>';
             const tickets = await (await fetch(API + '/api/tickets')).json();
             document.getElementById('notif-table').innerHTML = tickets.tickets.map(t => `<tr><td>${t.subject}</td><td>${t.priority}</td><td>${t.status}</td><td>${new Date(t.created_at).toLocaleString('ka-GE')}</td></tr>`).join('') || '<tr><td colspan="4">ჯერ არ არის</td></tr>';
+            loadInsights();
+        }
+
+        async function loadInsights() {
+            try {
+                const c = await (await fetch(API + '/api/insights/complaints')).json();
+                document.getElementById('complaints-table').innerHTML = (c.complaints||[]).map(x => `
+                    <tr>
+                        <td style="white-space:nowrap;font-size:12px">${new Date(x.created_at).toLocaleString('ka-GE')}</td>
+                        <td style="font-size:11px;color:#7f8c8d">${x.conversation_id.slice(0,40)}</td>
+                        <td style="font-size:12px;color:#555">${(x.bot_reply_before||'—').replace(/[<>]/g,'')}</td>
+                        <td style="font-weight:600">${(x.customer_message||'').replace(/[<>]/g,'')}</td>
+                    </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:#95a5a6">ჯერ არ არის ხარვეზები ✨</td></tr>';
+
+                const f = await (await fetch(API + '/api/insights/faqs')).json();
+                document.getElementById('faqs-table').innerHTML = (f.faqs||[]).map(x => `
+                    <tr>
+                        <td style="text-align:center;font-weight:700;color:#3498db">${x.count}</td>
+                        <td>${(x.question||'').replace(/[<>]/g,'')}</td>
+                        <td style="font-size:12px;color:#7f8c8d">${new Date(x.last_seen).toLocaleString('ka-GE')}</td>
+                    </tr>`).join('') || '<tr><td colspan="3" style="text-align:center;color:#95a5a6">ჯერ არ არის განმეორებადი კითხვები</td></tr>';
+
+                const r = await (await fetch(API + '/api/insights/product-requests')).json();
+                document.getElementById('requests-table').innerHTML = (r.requests||[]).map(x => `
+                    <tr>
+                        <td style="font-weight:600">${x.category}</td>
+                        <td style="text-align:center;font-weight:700;color:#e67e22">${x.count}</td>
+                        <td style="text-align:center">${x.unique_customers}</td>
+                        <td style="font-size:12px;color:#555">${(x.sample||'').replace(/[<>]/g,'')}</td>
+                        <td style="font-size:12px;color:#7f8c8d">${new Date(x.last_seen).toLocaleString('ka-GE')}</td>
+                    </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:#95a5a6">ჯერ არ არის მოთხოვნილი პროდუქცია</td></tr>';
+            } catch (e) {
+                console.error('Insights load failed:', e);
+            }
         }
 
         // Drag & drop photos between slots
