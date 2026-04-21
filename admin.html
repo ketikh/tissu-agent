@@ -295,6 +295,15 @@
         .price-input-group.saved .price-check { background: var(--success); color: white; border-color: var(--success); }
         .price-input-group.sale input { border-color: var(--hi); background: var(--hi-soft); color: var(--hi-ink); }
         .price-input-group.sale .price-suffix { color: var(--hi-ink); }
+
+        /* ── Tag chips ──────────────────────────── */
+        .tag-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+        .tag-chip {
+            font-size: 10.5px; font-weight: 600; padding: 3px 9px; border-radius: 999px;
+            background: var(--accent-soft); color: var(--text); border: 1px solid var(--border);
+            display: inline-flex; align-items: center; gap: 5px; letter-spacing: 0.01em;
+        }
+        .tag-chip .swatch { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.08); flex-shrink: 0; }
         .photo-slot { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; background: var(--surface-2); }
         .photo-slot img { width: 100%; height: 180px; object-fit: cover; cursor: grab; }
         .photo-slot img.drag-over { outline: 2px solid var(--hi); }
@@ -967,6 +976,50 @@
         return allCategories.find(c => c.slug === slug) || { slug, name: slug, emoji: '📦', fields: [] };
     }
 
+    // ── Tag chips (colour-aware) ────────────────
+    const TAG_COLORS = {
+        'ყვითელი': '#F9D800', 'yellow': '#F9D800',
+        'წითელი': '#D82A2A', 'red': '#D82A2A',
+        'ცისფერი': '#6BA8D6', 'ღია ცისფერი': '#8FBEDD',
+        'ლურჯი': '#2055B8', 'navy': '#12306A', 'blue': '#2055B8',
+        'მწვანე': '#3F8F6C', 'green': '#3F8F6C', 'ზეთისხილისფერი': '#808000',
+        'შავი': '#1B1B1B', 'black': '#1B1B1B',
+        'თეთრი': '#F4F2EE', 'white': '#F4F2EE',
+        'ნარინჯისფერი': '#E8821B', 'orange': '#E8821B',
+        'ვარდისფერი': '#F4A6C7', 'pink': '#F4A6C7',
+        'იისფერი': '#8A4FB0', 'მეწამული': '#8A4FB0', 'purple': '#8A4FB0', 'violet': '#8A4FB0',
+        'ყავისფერი': '#7A4C2B', 'brown': '#7A4C2B',
+        'ბეჟი': '#D6C19C', 'beige': '#D6C19C', 'კრემი': '#E8DEC7',
+        'ოქროსფერი': '#D9A65A', 'gold': '#D9A65A',
+        'ვერცხლისფერი': '#C0C0C0', 'silver': '#C0C0C0',
+        'ღვინისფერი': '#722F37', 'ბორდო': '#722F37', 'burgundy': '#722F37',
+        'ხაკისფერი': '#8B7355', 'khaki': '#8B7355',
+        'ჭრელი': 'linear-gradient(45deg,#E8821B,#F4A6C7,#6BA8D6,#3F8F6C)',
+        'ნაცრისფერი': '#808080', 'gray': '#808080', 'grey': '#808080',
+    };
+
+    function colorForTag(tag) {
+        const key = tag.trim().toLowerCase();
+        if (TAG_COLORS[key]) return TAG_COLORS[key];
+        // Partial match for multi-word combinations like "ღია ყვითელი"
+        for (const k of Object.keys(TAG_COLORS)) {
+            if (key.includes(k)) return TAG_COLORS[k];
+        }
+        return null;
+    }
+
+    function renderTagChips(tagsStr) {
+        const tags = (tagsStr || '').split(',').map(t => t.trim()).filter(Boolean);
+        if (!tags.length) return '';
+        return '<div class="tag-chips">' + tags.map(t => {
+            const col = colorForTag(t);
+            const swatch = col
+                ? `<span class="swatch" style="background:${col.startsWith('linear') ? col : col}"></span>`
+                : '';
+            return `<span class="tag-chip">${swatch}${t.replace(/[<>]/g, '')}</span>`;
+        }).join('') + '</div>';
+    }
+
     async function loadCategories() {
         try {
             const d = await (await fetch(API + '/api/categories')).json();
@@ -1374,8 +1427,9 @@
                 ${isSoldOut ? `<div class="sold-overlay"><span>Sold out</span><button onclick="event.stopPropagation();restock(${i.id})">დაბრუნება</button></div>` : ''}
                 ${photosBlock}
                 <div class="info">
-                    <input type="text" value="${i.tags || ''}" placeholder="ტეგები (ფერი, სტილი...)"
-                        onchange="setLabel(${i.id},'tags',this.value)" title="მაგ: ოქროსფერი, მარგალიტი">
+                    ${renderTagChips(i.tags)}
+                    <input type="text" value="${i.tags || ''}" placeholder="ტეგების დამატება (მძიმით) — ფერი, სტილი…"
+                        onchange="setLabel(${i.id},'tags',this.value); renderGrid()" title="მაგ: ყვითელი, ზოლებიანი, კლასიკური">
                     ${attrBlock}
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:8px">
                         <span class="product-code">${i.code || '—'}</span>
