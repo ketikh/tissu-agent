@@ -27,6 +27,93 @@ def _get_client() -> genai.Client:
     return genai.Client(api_key=GEMINI_API_KEY)
 
 
+async def crop_to_main_bag(image_bytes: bytes) -> bytes:
+    """Ask Gemini where the main laptop bag is, then crop to that region.
+
+    Designed for customer screenshots (Instagram / Facebook) that contain
+    the product bag in the middle surrounded by UI chrome — profile avatars,
+    reaction icons, headers, comments, a sliver of the next post, etc. CLIP
+    and the Gemini re-ranker both work far better on a tight crop of just
+    the product than on the full screenshot where the bag is a small
+    fraction of the pixels.
+
+    Returns the cropped JPEG bytes, or the original bytes if anything fails
+    (no crop is always safer than returning nothing).
+    """
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        img = Image.open(BytesIO(image_bytes))
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        W, H = img.size
+
+        client = _get_client()
+        resp = client.models.generate_content(
+            model=VISION_MODEL,
+            contents=[types.Content(role="user", parts=[
+                types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+                types.Part(text=(
+                    "You are looking at a customer photo. It may be a plain product "
+                    "photo OR a screenshot from Instagram / Facebook / a website that "
+                    "contains a lot of UI clutter around the product (profile avatars, "
+                    "reaction icons, status bar, page header, comments, a partial image "
+                    "of the next post at the edge).\n\n"
+                    "Find the ONE largest, most prominent LAPTOP BAG / LAPTOP SLEEVE / "
+                    "CLUTCH-STYLE FABRIC BAG in the image — the main subject. Ignore "
+                    "tiny avatars, UI icons, cropped photos at the edges.\n\n"
+                    "Return ONLY JSON, no prose, no markdown:\n"
+                    "{\"x1\": <int 0-100>, \"y1\": <int 0-100>, "
+                    "\"x2\": <int 0-100>, \"y2\": <int 0-100>}\n\n"
+                    "Where x1,y1 is the top-left and x2,y2 the bottom-right of the "
+                    "tightest box around the main bag, as PERCENTAGES of image width "
+                    "and height. If no bag is visible, return "
+                    "{\"x1\": 0, \"y1\": 0, \"x2\": 100, \"y2\": 100}."
+                )),
+            ])],
+        )
+        text = (resp.text or "").strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        box = json.loads(text)
+
+        x1 = max(0, int(box["x1"]) * W // 100)
+        y1 = max(0, int(box["y1"]) * H // 100)
+        x2 = min(W, int(box["x2"]) * W // 100)
+        y2 = min(H, int(box["y2"]) * H // 100)
+
+        # Sanity checks — ignore obviously bogus boxes and return original.
+        if x2 - x1 < W * 0.15 or y2 - y1 < H * 0.15:
+            return image_bytes
+        # If Gemini just returned the whole image, skip the crop (nothing to do).
+        if x1 == 0 and y1 == 0 and x2 == W and y2 == H:
+            return image_bytes
+
+        # Add a small 5% padding so we don't clip the edge of the bag.
+        pad_x = int((x2 - x1) * 0.05)
+        pad_y = int((y2 - y1) * 0.05)
+        x1 = max(0, x1 - pad_x)
+        y1 = max(0, y1 - pad_y)
+        x2 = min(W, x2 + pad_x)
+        y2 = min(H, y2 + pad_y)
+
+        cropped = img.crop((x1, y1, x2, y2))
+        buf = BytesIO()
+        cropped.save(buf, format="JPEG", quality=92)
+        out = buf.getvalue()
+        print(
+            f"[CROP] Gemini box: ({x1},{y1})-({x2},{y2}) of ({W},{H}) → "
+            f"{len(out)} bytes",
+            flush=True,
+        )
+        return out
+    except Exception as e:
+        print(f"[CROP] Failed, using original: {e}", flush=True)
+        return image_bytes
+
+
 async def analyze_image(image_bytes: bytes) -> dict:
     """Analyze a product image with Gemini Vision. Returns detailed tags dict."""
     client = _get_client()

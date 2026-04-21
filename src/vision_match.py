@@ -340,6 +340,17 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     """Hybrid match: CLIP (visual) + Cloud Vision (semantic). Best of both."""
     import asyncio
 
+    # Step 0: Crop to the main laptop bag first. Instagram / Facebook
+    # screenshots bury the bag in a sea of UI clutter (avatars, reaction
+    # icons, headers, comments, neighboring posts) — if we feed that to
+    # CLIP the embedding represents the whole screenshot, not the bag,
+    # and both CLIP and the Gemini re-ranker score the wrong products.
+    try:
+        from src.image_match import crop_to_main_bag
+        image_bytes = await crop_to_main_bag(image_bytes)
+    except Exception as e:
+        print(f"[MATCH] Crop skipped: {e}", flush=True)
+
     pool = await get_db()
     # Drive from inventory so every product with a photo is considered,
     # including sold-out items and products that haven't had a Cloud Vision
