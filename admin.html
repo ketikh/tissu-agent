@@ -136,36 +136,17 @@
         .page-title .crumb { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
         .topbar-actions { display: flex; align-items: center; gap: 8px; }
 
-        /* ── Search ──────────────────────────────── */
-        .search-wrap { position: relative; display: flex; align-items: center; }
-        .search-input {
-            width: 280px; padding: 8px 12px 8px 34px; font-size: 13px;
+        /* ── Search inputs (inventory + orders) ──── */
+        .inv-search-wrap { position: relative; display: flex; align-items: center; flex: 1; max-width: 300px; }
+        .inv-search {
+            width: 100%; padding: 7px 12px 7px 32px; font-size: 13px;
             border: 1px solid var(--border); border-radius: 8px;
             background: var(--surface); color: var(--text);
             transition: border-color .12s, box-shadow .12s;
         }
-        .search-input::placeholder { color: var(--muted); }
-        .search-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-        .search-wrap .search-icon { position: absolute; left: 10px; width: 16px; height: 16px; color: var(--muted); pointer-events: none; }
-        .search-results {
-            position: absolute; top: calc(100% + 6px); left: 0; right: 0;
-            background: var(--surface); border: 1px solid var(--border);
-            border-radius: var(--radius); box-shadow: var(--shadow-md);
-            max-height: 420px; overflow-y: auto; z-index: 20;
-            display: none;
-        }
-        .search-results.open { display: block; }
-        .search-group-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); font-weight: 600; padding: 10px 14px 4px; }
-        .search-result {
-            display: flex; align-items: center; gap: 10px;
-            padding: 8px 14px; cursor: pointer; border: none; background: transparent;
-            width: 100%; text-align: left; color: var(--text); font-size: 13px;
-        }
-        .search-result:hover { background: var(--surface-2); }
-        .search-result img { width: 34px; height: 34px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
-        .search-result .r-meta { font-size: 11px; color: var(--muted); }
-        .search-empty { padding: 20px; text-align: center; color: var(--muted); font-size: 13px; }
-        @media (max-width: 900px) { .search-input { width: 160px; } }
+        .inv-search::placeholder { color: var(--muted); }
+        .inv-search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+        .inv-search-wrap .search-icon { position: absolute; left: 10px; width: 15px; height: 15px; color: var(--muted); pointer-events: none; }
 
         .content { padding: 24px 32px 80px; flex: 1; min-width: 0; }
 
@@ -258,6 +239,16 @@
         .sold-overlay button { position: absolute; bottom: 12px; right: 12px; background: var(--surface); color: var(--text); border: none; padding: 6px 12px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 600; }
 
         .photos { display: grid; grid-template-columns: 1fr 1fr; height: 180px; gap: 2px; background: var(--border); }
+        .photos.one-slot { grid-template-columns: 1fr; }
+        .add-angle-btn {
+            display: flex; align-items: center; justify-content: center; gap: 5px;
+            padding: 7px 10px; border: 1px dashed var(--border-strong);
+            background: var(--surface-2); color: var(--muted); font-size: 11.5px;
+            cursor: pointer; border-radius: 6px;
+            margin: 10px 14px 0; width: calc(100% - 28px); font-weight: 500;
+            transition: all .15s;
+        }
+        .add-angle-btn:hover { border-color: var(--hi); color: var(--hi-ink); background: var(--hi-soft); }
         .photo-slot { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; background: var(--surface-2); }
         .photo-slot img { width: 100%; height: 180px; object-fit: cover; cursor: grab; }
         .photo-slot img.drag-over { outline: 2px solid var(--hi); }
@@ -462,11 +453,6 @@
                 <span class="crumb" id="page-crumb">Overview</span>
                 <h1 id="page-h1">მთავარი</h1>
             </div>
-            <div class="search-wrap">
-                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-                <input class="search-input" id="global-search" placeholder="კოდი, მოდელი, ტელეფონი…" oninput="onGlobalSearch(this.value)" onfocus="onGlobalSearch(this.value)" onblur="setTimeout(()=>document.getElementById('search-results').classList.remove('open'),160)">
-                <div class="search-results" id="search-results"></div>
-            </div>
             <div class="topbar-actions" id="topbar-actions">
                 <button class="btn btn-ghost" onclick="loadData()">
                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>
@@ -502,16 +488,23 @@
             </div>
             <div id="tab-inventory" class="section">
                 <div class="stat-cards" id="inv-stats"></div>
-                <div class="filter-bar">
-                    <b>მოდელი</b>
-                    <button class="btn btn-sm" onclick="setFilter('model','')">ყველა</button>
-                    <button class="btn btn-sm" onclick="setFilter('model','ფხრიწიანი')">ფხრიწიანი</button>
-                    <button class="btn btn-sm" onclick="setFilter('model','თასმიანი')">თასმიანი</button>
-                    <span style="width:1px;height:18px;background:var(--border);margin:0 4px"></span>
-                    <b>ზომა</b>
-                    <button class="btn btn-sm" onclick="setFilter('size','')">ყველა</button>
-                    <button class="btn btn-sm" onclick="setFilter('size','პატარა')">პატარა</button>
-                    <button class="btn btn-sm" onclick="setFilter('size','დიდი')">დიდი</button>
+                <div class="filter-bar" id="inv-filter-bar">
+                    <div class="inv-search-wrap">
+                        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                        <input class="inv-search" id="inv-search" placeholder="ძებნა კოდით, ტეგით…" oninput="setInvQuery(this.value)">
+                    </div>
+                    <span class="inv-bag-filters" style="display:contents">
+                        <span style="width:1px;height:18px;background:var(--border);margin:0 4px"></span>
+                        <b>მოდელი</b>
+                        <button class="btn btn-sm" onclick="setFilter('model','')">ყველა</button>
+                        <button class="btn btn-sm" onclick="setFilter('model','ფხრიწიანი')">ფხრიწიანი</button>
+                        <button class="btn btn-sm" onclick="setFilter('model','თასმიანი')">თასმიანი</button>
+                        <span style="width:1px;height:18px;background:var(--border);margin:0 4px"></span>
+                        <b>ზომა</b>
+                        <button class="btn btn-sm" onclick="setFilter('size','')">ყველა</button>
+                        <button class="btn btn-sm" onclick="setFilter('size','პატარა')">პატარა</button>
+                        <button class="btn btn-sm" onclick="setFilter('size','დიდი')">დიდი</button>
+                    </span>
                 </div>
                 <div class="product-grid" id="inv-grid"></div>
             </div>
@@ -547,8 +540,16 @@
 
             <div id="tab-orders" class="section">
                 <div class="card">
-                    <h2>შეკვეთები</h2>
-                    <p class="hint">აქტიური შეკვეთები. სტატუსის შესაცვლელად დააჭირე drop-down-ს; როცა სტატუსი „Ready" ხდება, შესაბამისი კოდის მარაგი ავტომატურად მცირდება.</p>
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+                        <div>
+                            <h2 style="margin-bottom:2px">შეკვეთები</h2>
+                            <p class="hint" style="margin-bottom:0">აქტიური შეკვეთები. სტატუსის შესაცვლელად დააჭირე drop-down-ს.</p>
+                        </div>
+                        <div class="inv-search-wrap" style="max-width:320px;flex:1;min-width:200px">
+                            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                            <input class="inv-search" id="orders-search" placeholder="სახელი, ტელეფონი, კოდი…" oninput="setOrdersQuery(this.value)">
+                        </div>
+                    </div>
                     <table>
                         <thead><tr><th>#</th><th>კლიენტი</th><th>ტელეფონი</th><th>მისამართი</th><th>ნივთები</th><th>ჯამი</th><th>სტატუსი</th><th></th></tr></thead>
                         <tbody id="orders-table"></tbody>
@@ -676,6 +677,48 @@
     let allOrders = [];
     let activeCategory = 'bag';
     let allCategories = [];
+    let invQuery = '';
+    let ordersQuery = '';
+
+    function setInvQuery(q) {
+        invQuery = (q || '').trim().toLowerCase();
+        renderGrid();
+    }
+
+    function setOrdersQuery(q) {
+        ordersQuery = (q || '').trim().toLowerCase();
+        renderOrders();
+    }
+
+    function renderOrders() {
+        const rows = (allOrders || []).filter(o => {
+            if (!ordersQuery) return true;
+            const hay = [String(o.id), o.customer_name, o.customer_phone, o.customer_address, o.items, o.status].filter(Boolean).join(' ').toLowerCase();
+            return hay.includes(ordersQuery);
+        });
+        document.getElementById('orders-table').innerHTML = rows.map(o => `<tr data-order-id="${o.id}">
+            <td><b>#${o.id}</b></td>
+            <td>${o.customer_name || '—'}</td>
+            <td contenteditable="true" onblur="updateOrder(${o.id},'customer_phone',this.innerText)">${o.customer_phone||'—'}</td>
+            <td contenteditable="true" onblur="updateOrder(${o.id},'customer_address',this.innerText)">${o.customer_address||'—'}</td>
+            <td>
+                <select id="code-${o.id}" onchange="updateOrderCode(${o.id},this.value)" style="font-size:12px;padding:4px 8px;max-width:110px;border:1px solid var(--border);border-radius:6px;background:var(--surface-2)">
+                    <option value="">${o.items || '— აირჩიე —'}</option>
+                    ${allInventory.filter(i=>i.stock>0).map(i=>`<option value="${i.code}" ${o.items===i.code?'selected':''}>${i.code}</option>`).join('')}
+                </select>
+            </td>
+            <td><b>${o.total}₾</b></td>
+            <td>
+                <select onchange="changeOrderStatus(${o.id},this.value,document.getElementById('code-${o.id}').value)" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface-2)">
+                    <option value="pending" ${o.status==='pending'?'selected':''}>⏳ Pending</option>
+                    <option value="ready_for_send" ${o.status==='ready_for_send'?'selected':''}>📦 Ready</option>
+                    <option value="sent" ${o.status==='sent'?'selected':''}>🚚 Sent</option>
+                    <option value="delivered" ${o.status==='delivered'?'selected':''}>✅ Delivered</option>
+                </select>
+            </td>
+            <td><button class="btn btn-danger btn-sm" onclick="deleteOrder(${o.id})">✕</button></td>
+        </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px">' + (ordersQuery ? 'შედეგი ვერ მოიძებნა' : 'ჯერ შეკვეთები არ არის') + '</td></tr>';
+    }
 
     function categoryBySlug(slug) {
         return allCategories.find(c => c.slug === slug) || { slug, name: slug, emoji: '📦', fields: [] };
@@ -709,6 +752,9 @@
 
     function switchCategory(cat, btn) {
         activeCategory = cat;
+        invQuery = '';  // clear the search when flipping categories
+        const inv = document.getElementById('inv-search');
+        if (inv) inv.value = '';
         document.querySelectorAll('.cat-item').forEach(b => b.classList.remove('active'));
         if (btn) btn.classList.add('active');
         const catDef = categoryBySlug(cat);
@@ -880,91 +926,6 @@
     }
     window.addEventListener('keydown', e => { if (e.key === 'Escape') closeConversation(); });
 
-    function onGlobalSearch(rawQuery) {
-        const q = (rawQuery || '').trim().toLowerCase();
-        const panel = document.getElementById('search-results');
-        if (!q) { panel.classList.remove('open'); panel.innerHTML = ''; return; }
-
-        // Match inventory — code, model, size, tags
-        const products = (allInventory || []).filter(i => {
-            const hay = [i.code, i.model, i.size, i.tags, i.color, i.style].filter(Boolean).join(' ').toLowerCase();
-            return hay.includes(q);
-        }).slice(0, 8);
-
-        // Match orders — id, name, phone, items
-        const orders = (allOrders || []).filter(o => {
-            const hay = [String(o.id), o.customer_name, o.customer_phone, o.customer_address, o.items].filter(Boolean).join(' ').toLowerCase();
-            return hay.includes(q);
-        }).slice(0, 5);
-
-        const parts = [];
-        if (products.length) {
-            parts.push('<div class="search-group-label">პროდუქტები</div>');
-            parts.push(...products.map(p => {
-                const img = p.image_url ? (p.image_url.startsWith('http') ? p.image_url : API + p.image_url) : '';
-                const meta = [p.model, p.size?.split(' ')[0], p.tags].filter(Boolean).join(' · ');
-                return `<button class="search-result" onclick="jumpToProduct(${p.id})">
-                    ${img ? `<img src="${img}">` : '<div style="width:34px;height:34px;background:var(--border);border-radius:6px"></div>'}
-                    <div style="flex:1;min-width:0">
-                        <div><b>${p.code || '—'}</b> · ${p.price}₾</div>
-                        <div class="r-meta">${meta}</div>
-                    </div>
-                    <div style="font-size:11px;color:${p.stock === 0 ? 'var(--danger)' : 'var(--muted)'}">${p.stock === 0 ? 'გაყიდული' : p.stock + ' ცალი'}</div>
-                </button>`;
-            }));
-        }
-        if (orders.length) {
-            parts.push('<div class="search-group-label">შეკვეთები</div>');
-            parts.push(...orders.map(o => {
-                return `<button class="search-result" onclick="jumpToOrder(${o.id})">
-                    <div style="width:34px;height:34px;background:var(--hi-soft);color:var(--hi-ink);border-radius:6px;display:grid;place-items:center;font-weight:700;font-size:11px">#${o.id}</div>
-                    <div style="flex:1;min-width:0">
-                        <div><b>${o.customer_name || '—'}</b> · ${o.customer_phone || '—'}</div>
-                        <div class="r-meta">${o.items || '—'} · ${o.customer_address || '—'}</div>
-                    </div>
-                    <div style="font-size:13px;font-weight:700;font-variant-numeric:tabular-nums">${o.total}₾</div>
-                </button>`;
-            }));
-        }
-        if (!products.length && !orders.length) {
-            parts.push('<div class="search-empty">შედეგი ვერ მოიძებნა</div>');
-        }
-        panel.innerHTML = parts.join('');
-        panel.classList.add('open');
-    }
-
-    function jumpToProduct(id) {
-        const btn = document.querySelector('.nav-item[data-tab="inventory"]');
-        showTab('inventory', btn);
-        document.getElementById('search-results').classList.remove('open');
-        document.getElementById('global-search').value = '';
-        setTimeout(() => {
-            const card = document.querySelector(`.product-card[data-id="${id}"]`);
-            if (card) {
-                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                card.style.transition = 'box-shadow .3s';
-                card.style.boxShadow = '0 0 0 3px var(--hi)';
-                setTimeout(() => { card.style.boxShadow = ''; }, 1600);
-            }
-        }, 200);
-    }
-
-    function jumpToOrder(id) {
-        const btn = document.querySelector('.nav-item[data-tab="orders"]');
-        showTab('orders', btn);
-        document.getElementById('search-results').classList.remove('open');
-        document.getElementById('global-search').value = '';
-        setTimeout(() => {
-            const row = document.querySelector(`#orders-table tr[data-order-id="${id}"]`);
-            if (row) {
-                row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                row.style.transition = 'background .3s';
-                row.style.background = 'var(--hi-soft)';
-                setTimeout(() => { row.style.background = ''; }, 1600);
-            }
-        }, 200);
-    }
-
     async function loadDashboard() {
         try {
             const d = await (await fetch(API + '/api/dashboard')).json();
@@ -1060,6 +1021,15 @@
             if (filterModel) items = items.filter(i => i.model === filterModel);
             if (filterSize) items = items.filter(i => i.size.includes(filterSize));
         }
+        if (invQuery) {
+            items = items.filter(i => {
+                const attrsStr = (i.attrs && typeof i.attrs === 'object') ? Object.values(i.attrs).join(' ')
+                                : (typeof i.attrs === 'string' ? i.attrs : '');
+                const hay = [i.code, i.model, i.size, i.tags, i.color, i.style, attrsStr]
+                    .filter(Boolean).join(' ').toLowerCase();
+                return hay.includes(invQuery);
+            });
+        }
         const inStock = items.filter(i => i.stock > 0);
         const totalStock = items.reduce((s, i) => s + i.stock, 0);
         const soldOut = items.filter(i => i.stock === 0).length;
@@ -1071,8 +1041,15 @@
             <div class="stat-card"><div class="num" style="color:var(--danger)">${soldOut}</div><div class="label">გაყიდული</div></div>
         `;
 
-        // Bag-specific filters only show on the bag view
-        document.querySelector('.filter-bar').style.display = activeCategory === 'bag' ? 'flex' : 'none';
+        // Hide the bag-only filter chips on non-bag categories; keep the
+        // filter-bar itself visible so the inventory search stays available.
+        document.querySelectorAll('#tab-inventory .inv-bag-filters > *').forEach(el => {
+            el.style.display = activeCategory === 'bag' ? '' : 'none';
+        });
+        // Clear the search input's DOM value when switching categories so
+        // it matches the (just-reset) invQuery state.
+        const invSearchEl = document.getElementById('inv-search');
+        if (invSearchEl) invSearchEl.placeholder = `ძებნა ${categoryBySlug(activeCategory).name}ში…`;
 
         const grid = document.getElementById('inv-grid');
         const cards = items.map(i => {
@@ -1103,10 +1080,15 @@
                     }).join('') + '</div>'
                     : '';
             }
-            return `
-            <div class="product-card ${isSoldOut ? 'sold-out' : ''}" data-id="${i.id}">
-                ${isSoldOut ? `<div class="sold-overlay"><span>Sold out</span><button onclick="event.stopPropagation();restock(${i.id})">დაბრუნება</button></div>` : ''}
-                <div class="photos">
+            // Bags need both sides (reversible fabric); other categories
+            // start with a single slot and the owner reveals the second one
+            // only when they actually want to add another angle.
+            const showTwoSlots = (cat === 'bag') || hasBack;
+            const frontLabel = cat === 'bag' ? 'გარე ↑' : (showTwoSlots ? 'რაკურსი 1 ↑' : 'ფოტო ↑');
+            const backLabel  = cat === 'bag' ? 'შიდა ↑' : 'რაკურსი 2 ↑';
+            const backEmpty  = cat === 'bag' ? 'შიდა'    : 'სხვა რაკურსი';
+
+            const frontSlot = `
                     <div class="photo-slot"
                         ondragover="event.preventDefault()" ondragenter="slotEnter(event)" ondragleave="slotLeave(event)"
                         ondrop="dropPhoto(event,${i.id},'front')">
@@ -1118,8 +1100,10 @@
                                 ondrop="dropPhoto(event,${i.id},'front')">
                                 <span style="font-size:22px">+</span>ფოტო
                                </div>`}
-                        <span class="slot-label" onclick="event.stopPropagation();clickUpload(${i.id},'front')" title="ფოტოს ატვირთვა">${cat === 'bag' ? 'გარე ↑' : 'ფრონტი ↑'}</span>
-                    </div>
+                        <span class="slot-label" onclick="event.stopPropagation();clickUpload(${i.id},'front')" title="ფოტოს ატვირთვა">${frontLabel}</span>
+                    </div>`;
+
+            const backSlot = `
                     <div class="photo-slot"
                         ondragover="event.preventDefault()" ondragenter="slotEnter(event)" ondragleave="slotLeave(event)"
                         ondrop="dropPhoto(event,${i.id},'back')">
@@ -1129,11 +1113,22 @@
                             : `<div class="empty-slot" onclick="clickUpload(${i.id},'back')"
                                 ondragover="event.preventDefault()" ondragenter="this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')"
                                 ondrop="dropPhoto(event,${i.id},'back')">
-                                <span style="font-size:22px">+</span>${cat === 'bag' ? 'შიდა' : 'დეტალი'}
+                                <span style="font-size:22px">+</span>${backEmpty}
                                </div>`}
-                        <span class="slot-label" onclick="event.stopPropagation();clickUpload(${i.id},'back')" title="ფოტოს ატვირთვა">${cat === 'bag' ? 'შიდა ↑' : 'დეტალი ↑'}</span>
-                    </div>
-                </div>
+                        <span class="slot-label" onclick="event.stopPropagation();clickUpload(${i.id},'back')" title="ფოტოს ატვირთვა">${backLabel}</span>
+                    </div>`;
+
+            const photosBlock = showTwoSlots
+                ? `<div class="photos">${frontSlot}${backSlot}</div>`
+                : `<div class="photos one-slot">${frontSlot}</div>
+                   <button class="add-angle-btn" onclick="clickUpload(${i.id},'back')">
+                       <span style="font-size:14px">+</span> სხვა რაკურსი
+                   </button>`;
+
+            return `
+            <div class="product-card ${isSoldOut ? 'sold-out' : ''}" data-id="${i.id}">
+                ${isSoldOut ? `<div class="sold-overlay"><span>Sold out</span><button onclick="event.stopPropagation();restock(${i.id})">დაბრუნება</button></div>` : ''}
+                ${photosBlock}
                 <div class="info">
                     <input type="text" value="${i.tags || ''}" placeholder="ტეგები (ფერი, სტილი...)"
                         onchange="setLabel(${i.id},'tags',this.value)" title="მაგ: ოქროსფერი, მარგალიტი">
@@ -1177,29 +1172,9 @@
         const orders = await (await fetch(API + '/api/orders')).json();
         allOrders = orders.orders || [];
         const activeOrders = allOrders.filter(o => o.status !== 'delivered');
-        document.getElementById('sidebar-orders-count').textContent = activeOrders.length;
-        document.getElementById('orders-table').innerHTML = allOrders.map(o => `<tr data-order-id="${o.id}">
-            <td><b>#${o.id}</b></td>
-            <td>${o.customer_name || '—'}</td>
-            <td contenteditable="true" onblur="updateOrder(${o.id},'customer_phone',this.innerText)">${o.customer_phone||'—'}</td>
-            <td contenteditable="true" onblur="updateOrder(${o.id},'customer_address',this.innerText)">${o.customer_address||'—'}</td>
-            <td>
-                <select id="code-${o.id}" onchange="updateOrderCode(${o.id},this.value)" style="font-size:12px;padding:4px 8px;max-width:110px;border:1px solid var(--border);border-radius:6px;background:var(--surface-2)">
-                    <option value="">${o.items || '— აირჩიე —'}</option>
-                    ${allInventory.filter(i=>i.stock>0).map(i=>`<option value="${i.code}" ${o.items===i.code?'selected':''}>${i.code}</option>`).join('')}
-                </select>
-            </td>
-            <td><b>${o.total}₾</b></td>
-            <td>
-                <select onchange="changeOrderStatus(${o.id},this.value,document.getElementById('code-${o.id}').value)" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface-2)">
-                    <option value="pending" ${o.status==='pending'?'selected':''}>⏳ Pending</option>
-                    <option value="ready_for_send" ${o.status==='ready_for_send'?'selected':''}>📦 Ready</option>
-                    <option value="sent" ${o.status==='sent'?'selected':''}>🚚 Sent</option>
-                    <option value="delivered" ${o.status==='delivered'?'selected':''}>✅ Delivered</option>
-                </select>
-            </td>
-            <td><button class="btn btn-danger btn-sm" onclick="deleteOrder(${o.id})">✕</button></td>
-        </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px">ჯერ შეკვეთები არ არის</td></tr>';
+        const countEl = document.getElementById('sidebar-orders-count');
+        if (countEl) countEl.textContent = activeOrders.length;
+        renderOrders();
         loadInsights();
     }
 
