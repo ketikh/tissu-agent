@@ -27,6 +27,38 @@ def _get_client() -> genai.Client:
     return genai.Client(api_key=GEMINI_API_KEY)
 
 
+def upscale_if_small(image_bytes: bytes, min_dim: int = 800, target: int = 1024) -> bytes:
+    """Upscale an image (LANCZOS) if its longer side is below ``min_dim``.
+
+    Instagram's public og:image is often a 273×273 thumbnail — far too small
+    for CLIP and the Gemini re-ranker to pick up pattern detail reliably.
+    Resampling to ~1024px doesn't recover lost detail, but it gives CLIP a
+    canvas comparable to our catalog photos and makes pattern matching work
+    in practice. Images already large enough are returned unchanged.
+    """
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        img = Image.open(BytesIO(image_bytes))
+        if max(img.size) >= min_dim:
+            return image_bytes
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        scale = target / max(img.size)
+        new_size = (int(img.size[0] * scale), int(img.size[1] * scale))
+        big = img.resize(new_size, Image.LANCZOS)
+        buf = BytesIO()
+        big.save(buf, format="JPEG", quality=92)
+        out = buf.getvalue()
+        print(f"[UPSCALE] {img.size} → {new_size} ({len(image_bytes)}B → {len(out)}B)", flush=True)
+        return out
+    except Exception as e:
+        print(f"[UPSCALE] Failed, using original: {e}", flush=True)
+        return image_bytes
+
+
 async def crop_to_main_bag(image_bytes: bytes) -> bytes:
     """Ask Gemini where the main laptop bag is, then crop to that region.
 

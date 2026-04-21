@@ -196,7 +196,12 @@ async def _extract_og_image(url: str) -> bytes:
             img_resp = await client.get(img_url)
             if img_resp.status_code == 200 and len(img_resp.content) > 500:
                 print(f"[LINK] og:image fetched ({len(img_resp.content)} bytes) from {url[:80]}", flush=True)
-                return img_resp.content
+                # Instagram frequently returns a 273×273 thumbnail when the
+                # post is fetched anonymously. Upscale tiny images so CLIP /
+                # Gemini have enough canvas to match the pattern against the
+                # catalog (which is full-size).
+                from src.image_match import upscale_if_small
+                return upscale_if_small(img_resp.content)
             print(f"[LINK] og:image HTTP {img_resp.status_code}, {len(img_resp.content)}B from {img_url[:80]}", flush=True)
             return b""
     except Exception as e:
