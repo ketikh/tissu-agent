@@ -58,3 +58,4 @@ secrets/
 
 # Playwright debug screenshots
 *.png
+test_photos/
