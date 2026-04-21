@@ -107,10 +107,11 @@
         .cat-item .gear {
             width: 24px; height: 24px; border-radius: 6px; background: transparent;
             border: none; cursor: pointer; color: var(--muted);
-            display: none; align-items: center; justify-content: center; margin-left: 4px;
+            display: inline-flex; align-items: center; justify-content: center; margin-left: 4px;
+            opacity: 0; transition: opacity .12s;
         }
-        .cat-item:hover .gear { display: inline-flex; }
-        .cat-item.active .gear { display: inline-flex; color: rgba(255,255,255,0.7); }
+        .cat-item:hover .gear { opacity: 1; }
+        .cat-item.active .gear { opacity: 1; color: rgba(255,255,255,0.7); }
         .cat-item .gear:hover { background: rgba(0,0,0,0.08); color: var(--text); }
         .cat-item.active .gear:hover { background: rgba(255,255,255,0.15); color: white; }
 
@@ -267,6 +268,29 @@
             font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em;
             box-shadow: var(--shadow-sm);
         }
+
+        /* Price + check button group used across inventory and sale cards. */
+        .price-input-group { display: flex; align-items: center; gap: 4px; }
+        .price-input-group input {
+            width: 84px; font-size: 15px; font-weight: 700; padding: 4px 6px;
+            border: 1px solid var(--border); border-radius: 6px; text-align: right;
+            background: var(--surface-2); color: var(--text); font-variant-numeric: tabular-nums;
+        }
+        .price-input-group input::placeholder {
+            font-size: 11px; font-weight: 500; color: var(--muted);
+        }
+        .price-input-group input:focus { outline: none; border-color: var(--hi); background: var(--surface); }
+        .price-input-group .price-suffix { color: var(--muted); font-size: 14px; font-weight: 600; }
+        .price-input-group .price-check {
+            width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border);
+            background: var(--surface); color: var(--muted); cursor: pointer;
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: 13px; font-weight: 700; transition: all .12s;
+        }
+        .price-input-group .price-check:hover { background: var(--success); color: white; border-color: var(--success); }
+        .price-input-group.saved .price-check { background: var(--success); color: white; border-color: var(--success); }
+        .price-input-group.sale input { border-color: var(--hi); background: var(--hi-soft); color: var(--hi-ink); }
+        .price-input-group.sale .price-suffix { color: var(--hi-ink); }
         .photo-slot { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; background: var(--surface-2); }
         .photo-slot img { width: 100%; height: 180px; object-fit: cover; cursor: grab; }
         .photo-slot img.drag-over { outline: 2px solid var(--hi); }
@@ -442,6 +466,11 @@
                 შეკვეთები
                 <span class="count" id="sidebar-orders-count">0</span>
             </button>
+            <button class="nav-item" data-tab="chats" onclick="showTab('chats', this)">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.5-.7L3 21l1.7-6A8.5 8.5 0 1 1 21 11.5z"/></svg>
+                ჩატები
+                <span class="count" id="sidebar-chats-count">0</span>
+            </button>
             <button class="nav-item" data-tab="sale" onclick="showTab('sale', this)">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12V8a2 2 0 0 0-2-2H8a2 2 0 0 0-1.41.59L3 10.17a2 2 0 0 0 0 2.83l8 8a2 2 0 0 0 2.83 0l4.58-4.58"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
                 ფასდაკლება
@@ -580,6 +609,21 @@
                 </div>
             </div>
 
+            <div id="tab-chats" class="section">
+                <div class="card">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+                        <div>
+                            <h2 style="margin-bottom:2px">💬 ჩატები</h2>
+                            <p class="hint" style="margin-bottom:0">კლიენტებთან ბოლო საუბრები. ერთხელ დააჭირე — გახსნის სრულ ისტორიას მარჯვნივ.</p>
+                        </div>
+                        <div class="inv-search-wrap" style="max-width:300px;flex:1;min-width:200px">
+                            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                            <input class="inv-search" id="chats-search" placeholder="ძებნა ტექსტით ან ID-ით…" oninput="setChatsQuery(this.value)">
+                        </div>
+                    </div>
+                    <div id="chats-list" style="display:flex;flex-direction:column;gap:6px"></div>
+                </div>
+            </div>
             <div id="tab-sale" class="section">
                 <div class="card">
                     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
@@ -682,6 +726,7 @@
         pairs: 'წყვილები',
         'extra-photos': 'Lifestyle ფოტოები',
         orders: 'შეკვეთები',
+        chats: 'ჩატები',
         sale: 'ფასდაკლება',
         insights: 'ინსაიტები',
     };
@@ -691,13 +736,16 @@
         pairs: 'Catalog · ჩანთები',
         'extra-photos': 'Catalog · ჩანთები',
         orders: 'Workspace',
+        chats: 'Workspace',
         sale: 'Workspace',
         insights: 'Workspace',
     };
 
     function showTab(tab, btn) {
         document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-        document.getElementById('tab-' + tab).classList.add('active');
+        const section = document.getElementById('tab-' + tab);
+        if (!section) { showTab('dashboard', document.querySelector('.nav-item[data-tab="dashboard"]')); return; }
+        section.classList.add('active');
         document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
         if (btn) btn.classList.add('active');
         else {
@@ -708,11 +756,14 @@
         document.getElementById('page-crumb').textContent = PAGE_CRUMBS[tab] || '';
         // Only show the "ახალი მოდელი" action on the inventory tab.
         document.getElementById('topbar-actions').style.display = (tab === 'inventory') ? 'flex' : 'none';
+        // Persist so a page refresh keeps the user on the same tab.
+        try { localStorage.setItem('tissuAdmin:lastTab', tab); } catch (_) {}
         loadData();
         if (tab === 'extra-photos') loadExtraPhotos();
         if (tab === 'pairs') loadPairs();
         if (tab === 'dashboard') loadDashboard();
         if (tab === 'sale') loadSale();
+        if (tab === 'chats') loadChats();
     }
 
     let allOrders = [];
@@ -722,6 +773,57 @@
     let ordersQuery = '';
     let saleQuery = '';
     let allSale = [];
+    let chatsQuery = '';
+    let allChats = [];
+
+    function setChatsQuery(q) {
+        chatsQuery = (q || '').trim().toLowerCase();
+        renderChats();
+    }
+
+    async function loadChats() {
+        try {
+            const d = await (await fetch(API + '/api/conversations?limit=200')).json();
+            allChats = d.conversations || [];
+            const badge = document.getElementById('sidebar-chats-count');
+            if (badge) badge.textContent = allChats.length;
+            renderChats();
+        } catch (e) { console.error('Chats load failed:', e); }
+    }
+
+    function renderChats() {
+        const host = document.getElementById('chats-list');
+        if (!host) return;
+        const items = (allChats || []).filter(c => {
+            if (!chatsQuery) return true;
+            const hay = [c.id, c.last_user_msg, c.last_bot_msg].filter(Boolean).join(' ').toLowerCase();
+            return hay.includes(chatsQuery);
+        });
+        if (!items.length) {
+            host.innerHTML = '<p style="color:var(--muted);padding:20px;text-align:center">' + (chatsQuery ? 'ვერ მოიძებნა' : 'ჯერ ჩატები არ არის') + '</p>';
+            return;
+        }
+        const channelOf = id => id.startsWith('instagram_') ? 'IG' : id.startsWith('facebook_') ? 'FB' : id.startsWith('whatsapp_') ? 'WA' : '··';
+        host.innerHTML = items.map(c => {
+            const channel = channelOf(c.id);
+            const short = c.id.split('_').pop().slice(-6);
+            const preview = (c.last_user_msg || c.last_bot_msg || '(ცარიელი)').replace(/[<>]/g, '');
+            return `<button type="button" onclick="openConversation('${c.id}')"
+                style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);cursor:pointer;text-align:left;transition:background .12s,border-color .12s"
+                onmouseenter="this.style.background='var(--surface-2)';this.style.borderColor='var(--border-strong)'"
+                onmouseleave="this.style.background='var(--surface)';this.style.borderColor='var(--border)'">
+                <div style="width:36px;height:36px;border-radius:9px;background:var(--hi-soft);color:var(--hi-ink);display:grid;place-items:center;font-weight:700;font-size:11px;flex-shrink:0">${channel}</div>
+                <div style="flex:1;min-width:0">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+                        <div style="font-size:11px;color:var(--muted);font-family:ui-monospace,monospace">…${short}</div>
+                        <div style="font-size:11px;color:var(--muted)">${c.msg_count} მესიჯი</div>
+                    </div>
+                    <div style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${preview}</div>
+                </div>
+                <div style="font-size:11px;color:var(--muted);white-space:nowrap">${new Date(c.updated_at).toLocaleString('ka-GE')}</div>
+            </button>`;
+        }).join('');
+    }
 
     async function toggleSale(id, nextValue) {
         await fetch(API+'/api/inventory/'+id+'?on_sale='+(nextValue ? 'true' : 'false'), {method: 'PUT'});
@@ -733,11 +835,16 @@
         else updateSaleCount();
     }
 
-    async function setSalePrice(id, value) {
+    async function setSalePrice(id, value, inputEl) {
         const v = parseFloat(value);
         await fetch(API+'/api/inventory/'+id+'?sale_price='+(isNaN(v) ? 0 : v), {method: 'PUT'});
         const item = allInventory.find(i => i.id === id);
         if (item) item.sale_price = (isNaN(v) || v <= 0) ? null : v;
+        const group = inputEl ? inputEl.closest('.price-input-group') : null;
+        if (group) {
+            group.classList.add('saved');
+            setTimeout(() => group.classList.remove('saved'), 900);
+        }
     }
 
     function updateSaleCount() {
@@ -795,11 +902,14 @@
                             <div style="font-size:18px;font-weight:700;color:${hasSale ? 'var(--hi-ink)' : 'var(--text)'};font-variant-numeric:tabular-nums">${sp}₾</div>
                         </div>
                     </div>
-                    <div style="display:flex;gap:6px;margin-top:10px;align-items:center">
-                        <input type="number" step="0.5" min="0" value="${i.sale_price ?? ''}" placeholder="ფასდაკლებული ფასი"
-                            style="flex:1;font-size:13px;font-weight:600;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface-2)"
-                            onchange="setSalePrice(${i.id}, this.value); loadSale();">
-                        <button class="btn btn-ghost btn-sm" onclick="toggleSale(${i.id}, false)" title="ფასდაკლებიდან ამოღება">გაუქმება</button>
+                    <div class="price-input-group sale" style="margin-top:10px;width:100%">
+                        <input type="number" step="0.5" min="0" value="${i.sale_price ?? ''}" placeholder="ახალი ფასი" id="salecard-${i.id}"
+                            style="flex:1;width:auto;font-size:13px"
+                            onkeydown="if(event.key==='Enter') this.nextElementSibling.nextElementSibling.click()"
+                            onchange="setSalePrice(${i.id}, this.value, this)">
+                        <span class="price-suffix">₾</span>
+                        <button class="price-check" onclick="const inp=document.getElementById('salecard-${i.id}'); setSalePrice(${i.id}, inp.value, inp); loadSale()" title="შენახვა">✓</button>
+                        <button class="btn btn-ghost btn-sm" onclick="toggleSale(${i.id}, false)" title="ფასდაკლებიდან ამოღება" style="margin-left:4px">გაუქმება</button>
                     </div>
                 </div>
             </div>`;
@@ -1262,11 +1372,12 @@
                     ${attrBlock}
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:8px">
                         <span class="product-code">${i.code || '—'}</span>
-                        <div style="display:flex;align-items:center;gap:3px">
-                            <input type="number" step="0.5" value="${i.price}" min="0"
-                                style="width:78px;font-size:16px;font-weight:700;padding:4px 6px;border:1px solid var(--border);border-radius:6px;text-align:right;background:var(--surface-2);color:var(--text);font-variant-numeric:tabular-nums"
-                                onchange="setLabel(${i.id},'price',this.value)">
-                            <span style="color:var(--muted);font-size:14px;font-weight:600">₾</span>
+                        <div class="price-input-group">
+                            <input type="number" step="0.5" value="${i.price}" min="0" id="price-${i.id}"
+                                onkeydown="if(event.key==='Enter') this.nextElementSibling.nextElementSibling.click()"
+                                onchange="setLabel(${i.id},'price',this.value, this)">
+                            <span class="price-suffix">₾</span>
+                            <button class="price-check" onclick="const inp=document.getElementById('price-${i.id}'); setLabel(${i.id},'price',inp.value, inp)" title="შენახვა">✓</button>
                         </div>
                     </div>
                     <div class="sale-row">
@@ -1274,11 +1385,12 @@
                             <span style="font-size:12px">🏷️</span>
                             ${i.on_sale ? 'ფასდაკლებაშია' : 'ფასდაკლებაში'}
                         </button>
-                        ${i.on_sale ? `<div style="display:flex;align-items:center;gap:3px">
-                            <input type="number" step="0.5" value="${i.sale_price ?? ''}" min="0" placeholder="ახალი ფასი"
-                                style="width:92px;font-size:13px;font-weight:600;padding:4px 6px;border:1px solid var(--hi);border-radius:6px;text-align:right;background:var(--hi-soft);color:var(--hi-ink)"
-                                onchange="setSalePrice(${i.id}, this.value)">
-                            <span style="color:var(--hi-ink);font-size:13px;font-weight:600">₾</span>
+                        ${i.on_sale ? `<div class="price-input-group sale">
+                            <input type="number" step="0.5" value="${i.sale_price ?? ''}" min="0" placeholder="ახალი ფასი" id="sale-${i.id}"
+                                onkeydown="if(event.key==='Enter') this.nextElementSibling.nextElementSibling.click()"
+                                onchange="setSalePrice(${i.id}, this.value, this)">
+                            <span class="price-suffix">₾</span>
+                            <button class="price-check" onclick="const inp=document.getElementById('sale-${i.id}'); setSalePrice(${i.id}, inp.value, inp)" title="შენახვა">✓</button>
                         </div>` : ''}
                     </div>
                     <div class="stock-control">
@@ -1424,9 +1536,16 @@
         await fetch(API+'/api/inventory/'+id+'?stock=1', {method:'PUT'});
         loadData();
     }
-    async function setLabel(id, field, value) {
+    async function setLabel(id, field, value, inputEl) {
         await fetch(API+'/api/inventory/'+id+'?'+field+'='+encodeURIComponent(value), {method:'PUT'});
-        loadData();
+        const item = allInventory.find(i => i.id === id);
+        if (item) item[field] = isNaN(value) ? value : (field === 'price' || field === 'stock' ? Number(value) : value);
+        // Pulse the ✓ button green briefly so the user sees the save registered.
+        const group = inputEl ? inputEl.closest('.price-input-group') : null;
+        if (group) {
+            group.classList.add('saved');
+            setTimeout(() => group.classList.remove('saved'), 900);
+        }
     }
 
     async function setAttr(id, key, value) {
@@ -1623,9 +1742,15 @@
     }
 
     // Initial render — load categories first (so the sidebar renders), then
-    // open the dashboard as the default landing view.
+    // restore the last-viewed tab (or default to dashboard) so a refresh
+    // keeps the user where they were.
     loadCategories().then(() => {
-        showTab('dashboard', document.querySelector('.nav-item[data-tab="dashboard"]'));
+        let startTab = 'dashboard';
+        try {
+            const saved = localStorage.getItem('tissuAdmin:lastTab');
+            if (saved && document.getElementById('tab-' + saved)) startTab = saved;
+        } catch (_) {}
+        showTab(startTab, document.querySelector(`.nav-item[data-tab="${startTab}"]`));
     });
     window.addEventListener('keydown', e => { if (e.key === 'Escape') closeAddCategoryModal(); });
 </script>

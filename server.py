@@ -215,19 +215,45 @@ async def create_content(item: ContentCreate):
 
 
 @app.get("/api/conversations")
-async def list_conversations(agent_type: str = "", limit: int = 20):
+async def list_conversations(agent_type: str = "", limit: int = 100):
+    """List recent conversations with message count and a snippet of the
+    last customer message. Powers the admin ჩატები tab."""
     pool = await get_db()
-    query = "SELECT * FROM conversations WHERE 1=1"
-    params = []
+    query = """
+        SELECT c.id, c.agent_type, c.updated_at, c.created_at,
+               (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS msg_count,
+               (SELECT m.content FROM messages m
+                 WHERE m.conversation_id = c.id AND m.role = 'user'
+                 ORDER BY m.created_at DESC LIMIT 1) AS last_user_msg,
+               (SELECT m.content FROM messages m
+                 WHERE m.conversation_id = c.id AND m.role IN ('assistant','model')
+                 ORDER BY m.created_at DESC LIMIT 1) AS last_bot_msg
+        FROM conversations c
+        WHERE c.id NOT LIKE 'debug_%'
+    """
+    params: list = []
     idx = 1
     if agent_type:
-        query += f" AND agent_type = ${idx}"
+        query += f" AND c.agent_type = ${idx}"
         params.append(agent_type)
         idx += 1
-    query += f" ORDER BY updated_at DESC LIMIT ${idx}"
+    query += f" ORDER BY c.updated_at DESC LIMIT ${idx}"
     params.append(limit)
     rows = await pool.fetch(query, *params)
-    return {"conversations": [dict(r) for r in rows]}
+    from src.insights import clean_user_message
+    out = []
+    for r in rows:
+        last_user = clean_user_message(r["last_user_msg"] or "")
+        out.append({
+            "id": r["id"],
+            "agent_type": r["agent_type"],
+            "updated_at": r["updated_at"],
+            "created_at": r["created_at"],
+            "msg_count": int(r["msg_count"] or 0),
+            "last_user_msg": last_user[:140],
+            "last_bot_msg": (r["last_bot_msg"] or "")[:140],
+        })
+    return {"conversations": out}
 
 
 @app.get("/api/conversations/{conversation_id}")
@@ -269,18 +295,82 @@ async def add_knowledge(question: str, answer: str, category: str = "general"):
 
 # ── Inventory Endpoints ──────────────────────────────────────
 
-def save_uploaded_image(upload: UploadFile, prefix: str) -> str:
-    """Save uploaded image, converting HEIC/HEIF to JPEG automatically."""
-    filename_base = f"{prefix}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    save_dir = Path(__file__).parent / "static" / "products"
+def _cloudinary_configured() -> bool:
+    """Cloudinary wins when CLOUDINARY_URL (or CLOUD/API key triplet) is set.
+    Railway's filesystem is ephemeral — without Cloudinary, every deploy
+    would wipe admin-uploaded photos. Local dev falls back to /static."""
+    return bool(os.getenv("CLOUDINARY_URL")) or (
+        os.getenv("CLOUDINARY_CLOUD_NAME") and os.getenv("CLOUDINARY_API_KEY") and os.getenv("CLOUDINARY_API_SECRET")
+    )
 
-    ext = Path(upload.filename).suffix.lower()
+
+def _upload_to_cloudinary(upload: UploadFile, public_id: str):
+    """Upload to Cloudinary and return the secure HTTPS URL. Returns None on failure."""
+    try:
+        import cloudinary
+        import cloudinary.uploader
+        if os.getenv("CLOUDINARY_URL"):
+            cloudinary.config(secure=True)
+        else:
+            cloudinary.config(
+                cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+                api_key=os.getenv("CLOUDINARY_API_KEY"),
+                api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+                secure=True,
+            )
+        ext = Path(upload.filename or "").suffix.lower()
+        file_obj = upload.file
+        # HEIC from iOS needs converting to JPEG before Cloudinary accepts it.
+        if ext in ('.heic', '.heif'):
+            from io import BytesIO
+            img = Image.open(upload.file)
+            buf = BytesIO()
+            img.convert("RGB").save(buf, "JPEG", quality=90)
+            buf.seek(0)
+            file_obj = buf
+        result = cloudinary.uploader.upload(
+            file_obj,
+            folder="tissu/uploads",
+            public_id=public_id,
+            overwrite=True,
+            resource_type="image",
+        )
+        return result.get("secure_url") or result.get("url")
+    except Exception as e:
+        print(f"[UPLOAD] Cloudinary failed, falling back to local: {e}", flush=True)
+        return None
+
+
+def save_uploaded_image(upload: UploadFile, prefix: str) -> str:
+    """Persist an uploaded image and return a URL the frontend can render.
+
+    Prefers Cloudinary when credentials are configured (prod / Railway) so
+    images survive deploys; falls back to the local ``static/products``
+    directory for dev environments without Cloudinary set up.
+    """
+    filename_base = f"{prefix}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+
+    if _cloudinary_configured():
+        url = _upload_to_cloudinary(upload, public_id=filename_base)
+        if url:
+            return url
+        # Rewind the file pointer so the local fallback still works when
+        # Cloudinary rejected the upload mid-stream.
+        try:
+            upload.file.seek(0)
+        except Exception:
+            pass
+
+    save_dir = Path(__file__).parent / "static" / "products"
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    ext = Path(upload.filename or "").suffix.lower()
     if ext in ('.heic', '.heif'):
         img = Image.open(upload.file)
         filename = f"{filename_base}.jpg"
-        img.save(save_dir / filename, "JPEG", quality=85)
+        img.convert("RGB").save(save_dir / filename, "JPEG", quality=85)
     else:
-        filename = f"{filename_base}{ext}"
+        filename = f"{filename_base}{ext or '.jpg'}"
         with open(save_dir / filename, "wb") as f:
             shutil.copyfileobj(upload.file, f)
 
