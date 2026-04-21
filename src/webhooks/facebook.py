@@ -62,6 +62,35 @@ _PHOTO_HINT = re.compile(r'(გაქვთ|მოდელი|ჩანთა|�
 BUFFER_SECONDS = 6
 
 
+def _bg_wa_image(image_bytes: bytes, caption: str, filename: str = "photo.jpg") -> None:
+    """Fire-and-forget WhatsApp image send. Owner notifications must NEVER
+    block the customer's reply — a slow or failing WA call (e.g. 24h window
+    closed) previously stalled FB/IG responses entirely."""
+    async def _run():
+        try:
+            await asyncio.wait_for(
+                send_whatsapp_image(image_bytes, caption=caption, filename=filename),
+                timeout=20,
+            )
+        except asyncio.TimeoutError:
+            print("[WA] image send timed out (20s) — continuing", flush=True)
+        except Exception as e:
+            print(f"[WA] image send error: {e}", flush=True)
+    asyncio.create_task(_run())
+
+
+def _bg_wa_text(message: str) -> None:
+    """Fire-and-forget WhatsApp text send."""
+    async def _run():
+        try:
+            await asyncio.wait_for(send_whatsapp_text(message), timeout=10)
+        except asyncio.TimeoutError:
+            print("[WA] text send timed out (10s) — continuing", flush=True)
+        except Exception as e:
+            print(f"[WA] text send error: {e}", flush=True)
+    asyncio.create_task(_run())
+
+
 async def _fetch_fb_photo_via_graph(url: str) -> bytes:
     """If the URL is a Facebook photo page (has fbid=), use Graph API to fetch
     the image directly — normal HTTP fetch returns 400 without a session."""
@@ -231,7 +260,7 @@ async def _process_message(
                     cname = customer_name or "კლიენტი"
                     confirm_url = build_confirm_url("owner-confirm", await create_confirm_token(conversation_id, "owner-confirm"))
                     deny_url = build_confirm_url("owner-deny", await create_confirm_token(conversation_id, "owner-deny"))
-                    await send_whatsapp_image(
+                    _bg_wa_image(
                         image_bytes,
                         caption=f"📷 {cname} — გადახდის ქვითარი\n\n✅ ვადასტურებ:\n{confirm_url}\n\n❌ არ ვადასტურებ:\n{deny_url}",
                         filename="receipt.jpg",
@@ -406,7 +435,7 @@ async def _process_message(
                                 admin_url = f"{public_url}/admin"
                                 confirm_url = build_confirm_url("photo-confirm", await create_confirm_token(conversation_id, "photo-confirm"))
                                 deny_url = build_confirm_url("photo-deny", await create_confirm_token(conversation_id, "photo-deny"))
-                                await send_whatsapp_image(
+                                _bg_wa_image(
                                     photo_bytes,
                                     caption=(
                                         f"📷 კლიენტი ეძებს ამ მოდელს.\n"
@@ -567,19 +596,16 @@ async def _process_message(
                             )
                 else:
                     # Extracted the image but AI couldn't match — forward
-                    # both link AND image to owner.
-                    try:
-                        await send_whatsapp_image(
-                            image_bytes,
-                            caption=(
-                                f"🔗 კლიენტმა ბმული გამოგზავნა:\n{link_url}\n\n"
-                                f"📷 ფოტო ლინკიდან ამოვწერე, AI ვერ ჩანცა.\n"
-                                f"{('💬 ' + user_text) if user_text else ''}\n"
-                                f"👤 {customer_name or 'კლიენტი'}"
-                            ),
-                        )
-                    except Exception as e:
-                        print(f"[LINK] WA image forward error: {e}", flush=True)
+                    # both link AND image to owner in background.
+                    _bg_wa_image(
+                        image_bytes,
+                        caption=(
+                            f"🔗 კლიენტმა ბმული გამოგზავნა:\n{link_url}\n\n"
+                            f"📷 ფოტო ლინკიდან ამოვწერე, AI ვერ ჩანცა.\n"
+                            f"{('💬 ' + user_text) if user_text else ''}\n"
+                            f"👤 {customer_name or 'კლიენტი'}"
+                        ),
+                    )
                     text = "[ლინკიდან ფოტო ამოვიღე მაგრამ ვერ დავადგინე. ზუსტად ეს უპასუხე: 'გადავამოწმებ და მალე მოგწერთ ✨']"
             else:
                 # Couldn't extract image from link — old behavior: forward URL + ask size
@@ -587,7 +613,7 @@ async def _process_message(
                 if user_text:
                     wa_msg += f"\n💬 {user_text}"
                 wa_msg += f"\n\n👤 {customer_name or 'კლიენტი'}"
-                await send_whatsapp_text(wa_msg)
+                _bg_wa_text(wa_msg)
                 if user_text:
                     text = (
                         f"[კლიენტმა ბმული გამოგზავნა პროდუქტის. მფლობელს გადაეგზავნა. კლიენტი ეკითხება: '{user_text}'. "
@@ -678,7 +704,7 @@ async def _process_message(
                     admin_url = f"{public_url}/admin"
                     confirm_url = build_confirm_url("photo-confirm", await create_confirm_token(conversation_id, "photo-confirm"))
                     deny_url = build_confirm_url("photo-deny", await create_confirm_token(conversation_id, "photo-deny"))
-                    await send_whatsapp_image(
+                    _bg_wa_image(
                         pending_bytes,
                         caption=(
                             f"📷 კლიენტი ეძებს ამ მოდელს.\n"
@@ -770,7 +796,7 @@ async def _process_message(
             result = await run_agent(agent, text, conversation_id)
         except Exception as e:
             print(f"[MSG] Agent error: {e}", flush=True)
-            await send_whatsapp_text(f"🚨 აგენტის შეცდომა!\n{text[:200]}\n{str(e)[:300]}")
+            _bg_wa_text(f"🚨 აგენტის შეცდომა!\n{text[:200]}\n{str(e)[:300]}")
             result = {"reply": "გადავამოწმებ და მოგწერთ ✨", "tool_calls_made": [], "tool_results_data": {}}
 
         print(f"[MSG] Agent replied: {result['reply'][:80]}...", flush=True)

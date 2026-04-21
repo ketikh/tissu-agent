@@ -55,3 +55,6 @@ htmlcov/
 MANIFEST
 .playwright-mcp/
 secrets/
+
+# Playwright debug screenshots
+*.png
