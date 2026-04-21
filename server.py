@@ -8,7 +8,7 @@ import json
 import shutil
 from pathlib import Path
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from PIL import Image
 from pillow_heif import register_heif_opener
@@ -518,6 +518,88 @@ async def delete_pair(pair_id: int):
 @app.get("/api/health")
 async def health_check():
     return {"status": "ok", "agents": ["support_sales", "marketing"], "version": "0.2.0"}
+
+
+# ── Dashboard (admin home) ──────────────────
+
+@app.get("/api/dashboard")
+async def dashboard():
+    """At-a-glance summary for the admin home: today's orders / revenue,
+    low-stock alerts, a 7-day sales sparkline, and a recent-activity feed.
+    All counts come from the existing tables — no new writes or migrations."""
+    pool = await get_db()
+    now = datetime.now(timezone.utc)
+    today_prefix = now.date().isoformat()
+    seven_days_ago = (now - timedelta(days=6)).date().isoformat()
+
+    today_orders = await pool.fetch(
+        "SELECT id, total FROM orders WHERE created_at LIKE $1",
+        f"{today_prefix}%",
+    )
+    today_revenue = sum(float(o["total"] or 0) for o in today_orders)
+
+    low_stock = await pool.fetch(
+        "SELECT id, code, model, size, stock, price, image_url FROM inventory "
+        "WHERE stock <= 1 AND image_url != '' ORDER BY stock ASC, code ASC LIMIT 12"
+    )
+
+    # Totals (lifetime-ish) for headline cards
+    totals = await pool.fetchrow(
+        "SELECT "
+        "  (SELECT COUNT(*) FROM orders) AS total_orders, "
+        "  (SELECT COALESCE(SUM(total), 0) FROM orders) AS total_revenue, "
+        "  (SELECT COUNT(*) FROM inventory WHERE stock > 0) AS in_stock, "
+        "  (SELECT COUNT(DISTINCT conversation_id) FROM messages WHERE conversation_id NOT LIKE 'debug_%') AS conversations"
+    )
+
+    recent_orders = await pool.fetch(
+        "SELECT id, total, created_at FROM orders WHERE created_at >= $1 ORDER BY created_at",
+        seven_days_ago,
+    )
+    by_day: dict[str, dict[str, float]] = {}
+    for o in recent_orders:
+        day = (o["created_at"] or "")[:10]
+        if not day:
+            continue
+        slot = by_day.setdefault(day, {"count": 0, "revenue": 0.0})
+        slot["count"] += 1
+        slot["revenue"] += float(o["total"] or 0)
+
+    sales_7d = []
+    for i in range(7):
+        d = (now - timedelta(days=6 - i)).date().isoformat()
+        slot = by_day.get(d, {"count": 0, "revenue": 0.0})
+        sales_7d.append({"date": d, "count": int(slot["count"]), "revenue": float(slot["revenue"])})
+
+    recent_activity_rows = await pool.fetch(
+        "SELECT id, customer_name, items, total, status, created_at "
+        "FROM orders ORDER BY created_at DESC LIMIT 8"
+    )
+    recent_activity = [
+        {
+            "type": "order",
+            "id": r["id"],
+            "customer_name": r["customer_name"],
+            "items": r["items"],
+            "total": float(r["total"] or 0),
+            "status": r["status"],
+            "created_at": r["created_at"],
+        }
+        for r in recent_activity_rows
+    ]
+
+    return {
+        "today": {"orders": len(today_orders), "revenue": today_revenue},
+        "totals": {
+            "orders": int(totals["total_orders"] or 0),
+            "revenue": float(totals["total_revenue"] or 0),
+            "in_stock": int(totals["in_stock"] or 0),
+            "conversations": int(totals["conversations"] or 0),
+        },
+        "low_stock": [dict(r) for r in low_stock],
+        "sales_7d": sales_7d,
+        "recent_activity": recent_activity,
+    }
 
 
 # ── Insights (admin signals) ────────────────────────────────
