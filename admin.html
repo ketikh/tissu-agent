@@ -225,8 +225,13 @@
 
         .hot-badge { background: var(--danger); color: white; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
 
+        /* Hide native number spinners — the ✓ button is the explicit save. */
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+
         /* ── Product grid ─────────────────────────── */
-        .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px; }
+        .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 18px; }
         .product-card {
             background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
             overflow: hidden; box-shadow: var(--shadow-xs); position: relative;
@@ -252,7 +257,11 @@
         .add-angle-btn:hover { border-color: var(--hi); color: var(--hi-ink); background: var(--hi-soft); }
 
         /* ── Sale toggle on product card ────────── */
-        .sale-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+        .sale-row {
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border);
+            flex-wrap: wrap; /* fallback for narrow cards */
+        }
         .sale-toggle {
             display: inline-flex; align-items: center; gap: 5px;
             padding: 5px 10px; border-radius: 999px; border: 1px solid var(--border);
