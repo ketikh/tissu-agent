@@ -81,54 +81,32 @@ async def create_order(customer_name: str, customer_phone: str, customer_address
     )
     order_id = row["id"]
 
-    # Extract purchased product codes from the items string and decrement their
-    # stock by one each. Stock reaching 0 automatically surfaces as "sold out"
-    # in the admin panel — no separate status flag needed.
-    sold_out_codes: list[str] = []
-    updated_codes: list[str] = []
-    codes = sorted(set(_re.findall(r'(?i)(?:FP|TP|FD|TD)\d+', items)))
-    for raw_code in codes:
-        code = raw_code.upper()
-        updated = await pool.fetchrow(
-            "UPDATE inventory SET stock = GREATEST(0, stock - 1), updated_at = $1 "
-            "WHERE UPPER(code) = $2 AND stock > 0 RETURNING stock",
-            now, code,
-        )
-        if updated is not None:
-            updated_codes.append(code)
-            if int(updated["stock"]) == 0:
-                sold_out_codes.append(code)
+    # Stock stays untouched here — the owner adjusts it manually from the admin
+    # panel when changing order status, so auto-decrement would double-count.
+    codes = sorted(set(c.upper() for c in _re.findall(r'(?i)(?:FP|TP|FD|TD)\d+', items)))
 
-    # Notify owner via WhatsApp about new order — include the product codes
-    # explicitly and flag anything that just went sold-out.
     from src.notifications import send_whatsapp_text
     public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
-    code_line = f"🏷️ {', '.join(updated_codes)}" if updated_codes else ""
-    sold_line = f"⚠️ მარაგი ამოიწურა: {', '.join(sold_out_codes)}" if sold_out_codes else ""
     parts = [
         f"🛒 ახალი შეკვეთა #{order_id}!",
         f"👤 {customer_name}",
         f"📱 {customer_phone}",
         f"📍 {customer_address}",
     ]
-    if code_line:
-        parts.append(code_line)
+    if codes:
+        parts.append(f"🏷️ {', '.join(codes)}")
     parts.extend([
         f"📦 {items}",
         f"💰 {total}₾",
+        "",
+        f"📋 ადმინ პანელი:\n{public_url}/admin",
     ])
-    if sold_line:
-        parts.append("")
-        parts.append(sold_line)
-    parts.append("")
-    parts.append(f"📋 ადმინ პანელი:\n{public_url}/admin")
     await send_whatsapp_text("\n".join(parts))
 
     return {
         "success": True,
         "order_id": order_id,
-        "codes": updated_codes,
-        "sold_out": sold_out_codes,
+        "codes": codes,
     }
 
 
