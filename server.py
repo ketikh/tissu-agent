@@ -10,6 +10,7 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 
+import asyncpg
 from PIL import Image
 from pillow_heif import register_heif_opener
 register_heif_opener()
@@ -286,6 +287,140 @@ def save_uploaded_image(upload: UploadFile, prefix: str) -> str:
     return f"/static/products/{filename}"
 
 
+# ── Categories registry ────────────────────────────────────
+
+@app.get("/api/categories")
+async def list_categories():
+    """Return every catalog category with its field schema and live count.
+    Driven by the `categories` table — new rows show up in the admin
+    sidebar the moment they're inserted."""
+    pool = await get_db()
+    rows = await pool.fetch("""
+        SELECT c.slug, c.name, c.emoji, c.fields, c.sort_order,
+               COALESCE(cnt.n, 0) AS count
+        FROM categories c
+        LEFT JOIN (
+            SELECT category, COUNT(*) AS n FROM inventory GROUP BY category
+        ) cnt ON cnt.category = c.slug
+        ORDER BY c.sort_order ASC, c.name ASC
+    """)
+    out = []
+    for r in rows:
+        fields = r["fields"]
+        if isinstance(fields, str):
+            try:
+                fields = json.loads(fields)
+            except Exception:
+                fields = []
+        out.append({
+            "slug": r["slug"],
+            "name": r["name"],
+            "emoji": r["emoji"],
+            "fields": fields,
+            "sort_order": r["sort_order"],
+            "count": int(r["count"] or 0),
+        })
+    return {"categories": out}
+
+
+@app.post("/api/categories")
+async def add_category(request: Request):
+    """Register a new product category. Body: {slug, name, emoji, fields}.
+    `fields` is a list of {key, label} objects describing the per-product
+    custom attributes the admin UI should render."""
+    import re as _re
+    data = await request.json()
+    slug = (data.get("slug") or "").strip().lower()
+    name = (data.get("name") or "").strip()
+    emoji = (data.get("emoji") or "📦").strip()[:8]
+    fields = data.get("fields") or []
+    if not slug or not name:
+        raise HTTPException(status_code=400, detail="slug და name აუცილებელია")
+    if not _re.match(r"^[a-z][a-z0-9_-]{1,31}$", slug):
+        raise HTTPException(status_code=400, detail="slug არ ვარგა — მხოლოდ a-z, 0-9, _ ან -")
+    cleaned_fields = []
+    for f in fields if isinstance(fields, list) else []:
+        if isinstance(f, dict) and f.get("key") and f.get("label"):
+            cleaned_fields.append({"key": str(f["key"]).strip(), "label": str(f["label"]).strip()})
+    pool = await get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        await pool.execute(
+            """INSERT INTO categories (slug, name, emoji, fields, sort_order, created_at)
+               VALUES ($1, $2, $3, $4::jsonb, $5, $6)""",
+            slug, name, emoji, json.dumps(cleaned_fields), 100, now,
+        )
+    except asyncpg.exceptions.UniqueViolationError:
+        raise HTTPException(status_code=409, detail="ეს slug უკვე არსებობს")
+    return {"ok": True, "slug": slug}
+
+
+@app.delete("/api/categories/{slug}")
+async def delete_category(slug: str):
+    """Delete a category — refuses when any inventory row still uses it,
+    so the owner doesn't orphan products by accident."""
+    if slug in ("bag", "necklace"):
+        raise HTTPException(status_code=400, detail="ძირითადი კატეგორიები არ წაიშლება")
+    pool = await get_db()
+    in_use = await pool.fetchval(
+        "SELECT COUNT(*) FROM inventory WHERE category = $1", slug
+    )
+    if int(in_use or 0) > 0:
+        raise HTTPException(status_code=409, detail=f"ამ კატეგორიაში {in_use} პროდუქტია, ჯერ გადაიტანე სხვაგან")
+    await pool.execute("DELETE FROM categories WHERE slug = $1", slug)
+    return {"ok": True}
+
+
+@app.put("/api/categories/{slug}")
+async def update_category(slug: str, request: Request):
+    """Update the name / emoji / fields of an existing category."""
+    data = await request.json()
+    pool = await get_db()
+    updates = []
+    params: list = []
+    idx = 1
+    for key in ("name", "emoji"):
+        if key in data and data[key] is not None:
+            updates.append(f"{key} = ${idx}")
+            params.append(str(data[key]).strip())
+            idx += 1
+    if "fields" in data and isinstance(data["fields"], list):
+        cleaned = [
+            {"key": str(f["key"]).strip(), "label": str(f["label"]).strip()}
+            for f in data["fields"]
+            if isinstance(f, dict) and f.get("key") and f.get("label")
+        ]
+        updates.append(f"fields = ${idx}::jsonb")
+        params.append(json.dumps(cleaned))
+        idx += 1
+    if not updates:
+        return {"ok": True, "updated": False}
+    params.append(slug)
+    await pool.execute(
+        f"UPDATE categories SET {', '.join(updates)} WHERE slug = ${idx}",
+        *params,
+    )
+    return {"ok": True}
+
+
+@app.put("/api/inventory/{item_id}/attr")
+async def set_inventory_attr(item_id: int, request: Request):
+    """Merge a single key/value into inventory.attrs — used by admin to
+    save the per-field text inputs for category-driven products."""
+    data = await request.json()
+    key = (data.get("key") or "").strip()
+    value = data.get("value", "")
+    if not key:
+        raise HTTPException(status_code=400, detail="key required")
+    pool = await get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    await pool.execute(
+        "UPDATE inventory SET attrs = attrs || jsonb_build_object($1::text, $2::text), updated_at = $3 WHERE id = $4",
+        key, str(value), now, item_id,
+    )
+    return {"ok": True}
+
+
 @app.get("/api/inventory")
 async def list_inventory(category: str = ""):
     """List inventory. Omit category to get everything (admin); pass
@@ -312,6 +447,7 @@ async def add_inventory(
     color: str = Form(""),
     style: str = Form(""),
     category: str = Form("bag"),
+    attrs_json: str = Form("{}"),
     image: UploadFile = File(None),
 ):
     image_url = ""
@@ -322,23 +458,30 @@ async def add_inventory(
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
 
-    # Auto-generate a code if none is picked yet. Bags use the existing
-    # FP/TP/FD/TD convention elsewhere; necklaces get an `NC` prefix so
-    # they're instantly distinguishable and never collide with bag codes.
-    code_prefix = "NC" if category == "necklace" else ""
+    # Auto-generate a code for non-bag categories using the first two
+    # uppercase letters of the slug (e.g. necklace → NE, belt → BE). Bag
+    # codes stay on the legacy FP/TP/FD/TD convention and are not
+    # generated here.
     new_code = ""
-    if code_prefix:
+    if category and category != "bag":
+        prefix = (category[:2] or "XX").upper()
         max_n = await pool.fetchval(
             "SELECT COALESCE(MAX(CAST(SUBSTRING(code, 3) AS INTEGER)), 0) "
             "FROM inventory WHERE category = $1 AND code ~ ('^' || $2 || '[0-9]+$')",
-            category, code_prefix,
+            category, prefix,
         )
-        new_code = f"{code_prefix}{int(max_n or 0) + 1}"
+        new_code = f"{prefix}{int(max_n or 0) + 1}"
+
+    try:
+        attrs_value = attrs_json if attrs_json else "{}"
+        json.loads(attrs_value)  # validate
+    except Exception:
+        attrs_value = "{}"
 
     row = await pool.fetchrow(
-        "INSERT INTO inventory (product_name, model, size, color, style, code, category, price, stock, image_url, created_at, updated_at) "
-        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id",
-        product_name, model, size, color, style, new_code, category, price, stock, image_url, now, now,
+        "INSERT INTO inventory (product_name, model, size, color, style, code, category, attrs, price, stock, image_url, created_at, updated_at) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13) RETURNING id",
+        product_name, model, size, color, style, new_code, category, attrs_value, price, stock, image_url, now, now,
     )
     return {"id": row["id"], "code": new_code, "category": category, "image_url": image_url, "message": "Product added"}
 

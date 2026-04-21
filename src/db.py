@@ -162,6 +162,43 @@ async def init_db():
         await conn.execute(
             "ALTER TABLE product_embeddings ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'bag'"
         )
+        # Free-form attribute bag per product (size/colour/material for a
+        # necklace, any future-category fields, etc.). JSONB so we can query
+        # into it later without a new column per attribute.
+        await conn.execute(
+            "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS attrs JSONB NOT NULL DEFAULT '{}'::jsonb"
+        )
+        # Categories registry — lets the owner define new product categories
+        # (e.g. ქამრები, ყუთები) from the admin UI with their own custom
+        # field list (ფერი, სიგრძე, მასალა, …). Seeded below with the
+        # two built-in categories we already ship with.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS categories (
+                slug TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                emoji TEXT NOT NULL DEFAULT '📦',
+                fields JSONB NOT NULL DEFAULT '[]'::jsonb,
+                sort_order INTEGER NOT NULL DEFAULT 100,
+                created_at TEXT NOT NULL
+            )
+        """)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        await conn.execute(
+            """INSERT INTO categories (slug, name, emoji, fields, sort_order, created_at)
+               VALUES ($1, $2, $3, $4::jsonb, $5, $6)
+               ON CONFLICT (slug) DO NOTHING""",
+            'bag', 'ჩანთები', '💼',
+            json.dumps([{"key": "model", "label": "მოდელი"}, {"key": "size", "label": "ზომა"}]),
+            10, now_iso,
+        )
+        await conn.execute(
+            """INSERT INTO categories (slug, name, emoji, fields, sort_order, created_at)
+               VALUES ($1, $2, $3, $4::jsonb, $5, $6)
+               ON CONFLICT (slug) DO NOTHING""",
+            'necklace', 'ყელსაბამები', '📿',
+            json.dumps([{"key": "length", "label": "სიგრძე"}, {"key": "material", "label": "მასალა"}]),
+            20, now_iso,
+        )
 
 
 async def save_message(conversation_id: str, role: str, content: str, tool_calls: list | None = None):

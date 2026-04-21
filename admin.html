@@ -328,6 +328,37 @@
         .msg.bot .bubble { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
         .msg .ts { font-size: 10px; color: var(--muted); margin-top: 4px; padding: 0 4px; }
 
+        /* ── Modal (add category) ───────────────────── */
+        .modal-backdrop {
+            position: fixed; inset: 0; background: rgba(23,20,14,0.45); backdrop-filter: blur(4px);
+            display: none; z-index: 100; align-items: center; justify-content: center; padding: 20px;
+        }
+        .modal-backdrop.open { display: flex; }
+        .modal {
+            background: var(--surface); border-radius: var(--radius-lg); padding: 24px;
+            box-shadow: var(--shadow-md); max-width: 480px; width: 100%;
+            max-height: calc(100vh - 40px); overflow-y: auto;
+            animation: fade .2s var(--ease);
+        }
+        .modal h2 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+        .modal .hint { color: var(--muted); font-size: 12.5px; margin-bottom: 18px; }
+        .modal label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; margin-bottom: 5px; margin-top: 12px; }
+        .modal input[type="text"] {
+            width: 100%; padding: 10px 12px; font-size: 14px;
+            border: 1px solid var(--border); border-radius: 8px;
+            background: var(--surface-2); color: var(--text);
+        }
+        .modal input[type="text"]:focus { outline: none; border-color: var(--accent); background: var(--surface); }
+        .modal .fields-row {
+            display: grid; grid-template-columns: 100px 1fr auto; gap: 8px; margin-bottom: 6px; align-items: center;
+        }
+        .modal .fields-row input { padding: 7px 10px; font-size: 13px; }
+        .modal .fields-row .x-btn {
+            width: 28px; height: 28px; border-radius: 50%; background: var(--danger-soft);
+            color: var(--danger); border: none; cursor: pointer; font-size: 14px;
+        }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+
         /* ── Mobile layout ──────────────────────── */
         @media (max-width: 900px) {
             .shell { grid-template-columns: 1fr; }
@@ -387,15 +418,10 @@
 
         <div class="cat-group">
             <div class="side-title" style="padding-top:0">Catalog</div>
-            <button class="cat-item active" type="button" data-category="bag" onclick="switchCategory('bag', this)">
-                <span class="dot"></span>
-                ჩანთები
-                <span class="count" id="sidebar-bags-count">0</span>
-            </button>
-            <button class="cat-item" type="button" data-category="necklace" onclick="switchCategory('necklace', this)">
-                <span class="dot"></span>
-                ყელსაბამები
-                <span class="count" id="sidebar-necklaces-count">0</span>
+            <div id="sidebar-categories"></div>
+            <button class="cat-item" type="button" onclick="openAddCategoryModal()" style="margin-top:6px;color:var(--hi-ink);border:1px dashed var(--border);background:transparent">
+                <span style="font-size:14px">+</span>
+                ახალი კატეგორია
             </button>
         </div>
 
@@ -539,6 +565,26 @@
 
 <input type="file" id="fileInput" class="hidden-input" accept="image/*" onchange="handleFileUpload(this)">
 
+<div class="modal-backdrop" id="cat-modal" onclick="if(event.target===this) closeAddCategoryModal()">
+    <div class="modal">
+        <h2>ახალი კატეგორია</h2>
+        <p class="hint">მაგ: ქამრები, ყუთები, ყურსასმენები — ყველა კატეგორიას შეიძლება თავისი ველები (ფერი, ზომა, მასალა) ჰქონდეს.</p>
+        <label>ემოჯი</label>
+        <input type="text" id="cat-emoji" value="📦" maxlength="4" style="width:80px;text-align:center;font-size:18px">
+        <label>კატეგორიის სახელი</label>
+        <input type="text" id="cat-name" placeholder="მაგ: ქამრები">
+        <label>Slug (ინგლისურად, უნიკალური)</label>
+        <input type="text" id="cat-slug" placeholder="belts">
+        <label>ველები (ტეგები)</label>
+        <div id="cat-fields"></div>
+        <button class="btn btn-ghost btn-sm" onclick="addCatFieldRow()" style="margin-top:6px">+ ველის დამატება</button>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeAddCategoryModal()">გაუქმება</button>
+            <button class="btn btn-primary" onclick="submitNewCategory()">შენახვა</button>
+        </div>
+    </div>
+</div>
+
 <div class="drawer-backdrop" id="drawer-backdrop" onclick="closeConversation()"></div>
 <aside class="drawer" id="drawer">
     <div class="drawer-head">
@@ -598,22 +644,95 @@
 
     let allOrders = [];
     let activeCategory = 'bag';
-    const CATEGORY_LABELS = { bag: 'ჩანთები', necklace: 'ყელსაბამები' };
+    let allCategories = [];
+
+    function categoryBySlug(slug) {
+        return allCategories.find(c => c.slug === slug) || { slug, name: slug, emoji: '📦', fields: [] };
+    }
+
+    async function loadCategories() {
+        try {
+            const d = await (await fetch(API + '/api/categories')).json();
+            allCategories = d.categories || [];
+        } catch (e) {
+            allCategories = [
+                { slug: 'bag', name: 'ჩანთები', emoji: '💼', fields: [], count: 0 },
+            ];
+        }
+        renderSidebarCategories();
+    }
+
+    function renderSidebarCategories() {
+        const host = document.getElementById('sidebar-categories');
+        if (!host) return;
+        host.innerHTML = allCategories.map(c => `
+            <button class="cat-item ${c.slug === activeCategory ? 'active' : ''}" type="button" data-category="${c.slug}" onclick="switchCategory('${c.slug}', this)">
+                <span class="dot"></span>
+                ${c.emoji || '📦'} ${c.name}
+                <span class="count">${c.count}</span>
+            </button>`).join('');
+    }
 
     function switchCategory(cat, btn) {
         activeCategory = cat;
         document.querySelectorAll('.cat-item').forEach(b => b.classList.remove('active'));
         if (btn) btn.classList.add('active');
-        // Update crumb if we're on a catalog tab
+        const catDef = categoryBySlug(cat);
         const tab = document.querySelector('.nav-item.active')?.dataset?.tab;
         if (tab === 'inventory' || tab === 'pairs' || tab === 'extra-photos') {
-            document.getElementById('page-crumb').textContent = 'Catalog · ' + (CATEGORY_LABELS[cat] || cat);
+            document.getElementById('page-crumb').textContent = 'Catalog · ' + catDef.name;
         }
-        // Update topbar action button label per category
         const addBtn = document.querySelector('#topbar-actions .btn-primary');
-        if (addBtn) addBtn.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> ახალი ${cat === 'necklace' ? 'ყელსაბამი' : 'მოდელი'}`;
-        // Re-render inventory grid with the new filter
+        if (addBtn) addBtn.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> ახალი ${catDef.name.replace(/ები$/, 'ი')}`;
         renderGrid();
+    }
+
+    // ── Add category modal ──────────────────────
+    function openAddCategoryModal() {
+        document.getElementById('cat-name').value = '';
+        document.getElementById('cat-slug').value = '';
+        document.getElementById('cat-emoji').value = '📦';
+        document.getElementById('cat-fields').innerHTML = '';
+        addCatFieldRow();
+        document.getElementById('cat-modal').classList.add('open');
+    }
+    function closeAddCategoryModal() {
+        document.getElementById('cat-modal').classList.remove('open');
+    }
+    function addCatFieldRow(key = '', label = '') {
+        const host = document.getElementById('cat-fields');
+        const row = document.createElement('div');
+        row.className = 'fields-row';
+        row.innerHTML = `
+            <input type="text" placeholder="key (ინგლ.)" value="${key}">
+            <input type="text" placeholder="ლეიბლი (მაგ: ფერი)" value="${label}">
+            <button class="x-btn" onclick="this.parentElement.remove()">×</button>`;
+        host.appendChild(row);
+    }
+    async function submitNewCategory() {
+        const name = document.getElementById('cat-name').value.trim();
+        let slug = document.getElementById('cat-slug').value.trim().toLowerCase();
+        const emoji = document.getElementById('cat-emoji').value.trim() || '📦';
+        if (!name) { alert('სახელი შეავსე'); return; }
+        if (!slug) slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'cat' + Date.now();
+        const fields = [...document.querySelectorAll('#cat-fields .fields-row')].map(r => {
+            const [keyIn, labelIn] = r.querySelectorAll('input');
+            return { key: keyIn.value.trim(), label: labelIn.value.trim() };
+        }).filter(f => f.key && f.label);
+        try {
+            const res = await fetch(API + '/api/categories', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ slug, name, emoji, fields }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'უცნობი შეცდომა' }));
+                alert('შეცდომა: ' + (err.detail || ''));
+                return;
+            }
+            closeAddCategoryModal();
+            await loadCategories();
+            switchCategory(slug, document.querySelector(`.cat-item[data-category="${slug}"]`));
+        } catch (e) { alert('შეცდომა: ' + e.message); }
     }
 
     // ── Conversation viewer ─────────────────────
@@ -859,7 +978,11 @@
             const isSoldOut = i.stock === 0;
             const hasBack = i.image_url_back && i.image_url_back.length > 1;
             const cat = i.category || 'bag';
-            const attrBlock = (cat === 'bag') ? `
+            const catDef = categoryBySlug(cat);
+            const attrs = (i.attrs && typeof i.attrs === 'object') ? i.attrs : (i.attrs ? (()=>{ try{return JSON.parse(i.attrs)}catch(_){return {}} })() : {});
+            let attrBlock;
+            if (cat === 'bag') {
+                attrBlock = `
                     <div style="display:flex;gap:6px;margin-top:2px">
                         <select style="flex:1" onchange="setLabel(${i.id},'model',this.value)">
                             <option value="ფხრიწიანი" ${i.model==='ფხრიწიანი'?'selected':''}>ფხრიწიანი</option>
@@ -869,9 +992,14 @@
                             <option value="პატარა (33x25)" ${i.size.includes('პატარა')?'selected':''}>პატარა</option>
                             <option value="დიდი (37x27)" ${i.size.includes('დიდი')?'selected':''}>დიდი</option>
                         </select>
-                    </div>` : `
-                    <input type="text" value="${i.size || ''}" placeholder="ზომა / სიგრძე (მაგ: 45სმ)" style="margin-top:4px"
-                        onchange="setLabel(${i.id},'size',this.value)">`;
+                    </div>`;
+            } else {
+                const fields = (catDef.fields && catDef.fields.length) ? catDef.fields : [{key:'size',label:'ზომა'}];
+                attrBlock = '<div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">' + fields.map(f => {
+                    const val = (attrs[f.key] ?? '').toString().replace(/"/g, '&quot;');
+                    return `<input type="text" placeholder="${f.label}" value="${val}" onchange="setAttr(${i.id},'${f.key}',this.value)">`;
+                }).join('') + '</div>';
+            }
             return `
             <div class="product-card ${isSoldOut ? 'sold-out' : ''}" data-id="${i.id}">
                 ${isSoldOut ? `<div class="sold-overlay"><span>Sold out</span><button onclick="event.stopPropagation();restock(${i.id})">დაბრუნება</button></div>` : ''}
@@ -1078,6 +1206,21 @@
         await fetch(API+'/api/inventory/'+id+'?'+field+'='+encodeURIComponent(value), {method:'PUT'});
         loadData();
     }
+
+    async function setAttr(id, key, value) {
+        await fetch(API+'/api/inventory/'+id+'/attr', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key, value }),
+        });
+        // Update local cache so we don't need a full reload
+        const item = allInventory.find(i => i.id === id);
+        if (item) {
+            if (typeof item.attrs === 'string') {
+                try { item.attrs = JSON.parse(item.attrs); } catch { item.attrs = {}; }
+            } else if (!item.attrs) item.attrs = {};
+            item.attrs[key] = value;
+        }
+    }
     async function del(id) {
         if (confirm('წავშალოთ?')) { await fetch(API+'/api/inventory/'+id,{method:'DELETE'}); loadData(); }
     }
@@ -1098,23 +1241,32 @@
             fd.append('size', s);
             fd.append('price', p);
             fd.append('stock', 1);
+            fd.append('attrs_json', '{}');
         } else {
-            // Necklace flow — ask for price and length only. Code auto-generates (NCn).
-            const priceStr = prompt('ყელსაბამის ფასი (₾)?', '45');
+            // Custom category — ask for price, then one prompt per field defined
+            // on the category. Values go into the attrs JSONB.
+            const catDef = categoryBySlug(activeCategory);
+            const priceStr = prompt(`${catDef.name.replace(/ები$/,'ი')} — ფასი (₾)?`, '45');
             if (!priceStr) return;
             const price = parseFloat(priceStr);
             if (isNaN(price) || price <= 0) { alert('არასწორი ფასი'); return; }
-            const length = prompt('სიგრძე? (მაგ: 45სმ)', '45სმ') || '';
-            fd.append('product_name', 'Tissu necklace');
+            const attrs = {};
+            for (const f of (catDef.fields || [])) {
+                const v = prompt(`${f.label}?`, '') || '';
+                if (v) attrs[f.key] = v;
+            }
+            fd.append('product_name', catDef.name.replace(/ები$/,'ი'));
             fd.append('model', '');
-            fd.append('size', length);
+            fd.append('size', '');
             fd.append('price', price);
             fd.append('stock', 1);
+            fd.append('attrs_json', JSON.stringify(attrs));
         }
 
         fd.append('color', '');
         fd.append('style', '');
         await fetch(API+'/api/inventory', {method:'POST', body:fd});
+        await loadCategories();
         loadData();
     }
 
@@ -1255,8 +1407,12 @@
         }
     }
 
-    // Initial render — dashboard is the default landing view
-    showTab('dashboard', document.querySelector('.nav-item[data-tab="dashboard"]'));
+    // Initial render — load categories first (so the sidebar renders), then
+    // open the dashboard as the default landing view.
+    loadCategories().then(() => {
+        showTab('dashboard', document.querySelector('.nav-item[data-tab="dashboard"]'));
+    });
+    window.addEventListener('keydown', e => { if (e.key === 'Escape') closeAddCategoryModal(); });
 </script>
 </body>
 </html>
