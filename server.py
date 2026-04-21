@@ -602,6 +602,40 @@ async def dashboard():
     }
 
 
+# ── Conversation viewer (admin) ─────────────────────────────
+
+@app.get("/api/conversations/{conversation_id}/messages")
+async def conversation_messages(conversation_id: str):
+    """Return every message in a conversation with the system-tag noise
+    stripped from customer lines. Used by the admin conversation viewer to
+    let the owner replay an entire chat without leaving the UI."""
+    from src.insights import clean_user_message
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT id, role, content, created_at "
+        "FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC, id ASC",
+        conversation_id,
+    )
+    out = []
+    for r in rows:
+        content = r["content"] or ""
+        role = r["role"]
+        # Skip synthetic user-side "[customer sent a photo]" hints — those
+        # are system notes we inject for the LLM, not real customer messages.
+        if role == "user":
+            cleaned = clean_user_message(content)
+            if not cleaned:
+                continue
+            content = cleaned
+        out.append({
+            "id": r["id"],
+            "role": role,
+            "content": content,
+            "created_at": r["created_at"],
+        })
+    return {"conversation_id": conversation_id, "messages": out}
+
+
 # ── Insights (admin signals) ────────────────────────────────
 
 @app.get("/api/insights/complaints")

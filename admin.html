@@ -296,6 +296,38 @@
 
         .hidden-input { display: none; }
 
+        /* ── Conversation viewer drawer ─────────── */
+        .drawer-backdrop {
+            position: fixed; inset: 0; background: rgba(23,20,14,0.45);
+            display: none; z-index: 90;
+            backdrop-filter: blur(4px);
+        }
+        .drawer-backdrop.open { display: block; animation: fade .2s var(--ease); }
+        .drawer {
+            position: fixed; top: 0; right: 0; bottom: 0; width: min(520px, 100vw);
+            background: var(--bg); z-index: 91;
+            display: none; flex-direction: column;
+            box-shadow: -8px 0 40px rgba(23,20,14,0.12);
+            transform: translateX(100%); transition: transform .25s var(--ease);
+        }
+        .drawer.open { display: flex; transform: translateX(0); }
+        .drawer-head { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--surface); }
+        .drawer-head h2 { font-size: 14px; font-weight: 600; }
+        .drawer-head .sub { font-size: 11px; color: var(--muted); font-family: ui-monospace, "SF Mono", monospace; margin-top: 2px; }
+        .drawer-body { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+        .drawer-close { background: transparent; border: 1px solid var(--border); border-radius: 8px; width: 32px; height: 32px; cursor: pointer; display: grid; place-items: center; color: var(--muted); }
+        .drawer-close:hover { background: var(--surface-2); color: var(--text); }
+        .msg { display: flex; flex-direction: column; max-width: 82%; }
+        .msg.user { align-self: flex-end; align-items: flex-end; }
+        .msg.bot { align-self: flex-start; align-items: flex-start; }
+        .msg .bubble {
+            padding: 9px 13px; border-radius: 14px; font-size: 13.5px; line-height: 1.45;
+            word-break: break-word; white-space: pre-wrap;
+        }
+        .msg.user .bubble { background: var(--accent); color: var(--surface); border-bottom-right-radius: 4px; }
+        .msg.bot .bubble { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+        .msg .ts { font-size: 10px; color: var(--muted); margin-top: 4px; padding: 0 4px; }
+
         /* ── Mobile layout ──────────────────────── */
         @media (max-width: 900px) {
             .shell { grid-template-columns: 1fr; }
@@ -507,6 +539,20 @@
 
 <input type="file" id="fileInput" class="hidden-input" accept="image/*" onchange="handleFileUpload(this)">
 
+<div class="drawer-backdrop" id="drawer-backdrop" onclick="closeConversation()"></div>
+<aside class="drawer" id="drawer">
+    <div class="drawer-head">
+        <div>
+            <h2>ჩატის ისტორია</h2>
+            <div class="sub" id="drawer-cid"></div>
+        </div>
+        <button class="drawer-close" onclick="closeConversation()" title="დახურვა">
+            <svg style="width:16px;height:16px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+    </div>
+    <div class="drawer-body" id="drawer-body"></div>
+</aside>
+
 <script>
     const API = window.location.origin;
     let filterModel = '';
@@ -551,6 +597,44 @@
     }
 
     let allOrders = [];
+
+    // ── Conversation viewer ─────────────────────
+    async function openConversation(conversationId) {
+        if (!conversationId) return;
+        document.getElementById('drawer-cid').textContent = conversationId;
+        document.getElementById('drawer-body').innerHTML = '<p style="color:var(--muted);text-align:center;padding:20px">იტვირთება…</p>';
+        document.getElementById('drawer').classList.add('open');
+        document.getElementById('drawer-backdrop').classList.add('open');
+        try {
+            const data = await (await fetch(API + '/api/conversations/' + encodeURIComponent(conversationId) + '/messages')).json();
+            const msgs = data.messages || [];
+            if (!msgs.length) {
+                document.getElementById('drawer-body').innerHTML = '<p style="color:var(--muted);text-align:center;padding:20px">ამ საუბარში მესიჯები არ არის</p>';
+                return;
+            }
+            document.getElementById('drawer-body').innerHTML = msgs.map(m => {
+                const who = (m.role === 'user') ? 'user' : 'bot';
+                const time = new Date(m.created_at).toLocaleString('ka-GE');
+                const text = (m.content || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                return `<div class="msg ${who}">
+                    <div class="bubble">${text}</div>
+                    <div class="ts">${who === 'user' ? 'კლიენტი' : 'ბოტი'} · ${time}</div>
+                </div>`;
+            }).join('');
+            // Scroll to bottom (most recent)
+            const body = document.getElementById('drawer-body');
+            body.scrollTop = body.scrollHeight;
+        } catch (e) {
+            document.getElementById('drawer-body').innerHTML = '<p style="color:var(--danger);text-align:center;padding:20px">ჩატი ვერ ჩაიტვირთა</p>';
+            console.error('Conversation load failed:', e);
+        }
+    }
+
+    function closeConversation() {
+        document.getElementById('drawer').classList.remove('open');
+        document.getElementById('drawer-backdrop').classList.remove('open');
+    }
+    window.addEventListener('keydown', e => { if (e.key === 'Escape') closeConversation(); });
 
     function onGlobalSearch(rawQuery) {
         const q = (rawQuery || '').trim().toLowerCase();
@@ -852,9 +936,9 @@
         try {
             const c = await (await fetch(API + '/api/insights/complaints')).json();
             document.getElementById('complaints-table').innerHTML = (c.complaints||[]).map(x => `
-                <tr>
+                <tr style="cursor:pointer" onclick="openConversation('${x.conversation_id}')">
                     <td style="white-space:nowrap;font-size:12px;color:var(--muted)">${new Date(x.created_at).toLocaleString('ka-GE')}</td>
-                    <td style="font-size:11px;color:var(--muted)">${x.conversation_id.slice(0,30)}</td>
+                    <td style="font-size:11px;color:var(--hi-ink);font-weight:600;text-decoration:underline">${x.conversation_id.slice(0,30)}</td>
                     <td style="font-size:12.5px;color:var(--text-2)">${(x.bot_reply_before||'—').replace(/[<>]/g,'')}</td>
                     <td style="font-weight:600">${(x.customer_message||'').replace(/[<>]/g,'')}</td>
                 </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:30px">ჯერ არ არის ხარვეზები ✨</td></tr>';
