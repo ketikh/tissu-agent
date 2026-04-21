@@ -9,8 +9,13 @@ from src.db import get_db
 from src.engine import Tool
 
 
-async def check_inventory(model: str = "", size: str = "", search: str = "") -> dict:
-    """Check what's in stock. Can filter by model, size, or search by tags/description."""
+async def check_inventory(model: str = "", size: str = "", search: str = "", on_sale: bool = False) -> dict:
+    """Check what's in stock. Can filter by model, size, tags, or sale status.
+
+    When on_sale=True we return only products that the owner has marked as
+    discounted in the admin panel — used when a customer asks whether we
+    have any current promotions.
+    """
     pool = await get_db()
     # Bag-only guard: the master bot is currently bag-aware only. We never
     # return necklaces (or any future category) from this tool so the bot
@@ -19,6 +24,8 @@ async def check_inventory(model: str = "", size: str = "", search: str = "") -> 
     query = "SELECT * FROM inventory WHERE stock > 0 AND category = 'bag'"
     params = []
     idx = 1
+    if on_sale:
+        query += " AND on_sale = true"
     if model:
         query += f" AND model ILIKE ${idx}"
         params.append(f"%{model}%")
@@ -57,6 +64,11 @@ async def check_inventory(model: str = "", size: str = "", search: str = "") -> 
             "size": row["size"],
             "price": row["price"],
         }
+        if row.get("on_sale"):
+            item["on_sale"] = True
+            sp = row.get("sale_price")
+            if sp is not None and sp > 0:
+                item["sale_price"] = sp
         if row.get("image_url"):
             item["image_url"] = row["image_url"]
         if row.get("image_url_back"):
@@ -285,13 +297,14 @@ async def forward_photo_to_owner(size: str, conversation_id: str = "") -> dict:
 SUPPORT_TOOLS = [
     Tool(
         name="check_inventory",
-        description="მარაგის შემოწმება. ფილტრავს მოდელით, ზომით, ან ტეგებით/ფერით.",
+        description="მარაგის შემოწმება. ფილტრავს მოდელით, ზომით, ან ტეგებით/ფერით. on_sale=true — მხოლოდ ფასდაკლებული პროდუქტები.",
         parameters={
             "type": "object",
             "properties": {
                 "model": {"type": "string", "description": "'ფხრიწიანი' ან 'თასმიანი'"},
                 "size": {"type": "string", "description": "'პატარა' ან 'დიდი'"},
                 "search": {"type": "string", "description": "ძიება ფერით ან აღწერით"},
+                "on_sale": {"type": "boolean", "description": "true — მხოლოდ ფასდაკლებული პროდუქტები (აქცია)"},
             },
             "required": [],
         },

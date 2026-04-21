@@ -487,7 +487,7 @@ async def add_inventory(
 
 
 @app.put("/api/inventory/{item_id}")
-async def update_inventory(item_id: int, stock: int = None, price: float = None, model: str = None, size: str = None, color: str = None, tags: str = None):
+async def update_inventory(item_id: int, stock: int = None, price: float = None, model: str = None, size: str = None, color: str = None, tags: str = None, on_sale: bool = None, sale_price: float = None):
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
     if stock is not None:
@@ -503,6 +503,12 @@ async def update_inventory(item_id: int, stock: int = None, price: float = None,
         await pool.execute("UPDATE inventory SET color = $1, updated_at = $2 WHERE id = $3", color, now, item_id)
     if tags is not None:
         await pool.execute("UPDATE inventory SET tags = $1, updated_at = $2 WHERE id = $3", tags, now, item_id)
+    if on_sale is not None:
+        await pool.execute("UPDATE inventory SET on_sale = $1, updated_at = $2 WHERE id = $3", on_sale, now, item_id)
+    if sale_price is not None:
+        # Passing a literal 0 or negative clears the sale price back to null.
+        sp = sale_price if sale_price > 0 else None
+        await pool.execute("UPDATE inventory SET sale_price = $1, updated_at = $2 WHERE id = $3", sp, now, item_id)
     return {"message": f"Item #{item_id} updated"}
 
 
@@ -686,6 +692,20 @@ async def delete_pair(pair_id: int):
 @app.get("/api/health")
 async def health_check():
     return {"status": "ok", "agents": ["support_sales", "marketing"], "version": "0.2.0"}
+
+
+# ── Sale (discounted products) ─────────────
+
+@app.get("/api/sale")
+async def list_sale():
+    """Return every product currently marked on sale, across all categories.
+    Powers the admin Sale tab and the bot when customers ask about discounts."""
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT * FROM inventory WHERE on_sale = true AND stock > 0 "
+        "ORDER BY category, model, size, code"
+    )
+    return {"sale": [dict(r) for r in rows]}
 
 
 # ── Dashboard (admin home) ──────────────────

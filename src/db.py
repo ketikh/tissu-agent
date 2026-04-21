@@ -168,6 +168,15 @@ async def init_db():
         await conn.execute(
             "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS attrs JSONB NOT NULL DEFAULT '{}'::jsonb"
         )
+        # Sale flags — products marked on_sale surface in the ფასდაკლება admin
+        # tab and in the bot when a customer asks about discounts. Sale_price
+        # is optional: if null, the regular price applies with a visual flag.
+        await conn.execute(
+            "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS on_sale BOOLEAN NOT NULL DEFAULT false"
+        )
+        await conn.execute(
+            "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS sale_price REAL"
+        )
         # Categories registry — lets the owner define new product categories
         # (e.g. ქამრები, ყუთები) from the admin UI with their own custom
         # field list (ფერი, სიგრძე, მასალა, …). Seeded below with the
