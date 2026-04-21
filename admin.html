@@ -5,90 +5,252 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tissu Shop — Admin Panel</title>
     <style>
+        :root {
+            --bg: #F7F5F2;
+            --surface: #FFFFFF;
+            --border: #ECE6DE;
+            --text: #1F1A17;
+            --muted: #8A817B;
+            --accent: #C9876E;        /* warm terracotta — Tissu brand feel */
+            --accent-soft: #F5E5DD;
+            --accent-ink: #8A4B36;
+            --success: #3F8F6C;
+            --success-soft: #DCEFE3;
+            --danger: #C65B52;
+            --danger-soft: #F8DEDB;
+            --zipper: #8E5BA6;
+            --strap: #D68C4A;
+            --shadow-sm: 0 1px 2px rgba(26,20,15,0.04), 0 1px 3px rgba(26,20,15,0.06);
+            --shadow-md: 0 2px 6px rgba(26,20,15,0.06), 0 6px 18px rgba(26,20,15,0.06);
+        }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, sans-serif; background: #f5f5f5; color: #333; }
-        .header { background: #2c3e50; color: white; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
-        .header h1 { font-size: 20px; }
-        .header a { color: #ecf0f1; text-decoration: none; font-size: 14px; }
-        .tabs { display: flex; background: #34495e; }
-        .tabs button { flex: 1; padding: 12px; border: none; background: transparent; color: #bdc3c7; font-size: 14px; cursor: pointer; }
-        .tabs button.active { background: #2c3e50; color: white; font-weight: 600; }
-        .container { max-width: 1200px; margin: 20px auto; padding: 0 16px; }
-        .card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        html, body { font-family: -apple-system, "SF Pro Text", "BPG Nino Mtavruli", "Segoe UI", system-ui, sans-serif; }
+        body { background: var(--bg); color: var(--text); min-height: 100vh; }
+
+        /* ── Header ─────────────────────────────── */
+        .header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 14px 28px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky; top: 0; z-index: 10;
+        }
+        .header .brand { display: flex; align-items: center; gap: 10px; }
+        .header .brand-mark {
+            width: 34px; height: 34px; border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent) 0%, #D9A68C 100%);
+            color: white; display: grid; place-items: center; font-weight: 700; font-size: 15px;
+            box-shadow: var(--shadow-sm);
+        }
+        .header h1 { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+        .header .brand-sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
+        .header a.chat-link {
+            color: var(--text); text-decoration: none; font-size: 13px;
+            padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border);
+            background: var(--surface); transition: all .15s;
+        }
+        .header a.chat-link:hover { border-color: var(--accent); color: var(--accent); }
+
+        /* ── Category strip (future-proofing) ─────── */
+        .category-strip {
+            max-width: 1280px; margin: 20px auto 0; padding: 0 20px;
+            display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+        }
+        .category-strip .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-right: 4px; }
+        .cat-pill {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border);
+            background: var(--surface); color: var(--text); font-size: 13px; font-weight: 500;
+            cursor: pointer; transition: all .15s;
+        }
+        .cat-pill:hover { border-color: var(--accent); }
+        .cat-pill.active { background: var(--accent); color: white; border-color: var(--accent); box-shadow: var(--shadow-sm); }
+        .cat-pill.disabled {
+            opacity: 0.55; cursor: not-allowed; background: transparent;
+            border-style: dashed; color: var(--muted);
+        }
+        .cat-pill .coming { font-size: 10px; background: var(--accent-soft); color: var(--accent-ink);
+            padding: 2px 7px; border-radius: 999px; font-weight: 600; letter-spacing: 0.04em; }
+
+        /* ── Tabs ──────────────────────────────── */
+        .tabs {
+            max-width: 1280px; margin: 12px auto 0; padding: 0 20px;
+            display: flex; gap: 4px; flex-wrap: wrap;
+            border-bottom: 1px solid var(--border);
+        }
+        .tabs button {
+            padding: 10px 14px; border: none; background: transparent;
+            color: var(--muted); font-size: 13px; font-weight: 500; cursor: pointer;
+            border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0;
+            transition: color .15s, border-color .15s, background .15s;
+            display: inline-flex; align-items: center; gap: 6px;
+        }
+        .tabs button:hover { color: var(--text); background: rgba(201,135,110,0.06); }
+        .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+        /* ── Container / Cards ──────────────────── */
+        .container { max-width: 1280px; margin: 16px auto; padding: 0 20px 60px; }
+        .card {
+            background: var(--surface); border-radius: 14px; padding: 22px;
+            margin-bottom: 16px; box-shadow: var(--shadow-sm); border: 1px solid var(--border);
+        }
+        .card h2 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 6px; }
+        .card h3 { font-size: 13px; font-weight: 600; color: var(--text); }
+
+        /* ── Tables ─────────────────────────────── */
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th { background: #ecf0f1; padding: 8px 12px; text-align: left; font-weight: 600; }
-        td { padding: 8px 12px; border-bottom: 1px solid #eee; }
-        .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
-        .btn-primary { background: #3498db; color: white; }
-        .btn-danger { background: #e74c3c; color: white; }
-        .btn-sm { padding: 4px 10px; font-size: 12px; }
-        .hot-badge { background: #e74c3c; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+        thead tr { border-bottom: 1px solid var(--border); }
+        th {
+            padding: 10px 12px; text-align: left; font-weight: 600;
+            font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+            color: var(--muted); background: transparent;
+        }
+        td { padding: 11px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+        tbody tr:hover { background: rgba(247,245,242,0.6); }
+        tbody tr:last-child td { border-bottom: none; }
+
+        /* ── Buttons ───────────────────────────── */
+        .btn { padding: 8px 14px; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; transition: opacity .15s, transform .05s; }
+        .btn:active { transform: translateY(1px); }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:hover { opacity: 0.92; }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-danger:hover { opacity: 0.92; }
+        .btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+        .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+        .btn-sm { padding: 5px 10px; font-size: 12px; border-radius: 6px; }
+
+        .hot-badge { background: var(--danger); color: white; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+
+        /* ── Sections ──────────────────────────── */
         .section { display: none; }
-        .section.active { display: block; }
-        .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 16px; }
-        .stat-card { background: white; border-radius: 8px; padding: 14px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        .stat-card .num { font-size: 26px; font-weight: 700; color: #2c3e50; }
-        .stat-card .label { font-size: 11px; color: #999; margin-top: 2px; }
+        .section.active { display: block; animation: fade .2s ease-out; }
+        @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
-        /* Filter */
-        .filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 12px 20px; background: white; border-radius: 8px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        /* ── Stat cards ─────────────────────────── */
+        .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+        .stat-card {
+            background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+            padding: 16px 18px; box-shadow: var(--shadow-sm);
+            display: flex; flex-direction: column; gap: 4px;
+        }
+        .stat-card .num { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; color: var(--text); }
+        .stat-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
 
-        /* Product Grid */
-        .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+        /* ── Filter bar ─────────────────────────── */
+        .filter-bar {
+            display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+            padding: 12px 16px; background: var(--surface); border-radius: 12px;
+            margin-bottom: 16px; box-shadow: var(--shadow-sm); border: 1px solid var(--border);
+        }
+        .filter-bar b { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; margin-right: 4px; }
 
-        .product-card { background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.1); position: relative; }
-        .product-card.sold-out { opacity: 0.3; pointer-events: none; }
+        /* Keep old button-coloured filters usable — but soften them. */
+        .filter-bar .btn { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+        .filter-bar .btn:hover { border-color: var(--accent); color: var(--accent); }
+
+        /* ── Product grid ───────────────────────── */
+        .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 18px; }
+
+        .product-card {
+            background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+            overflow: hidden; box-shadow: var(--shadow-sm); position: relative;
+            transition: transform .15s, box-shadow .15s;
+        }
+        .product-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+        .product-card.sold-out { opacity: 0.4; pointer-events: none; }
         .product-card.sold-out .sold-overlay { pointer-events: auto; }
-        .sold-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 5; border-radius: 10px; }
-        .sold-overlay span { background: #e74c3c; color: white; font-size: 18px; font-weight: 700; padding: 8px 24px; border-radius: 6px; transform: rotate(-15deg); }
-        .sold-overlay button { position: absolute; bottom: 10px; right: 10px; background: white; border: none; padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; }
+        .sold-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(31,26,23,0.55); display: flex; align-items: center; justify-content: center; z-index: 5; border-radius: 14px; }
+        .sold-overlay span { background: var(--danger); color: white; font-size: 16px; font-weight: 700; padding: 8px 24px; border-radius: 8px; transform: rotate(-12deg); box-shadow: var(--shadow-sm); }
+        .sold-overlay button { position: absolute; bottom: 12px; right: 12px; background: white; border: none; padding: 5px 12px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 600; }
 
-        /* Two photos side by side */
-        .photos { display: grid; grid-template-columns: 1fr 1fr; height: 160px; gap: 2px; background: #f0f0f0; }
-        .photo-slot { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #f8f8f8; }
-        .photo-slot img { width: 100%; height: 160px; object-fit: cover; cursor: grab; }
-        .photo-slot img.drag-over { outline: 3px solid #3498db; }
-        .photo-slot .empty-slot { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 4px; color: #bbb; font-size: 11px; cursor: pointer; border: 2px dashed #ddd; transition: all 0.2s; }
-        .photo-slot .empty-slot:hover, .photo-slot .empty-slot.drag-over { border-color: #3498db; background: #eaf2f8; color: #3498db; }
-        .photo-slot .slot-label { position: absolute; bottom: 3px; left: 3px; background: rgba(0,0,0,0.55); color: white; font-size: 9px; padding: 2px 6px; border-radius: 3px; z-index: 2; cursor: pointer; }
-        .photo-slot .slot-label:hover { background: #3498db; }
-        .photo-slot .remove-btn { position: absolute; top: 3px; right: 3px; background: rgba(231,76,60,0.85); color: white; border: none; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; cursor: pointer; z-index: 2; display: none; }
+        /* Photo slots */
+        .photos { display: grid; grid-template-columns: 1fr 1fr; height: 170px; gap: 2px; background: var(--border); }
+        .photo-slot { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #FAF8F5; }
+        .photo-slot img { width: 100%; height: 170px; object-fit: cover; cursor: grab; }
+        .photo-slot img.drag-over { outline: 3px solid var(--accent); }
+        .photo-slot .empty-slot { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 4px; color: #C7BFB6; font-size: 11px; cursor: pointer; border: 2px dashed var(--border); transition: all .2s; }
+        .photo-slot .empty-slot:hover, .photo-slot .empty-slot.drag-over { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+        .photo-slot .slot-label { position: absolute; bottom: 5px; left: 5px; background: rgba(31,26,23,0.7); color: white; font-size: 9px; padding: 3px 7px; border-radius: 4px; z-index: 2; cursor: pointer; letter-spacing: 0.04em; font-weight: 500; }
+        .photo-slot .slot-label:hover { background: var(--accent); }
+        .photo-slot .remove-btn { position: absolute; top: 5px; right: 5px; background: rgba(198,91,82,0.92); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; cursor: pointer; z-index: 2; display: none; }
         .photo-slot:hover .remove-btn { display: block; }
 
-        .info { padding: 10px 12px; }
-        .model-tag { font-size: 10px; color: white; padding: 2px 7px; border-radius: 10px; }
-        .model-tag.zipper { background: #8e44ad; }
-        .model-tag.strap { background: #e67e22; }
-        .price { font-size: 17px; font-weight: 700; color: #2c3e50; margin: 3px 0; }
-        .stock-control { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
-        .stock-control button { width: 28px; height: 28px; border: none; border-radius: 50%; cursor: pointer; font-size: 16px; font-weight: 700; }
-        .stock-control .minus { background: #fadbd8; color: #e74c3c; }
-        .stock-control .plus { background: #d5f5e3; color: #27ae60; }
-        .stock-control .count { font-size: 18px; font-weight: 700; min-width: 24px; text-align: center; }
-        .stock-control .soldout-btn { margin-left: auto; background: none; border: 1px solid #e74c3c; color: #e74c3c; border-radius: 4px; width: auto; padding: 2px 8px; font-size: 10px; font-weight: 600; }
-        .actions { padding: 0 12px 10px; }
+        .info { padding: 12px 14px 4px; }
+        .info input[type="text"] {
+            width: 100%; font-size: 11px; padding: 6px 8px; border: 1px solid var(--border);
+            border-radius: 6px; margin-bottom: 6px; background: var(--bg); color: var(--text);
+        }
+        .info input[type="text"]:focus { outline: none; border-color: var(--accent); background: var(--surface); }
+        .info select {
+            font-size: 11px; padding: 5px 6px; border-radius: 6px; border: 1px solid var(--border);
+            background: var(--bg); color: var(--text); cursor: pointer;
+        }
+        .info select:focus { outline: none; border-color: var(--accent); }
 
-        /* Add new */
-        .add-card { background: white; border: 3px dashed #ccc; border-radius: 10px; display: flex; align-items: center; justify-content: center; min-height: 280px; cursor: pointer; font-size: 14px; color: #999; transition: all 0.2s; flex-direction: column; gap: 8px; }
-        .add-card:hover { border-color: #3498db; color: #3498db; }
+        .model-tag { font-size: 10px; color: white; padding: 3px 9px; border-radius: 999px; letter-spacing: 0.02em; font-weight: 600; }
+        .model-tag.zipper { background: var(--zipper); }
+        .model-tag.strap { background: var(--strap); }
+        .price { font-size: 18px; font-weight: 700; color: var(--text); margin: 4px 0; letter-spacing: -0.01em; }
+        .product-code {
+            font-size: 13px; font-weight: 700; color: var(--accent-ink);
+            background: var(--accent-soft); padding: 3px 10px; border-radius: 6px;
+            display: inline-block; margin: 6px 0; letter-spacing: 0.04em;
+        }
+        .stock-control { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+        .stock-control button { width: 28px; height: 28px; border: none; border-radius: 50%; cursor: pointer; font-size: 16px; font-weight: 700; transition: transform .05s; }
+        .stock-control button:active { transform: scale(0.95); }
+        .stock-control .minus { background: var(--danger-soft); color: var(--danger); }
+        .stock-control .plus { background: var(--success-soft); color: var(--success); }
+        .stock-control .count { font-size: 17px; font-weight: 700; min-width: 22px; text-align: center; }
+        .stock-control .soldout-btn {
+            margin-left: auto; background: transparent; border: 1px solid var(--danger);
+            color: var(--danger); border-radius: 6px; width: auto; padding: 4px 10px;
+            font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+        }
+        .stock-control .soldout-btn:hover { background: var(--danger); color: white; }
+        .actions { padding: 4px 14px 14px; }
+
+        /* Add new card */
+        .add-card {
+            background: var(--surface); border: 2px dashed var(--border); border-radius: 14px;
+            display: flex; align-items: center; justify-content: center; min-height: 290px;
+            cursor: pointer; font-size: 13px; color: var(--muted); transition: all .2s;
+            flex-direction: column; gap: 8px; font-weight: 500;
+        }
+        .add-card:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
         .add-card .plus-icon { font-size: 40px; font-weight: 300; }
 
-        /* Upload input hidden */
         .hidden-input { display: none; }
+
+        /* Small helper for muted hints */
+        .hint { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>Tissu Shop Admin</h1>
-        <a href="/">Chat Test &rarr;</a>
+        <div class="brand">
+            <div class="brand-mark">T</div>
+            <div>
+                <h1>Tissu Shop</h1>
+                <div class="brand-sub">Admin Panel</div>
+            </div>
+        </div>
+        <a class="chat-link" href="/">Chat Test →</a>
+    </div>
+    <div class="category-strip">
+        <span class="label">კატეგორია</span>
+        <button class="cat-pill active" type="button" title="ჩანთები">💼 ჩანთები</button>
+        <button class="cat-pill disabled" type="button" disabled title="მალე იქნება">📿 ყელსაბამები <span class="coming">მალე</span></button>
     </div>
     <div class="tabs">
-        <button class="active" onclick="showTab('inventory')">მარაგი</button>
+        <button class="active" onclick="showTab('inventory')">📦 მარაგი</button>
         <button onclick="showTab('pairs')">🔗 წყვილები</button>
         <button onclick="showTab('extra-photos')">📷 ფოტოები</button>
-        <button onclick="showTab('leads')">ლიდები</button>
-        <button onclick="showTab('orders')">შეკვეთები</button>
-        <button onclick="showTab('notifications')">შეტყობინებები</button>
+        <button onclick="showTab('orders')">🛒 შეკვეთები</button>
         <button onclick="showTab('insights')">📊 ინსაიტები</button>
     </div>
     <div class="container">
@@ -134,14 +296,15 @@
                 <div id="extra-photos-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:15px"></div>
             </div>
         </div>
-        <div id="tab-leads" class="section">
-            <div class="card"><h2>ლიდები</h2><table><thead><tr><th>სახელი</th><th>ტელეფონი</th><th>Score</th><th>შენიშვნა</th><th>თარიღი</th></tr></thead><tbody id="leads-table"></tbody></table></div>
-        </div>
         <div id="tab-orders" class="section">
-            <div class="card"><h2>შეკვეთები</h2><table><thead><tr><th>#</th><th>კლიენტი</th><th>ტელეფონი</th><th>მისამართი</th><th>ნივთები</th><th>ჯამი</th><th>სტატუსი</th><th></th></tr></thead><tbody id="orders-table"></tbody></table></div>
-        </div>
-        <div id="tab-notifications" class="section">
-            <div class="card"><h2>შეტყობინებები</h2><table><thead><tr><th>თემა</th><th>პრიორიტეტი</th><th>სტატუსი</th><th>თარიღი</th></tr></thead><tbody id="notif-table"></tbody></table></div>
+            <div class="card">
+                <h2>შეკვეთები</h2>
+                <p class="hint">კლიენტების აქტიური შეკვეთები — სტატუსი შეცვალე, კოდი აარჩიე</p>
+                <table>
+                    <thead><tr><th>#</th><th>კლიენტი</th><th>ტელეფონი</th><th>მისამართი</th><th>ნივთები</th><th>ჯამი</th><th>სტატუსი</th><th></th></tr></thead>
+                    <tbody id="orders-table"></tbody>
+                </table>
+            </div>
         </div>
         <div id="tab-insights" class="section">
             <div class="card">
@@ -203,10 +366,10 @@
             const soldOut = items.filter(i => i.stock === 0).length;
 
             document.getElementById('inv-stats').innerHTML = `
-                <div class="stat-card"><div class="num">${items.length}</div><div class="label">სულ</div></div>
+                <div class="stat-card"><div class="num">${items.length}</div><div class="label">სულ მოდელი</div></div>
                 <div class="stat-card"><div class="num">${inStock.length}</div><div class="label">მარაგში</div></div>
                 <div class="stat-card"><div class="num">${totalStock}</div><div class="label">ჯამი ცალი</div></div>
-                <div class="stat-card"><div class="num" style="color:#e74c3c">${soldOut}</div><div class="label">გაყიდული</div></div>
+                <div class="stat-card"><div class="num" style="color:var(--danger)">${soldOut}</div><div class="label">გაყიდული</div></div>
             `;
 
             const grid = document.getElementById('inv-grid');
@@ -259,7 +422,7 @@
                                 <option value="დიდი (37x27)" ${i.size.includes('დიდი')?'selected':''}>დიდი</option>
                             </select>
                         </div>
-                        <div style="font-size:14px;font-weight:bold;color:#8e44ad;margin:4px 0;text-align:center">${i.code || '—'}</div>
+                        <div style="text-align:center;margin:6px 0"><span class="product-code">${i.code || '—'}</span></div>
                         <div class="price">${i.price} ₾</div>
                         <div class="stock-control">
                             <button class="minus" onclick="chg(${i.id},${i.stock-1})">−</button>
@@ -289,8 +452,6 @@
             const inv = await (await fetch(API + '/api/inventory')).json();
             allInventory = inv.inventory;
             renderGrid();
-            const leads = await (await fetch(API + '/api/leads')).json();
-            document.getElementById('leads-table').innerHTML = leads.leads.map(l => `<tr><td>${l.name||'—'}</td><td>${l.phone||'—'}</td><td>${l.score>=80?'<span class="hot-badge">HOT '+l.score+'</span>':l.score}</td><td>${l.notes||'—'}</td><td>${new Date(l.created_at).toLocaleString('ka-GE')}</td></tr>`).join('') || '<tr><td colspan="5">ჯერ არ არის</td></tr>';
             const orders = await (await fetch(API + '/api/orders')).json();
             document.getElementById('orders-table').innerHTML = orders.orders.map(o => `<tr>
                 <td>#${o.id}</td>
@@ -314,8 +475,6 @@
                 </td>
                 <td><button onclick="deleteOrder(${o.id})" style="background:#e74c3c;color:white;border:none;padding:3px 8px;border-radius:4px;cursor:pointer">✕</button></td>
             </tr>`).join('') || '<tr><td colspan="8">ჯერ არ არის</td></tr>';
-            const tickets = await (await fetch(API + '/api/tickets')).json();
-            document.getElementById('notif-table').innerHTML = tickets.tickets.map(t => `<tr><td>${t.subject}</td><td>${t.priority}</td><td>${t.status}</td><td>${new Date(t.created_at).toLocaleString('ka-GE')}</td></tr>`).join('') || '<tr><td colspan="4">ჯერ არ არის</td></tr>';
             loadInsights();
         }
 
