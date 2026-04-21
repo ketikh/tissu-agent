@@ -524,17 +524,24 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
                     best_score, best = chosen_score, chosen_row
                     print(f"[MATCH] Gemini chose ref#{gemini_pick} → product {best['code']} (CLIP={chosen_score:.3f})", flush=True)
                 elif gemini_pick == 0:
-                    # Gemini said none of the CLIP top-3 visually match (e.g. yellow
-                    # customer photo vs purple stored product). Trust Gemini — a
-                    # shape-lookalike in the wrong color is worse than forwarding
-                    # to the owner for a real answer.
-                    print(f"[MATCH] Gemini rejected all candidates (CLIP best was {best_score:.3f} on {best['code']}) — forwarding to owner", flush=True)
-                    return {
-                        "matched": False,
-                        "message": "ვიზუალური შედარებით ვერ მოიძებნა",
-                        "closest_code": best["code"],
-                        "score": round(best_score, 2),
-                    }
+                    # Gemini said none match. But if CLIP is confident the pattern /
+                    # silhouette lines up with a stored product (≥ 0.80), trust the
+                    # pattern match — the customer is usually asking "do you have
+                    # THIS style?" and a close-pattern answer is far more useful
+                    # than "I'll check with the owner" for every photo that isn't
+                    # a pixel-perfect match. Only forward to owner when CLIP itself
+                    # is lukewarm (< 0.80).
+                    if best_score >= 0.80:
+                        print(f"[MATCH] Gemini said 0 but CLIP confident ({best_score:.3f}) — trusting CLIP pick {best['code']}", flush=True)
+                        # fall through — best_score / best already point at CLIP's top
+                    else:
+                        print(f"[MATCH] Gemini rejected all candidates (CLIP best was {best_score:.3f} on {best['code']}) — forwarding to owner", flush=True)
+                        return {
+                            "matched": False,
+                            "message": "ვიზუალური შედარებით ვერ მოიძებნა",
+                            "closest_code": best["code"],
+                            "score": round(best_score, 2),
+                        }
         except Exception as e:
             print(f"[MATCH] Gemini re-rank error (falling back to CLIP): {e}", flush=True)
 
