@@ -149,6 +149,19 @@ async def init_db():
                 used_at TEXT
             );
         """)
+        # ── Migrations ─────────────────────────────
+        # Add a product category column so inventory can hold more than just
+        # bags. Existing rows default to 'bag' so every earlier bot query keeps
+        # returning the same results — necklaces (and future categories) live
+        # under category != 'bag' and are filtered out of the bag-only queries.
+        await conn.execute(
+            "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'bag'"
+        )
+        # Same column on product_embeddings so the photo matcher can scope by
+        # category at query time. Defaults preserve existing bag rows.
+        await conn.execute(
+            "ALTER TABLE product_embeddings ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'bag'"
+        )
 
 
 async def save_message(conversation_id: str, role: str, content: str, tool_calls: list | None = None):

@@ -12,7 +12,11 @@ from src.engine import Tool
 async def check_inventory(model: str = "", size: str = "", search: str = "") -> dict:
     """Check what's in stock. Can filter by model, size, or search by tags/description."""
     pool = await get_db()
-    query = "SELECT * FROM inventory WHERE stock > 0"
+    # Bag-only guard: the master bot is currently bag-aware only. We never
+    # return necklaces (or any future category) from this tool so the bot
+    # can't accidentally recommend a non-bag product to a customer asking
+    # about ჩანთები.
+    query = "SELECT * FROM inventory WHERE stock > 0 AND category = 'bag'"
     params = []
     idx = 1
     if model:

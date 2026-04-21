@@ -356,13 +356,16 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
     # including sold-out items and products that haven't had a Cloud Vision
     # fingerprint computed yet. Cloud Vision fingerprint is optional — CLIP
     # embeddings come from a separate table queried below.
+    # Bag-only scope — category-aware matching arrives with the necklace
+    # rollout. Until then, only bag products are candidates so a necklace
+    # photo can't get a high CLIP score against an unrelated bag.
     rows = await pool.fetch("""
         SELECT i.code, i.id as inventory_id,
                i.model, i.size, i.price, i.image_url, i.image_url_back, i.stock,
                pf.fingerprint
         FROM inventory i
         LEFT JOIN product_fingerprints pf ON ABS(pf.inventory_id) = i.id
-        WHERE i.image_url IS NOT NULL AND i.image_url != ''
+        WHERE i.image_url IS NOT NULL AND i.image_url != '' AND i.category = 'bag'
     """)
     if not rows:
         return {"matched": False, "message": "კატალოგი ცარიელია"}
@@ -407,7 +410,7 @@ async def analyze_and_match(image_bytes: bytes, size: str = "") -> dict:
             clip_rows = await pool.fetch("""
                 SELECT code, embedding
                 FROM product_embeddings
-                WHERE embedding IS NOT NULL
+                WHERE embedding IS NOT NULL AND category = 'bag'
             """)
             for cr in clip_rows:
                 code = cr["code"]

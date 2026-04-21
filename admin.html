@@ -387,15 +387,15 @@
 
         <div class="cat-group">
             <div class="side-title" style="padding-top:0">Catalog</div>
-            <button class="cat-item active" type="button">
+            <button class="cat-item active" type="button" data-category="bag" onclick="switchCategory('bag', this)">
                 <span class="dot"></span>
                 ჩანთები
                 <span class="count" id="sidebar-bags-count">0</span>
             </button>
-            <button class="cat-item" type="button" disabled title="მალე იქნება">
+            <button class="cat-item" type="button" data-category="necklace" onclick="switchCategory('necklace', this)">
                 <span class="dot"></span>
                 ყელსაბამები
-                <span class="coming">მალე</span>
+                <span class="count" id="sidebar-necklaces-count">0</span>
             </button>
         </div>
 
@@ -597,6 +597,24 @@
     }
 
     let allOrders = [];
+    let activeCategory = 'bag';
+    const CATEGORY_LABELS = { bag: 'ჩანთები', necklace: 'ყელსაბამები' };
+
+    function switchCategory(cat, btn) {
+        activeCategory = cat;
+        document.querySelectorAll('.cat-item').forEach(b => b.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+        // Update crumb if we're on a catalog tab
+        const tab = document.querySelector('.nav-item.active')?.dataset?.tab;
+        if (tab === 'inventory' || tab === 'pairs' || tab === 'extra-photos') {
+            document.getElementById('page-crumb').textContent = 'Catalog · ' + (CATEGORY_LABELS[cat] || cat);
+        }
+        // Update topbar action button label per category
+        const addBtn = document.querySelector('#topbar-actions .btn-primary');
+        if (addBtn) addBtn.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> ახალი ${cat === 'necklace' ? 'ყელსაბამი' : 'მოდელი'}`;
+        // Re-render inventory grid with the new filter
+        renderGrid();
+    }
 
     // ── Conversation viewer ─────────────────────
     async function openConversation(conversationId) {
@@ -808,9 +826,20 @@
     }
 
     function renderGrid() {
-        let items = allInventory;
-        if (filterModel) items = items.filter(i => i.model === filterModel);
-        if (filterSize) items = items.filter(i => i.size.includes(filterSize));
+        // Sidebar counts always reflect ALL inventory regardless of filters,
+        // so the user can see "bags 37 / necklaces 2" at a glance.
+        const bagCount = allInventory.filter(i => (i.category || 'bag') === 'bag').length;
+        const neckCount = allInventory.filter(i => i.category === 'necklace').length;
+        document.getElementById('sidebar-bags-count').textContent = bagCount;
+        document.getElementById('sidebar-necklaces-count').textContent = neckCount;
+
+        // Main grid is scoped to the active category — switching via the
+        // sidebar pill flips what the user is editing.
+        let items = allInventory.filter(i => (i.category || 'bag') === activeCategory);
+        if (activeCategory === 'bag') {
+            if (filterModel) items = items.filter(i => i.model === filterModel);
+            if (filterSize) items = items.filter(i => i.size.includes(filterSize));
+        }
         const inStock = items.filter(i => i.stock > 0);
         const totalStock = items.reduce((s, i) => s + i.stock, 0);
         const soldOut = items.filter(i => i.stock === 0).length;
@@ -822,12 +851,27 @@
             <div class="stat-card"><div class="num" style="color:var(--danger)">${soldOut}</div><div class="label">გაყიდული</div></div>
         `;
 
-        document.getElementById('sidebar-bags-count').textContent = allInventory.length;
+        // Bag-specific filters only show on the bag view
+        document.querySelector('.filter-bar').style.display = activeCategory === 'bag' ? 'flex' : 'none';
 
         const grid = document.getElementById('inv-grid');
         const cards = items.map(i => {
             const isSoldOut = i.stock === 0;
             const hasBack = i.image_url_back && i.image_url_back.length > 1;
+            const cat = i.category || 'bag';
+            const attrBlock = (cat === 'bag') ? `
+                    <div style="display:flex;gap:6px;margin-top:2px">
+                        <select style="flex:1" onchange="setLabel(${i.id},'model',this.value)">
+                            <option value="ფხრიწიანი" ${i.model==='ფხრიწიანი'?'selected':''}>ფხრიწიანი</option>
+                            <option value="თასმიანი" ${i.model==='თასმიანი'?'selected':''}>თასმიანი</option>
+                        </select>
+                        <select style="flex:1" onchange="setLabel(${i.id},'size',this.value)">
+                            <option value="პატარა (33x25)" ${i.size.includes('პატარა')?'selected':''}>პატარა</option>
+                            <option value="დიდი (37x27)" ${i.size.includes('დიდი')?'selected':''}>დიდი</option>
+                        </select>
+                    </div>` : `
+                    <input type="text" value="${i.size || ''}" placeholder="ზომა / სიგრძე (მაგ: 45სმ)" style="margin-top:4px"
+                        onchange="setLabel(${i.id},'size',this.value)">`;
             return `
             <div class="product-card ${isSoldOut ? 'sold-out' : ''}" data-id="${i.id}">
                 ${isSoldOut ? `<div class="sold-overlay"><span>Sold out</span><button onclick="event.stopPropagation();restock(${i.id})">დაბრუნება</button></div>` : ''}
@@ -843,7 +887,7 @@
                                 ondrop="dropPhoto(event,${i.id},'front')">
                                 <span style="font-size:22px">+</span>ფოტო
                                </div>`}
-                        <span class="slot-label" onclick="event.stopPropagation();clickUpload(${i.id},'front')" title="ფოტოს ატვირთვა">გარე ↑</span>
+                        <span class="slot-label" onclick="event.stopPropagation();clickUpload(${i.id},'front')" title="ფოტოს ატვირთვა">${cat === 'bag' ? 'გარე ↑' : 'ფრონტი ↑'}</span>
                     </div>
                     <div class="photo-slot"
                         ondragover="event.preventDefault()" ondragenter="slotEnter(event)" ondragleave="slotLeave(event)"
@@ -854,24 +898,15 @@
                             : `<div class="empty-slot" onclick="clickUpload(${i.id},'back')"
                                 ondragover="event.preventDefault()" ondragenter="this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')"
                                 ondrop="dropPhoto(event,${i.id},'back')">
-                                <span style="font-size:22px">+</span>შიდა
+                                <span style="font-size:22px">+</span>${cat === 'bag' ? 'შიდა' : 'დეტალი'}
                                </div>`}
-                        <span class="slot-label" onclick="event.stopPropagation();clickUpload(${i.id},'back')" title="ფოტოს ატვირთვა">შიდა ↑</span>
+                        <span class="slot-label" onclick="event.stopPropagation();clickUpload(${i.id},'back')" title="ფოტოს ატვირთვა">${cat === 'bag' ? 'შიდა ↑' : 'დეტალი ↑'}</span>
                     </div>
                 </div>
                 <div class="info">
                     <input type="text" value="${i.tags || ''}" placeholder="ტეგები (ფერი, სტილი...)"
-                        onchange="setLabel(${i.id},'tags',this.value)" title="მაგ: ყვითელი, ზოლებიანი">
-                    <div style="display:flex;gap:6px;margin-top:2px">
-                        <select style="flex:1" onchange="setLabel(${i.id},'model',this.value)">
-                            <option value="ფხრიწიანი" ${i.model==='ფხრიწიანი'?'selected':''}>ფხრიწიანი</option>
-                            <option value="თასმიანი" ${i.model==='თასმიანი'?'selected':''}>თასმიანი</option>
-                        </select>
-                        <select style="flex:1" onchange="setLabel(${i.id},'size',this.value)">
-                            <option value="პატარა (33x25)" ${i.size.includes('პატარა')?'selected':''}>პატარა</option>
-                            <option value="დიდი (37x27)" ${i.size.includes('დიდი')?'selected':''}>დიდი</option>
-                        </select>
-                    </div>
+                        onchange="setLabel(${i.id},'tags',this.value)" title="მაგ: ოქროსფერი, მარგალიტი">
+                    ${attrBlock}
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
                         <span class="product-code">${i.code || '—'}</span>
                         <div class="price">${i.price} ₾</div>
@@ -1048,18 +1083,35 @@
     }
 
     async function addNewProduct() {
-        const model = prompt('მოდელი?\n1 = ფხრიწიანი\n2 = თასმიანი', '1');
-        if (!model) return;
-        const m = model === '2' ? 'თასმიანი' : 'ფხრიწიანი';
-        const size = prompt('ზომა?\n1 = პატარა (33x25)\n2 = დიდი (37x27)', '1');
-        const s = size === '2' ? 'დიდი (37x27)' : 'პატარა (33x25)';
-        const p = size === '2' ? 74 : 69;
         const fd = new FormData();
-        fd.append('product_name', m === 'თასმიანი' ? 'Tissu with strap' : 'Tissu without strap');
-        fd.append('model', m);
-        fd.append('size', s);
-        fd.append('price', p);
-        fd.append('stock', 1);
+        fd.append('category', activeCategory);
+
+        if (activeCategory === 'bag') {
+            const model = prompt('მოდელი?\n1 = ფხრიწიანი\n2 = თასმიანი', '1');
+            if (!model) return;
+            const m = model === '2' ? 'თასმიანი' : 'ფხრიწიანი';
+            const size = prompt('ზომა?\n1 = პატარა (33x25)\n2 = დიდი (37x27)', '1');
+            const s = size === '2' ? 'დიდი (37x27)' : 'პატარა (33x25)';
+            const p = size === '2' ? 74 : 69;
+            fd.append('product_name', m === 'თასმიანი' ? 'Tissu with strap' : 'Tissu without strap');
+            fd.append('model', m);
+            fd.append('size', s);
+            fd.append('price', p);
+            fd.append('stock', 1);
+        } else {
+            // Necklace flow — ask for price and length only. Code auto-generates (NCn).
+            const priceStr = prompt('ყელსაბამის ფასი (₾)?', '45');
+            if (!priceStr) return;
+            const price = parseFloat(priceStr);
+            if (isNaN(price) || price <= 0) { alert('არასწორი ფასი'); return; }
+            const length = prompt('სიგრძე? (მაგ: 45სმ)', '45სმ') || '';
+            fd.append('product_name', 'Tissu necklace');
+            fd.append('model', '');
+            fd.append('size', length);
+            fd.append('price', price);
+            fd.append('stock', 1);
+        }
+
         fd.append('color', '');
         fd.append('style', '');
         await fetch(API+'/api/inventory', {method:'POST', body:fd});

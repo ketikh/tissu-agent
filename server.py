@@ -287,21 +287,31 @@ def save_uploaded_image(upload: UploadFile, prefix: str) -> str:
 
 
 @app.get("/api/inventory")
-async def list_inventory():
+async def list_inventory(category: str = ""):
+    """List inventory. Omit category to get everything (admin); pass
+    `?category=bag` or `?category=necklace` to scope results — bot-facing
+    callers should always pass category='bag' to avoid cross-category leakage."""
     pool = await get_db()
-    rows = await pool.fetch("SELECT * FROM inventory ORDER BY model, size")
+    if category:
+        rows = await pool.fetch(
+            "SELECT * FROM inventory WHERE category = $1 ORDER BY model, size",
+            category,
+        )
+    else:
+        rows = await pool.fetch("SELECT * FROM inventory ORDER BY model, size")
     return {"inventory": [dict(r) for r in rows]}
 
 
 @app.post("/api/inventory")
 async def add_inventory(
     product_name: str = Form(...),
-    model: str = Form(...),
-    size: str = Form(...),
+    model: str = Form(""),
+    size: str = Form(""),
     price: float = Form(...),
     stock: int = Form(...),
     color: str = Form(""),
     style: str = Form(""),
+    category: str = Form("bag"),
     image: UploadFile = File(None),
 ):
     image_url = ""
@@ -311,11 +321,26 @@ async def add_inventory(
 
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
+
+    # Auto-generate a code if none is picked yet. Bags use the existing
+    # FP/TP/FD/TD convention elsewhere; necklaces get an `NC` prefix so
+    # they're instantly distinguishable and never collide with bag codes.
+    code_prefix = "NC" if category == "necklace" else ""
+    new_code = ""
+    if code_prefix:
+        max_n = await pool.fetchval(
+            "SELECT COALESCE(MAX(CAST(SUBSTRING(code, 3) AS INTEGER)), 0) "
+            "FROM inventory WHERE category = $1 AND code ~ ('^' || $2 || '[0-9]+$')",
+            category, code_prefix,
+        )
+        new_code = f"{code_prefix}{int(max_n or 0) + 1}"
+
     row = await pool.fetchrow(
-        "INSERT INTO inventory (product_name, model, size, color, style, price, stock, image_url, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
-        product_name, model, size, color, style, price, stock, image_url, now, now,
+        "INSERT INTO inventory (product_name, model, size, color, style, code, category, price, stock, image_url, created_at, updated_at) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id",
+        product_name, model, size, color, style, new_code, category, price, stock, image_url, now, now,
     )
-    return {"id": row["id"], "image_url": image_url, "message": "Product added"}
+    return {"id": row["id"], "code": new_code, "category": category, "image_url": image_url, "message": "Product added"}
 
 
 @app.put("/api/inventory/{item_id}")

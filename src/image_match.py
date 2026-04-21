@@ -264,39 +264,40 @@ async def _gemini_text_embedding(text: str) -> list[float]:
         return []
 
 
-async def index_product(inventory_id: int, code: str, model: str, size: str, image_url: str, image_url_back: str = "") -> bool:
-    """Analyze and index a product — both front and back images."""
+async def index_product(inventory_id: int, code: str, model: str, size: str, image_url: str, image_url_back: str = "", category: str = "bag") -> bool:
+    """Analyze and index a product — both front and back images.
+
+    `category` is stored on each embedding row so photo-matching can later
+    scope candidates to the right type (bag vs. necklace) without cross
+    contamination.
+    """
     try:
-        # Generate CLIP embedding for front image
         embedding = await generate_embedding_from_image(image_url=image_url)
         if not embedding:
             logger.error(f"Failed to embed {code} front")
             return False
 
-        # Analyze with Vision for tags
         async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             resp = await client.get(image_url)
             image_bytes = resp.content if resp.status_code == 200 else b""
         tags = await analyze_image(image_bytes) if image_bytes else {}
 
-        # Store front embedding
         pool = await get_db()
         now = datetime.now(timezone.utc).isoformat()
         tags_json = json.dumps(tags, ensure_ascii=False)
         await pool.execute(
-            """INSERT INTO product_embeddings (inventory_id, code, tags, embedding, created_at)
-               VALUES ($1, $2, $3, $4, $5)""",
-            inventory_id, code, tags_json, str(embedding), now,
+            """INSERT INTO product_embeddings (inventory_id, code, tags, embedding, category, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6)""",
+            inventory_id, code, tags_json, str(embedding), category, now,
         )
 
-        # Index back image too (as separate row with negative inventory_id)
         if image_url_back:
             back_embedding = await generate_embedding_from_image(image_url=image_url_back)
             if back_embedding:
                 await pool.execute(
-                    """INSERT INTO product_embeddings (inventory_id, code, tags, embedding, created_at)
-                       VALUES ($1, $2, $3, $4, $5)""",
-                    -inventory_id, code, tags_json, str(back_embedding), now,
+                    """INSERT INTO product_embeddings (inventory_id, code, tags, embedding, category, created_at)
+                       VALUES ($1, $2, $3, $4, $5, $6)""",
+                    -inventory_id, code, tags_json, str(back_embedding), category, now,
                 )
 
         return True
