@@ -196,8 +196,16 @@ async def init_db():
                VALUES ($1, $2, $3, $4::jsonb, $5, $6)
                ON CONFLICT (slug) DO NOTHING""",
             'necklace', 'ყელსაბამები', '📿',
-            json.dumps([{"key": "length", "label": "სიგრძე"}, {"key": "material", "label": "მასალა"}]),
+            json.dumps([]),  # owner adds fields as they need them
             20, now_iso,
+        )
+        # One-shot: if necklace is still carrying the original seeded
+        # schema (length + material), clear it — the owner prefers to
+        # define fields themselves. No-op once they've edited.
+        await conn.execute(
+            """UPDATE categories SET fields = '[]'::jsonb
+               WHERE slug = 'necklace'
+               AND fields = '[{"key": "length", "label": "სიგრძე"}, {"key": "material", "label": "მასალა"}]'::jsonb"""
         )
 
 

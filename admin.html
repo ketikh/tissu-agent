@@ -51,7 +51,13 @@
             background: var(--surface); border-right: 1px solid var(--border);
             display: flex; flex-direction: column; padding: 18px 14px;
             position: sticky; top: 0; height: 100vh; overflow-y: auto;
+            /* Narrow scrollbar so the sidebar doesn't steal visual weight
+               when there are many categories. */
+            scrollbar-width: thin;
+            scrollbar-color: var(--border-strong) transparent;
         }
+        .sidebar::-webkit-scrollbar { width: 6px; }
+        .sidebar::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
         .brand { display: flex; align-items: center; gap: 10px; padding: 6px 10px 22px; }
         .brand-mark {
             width: 32px; height: 32px; border-radius: 9px;
@@ -98,6 +104,15 @@
         .cat-item .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border-strong); flex-shrink: 0; }
         .cat-item .count { margin-left: auto; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
         .cat-item .coming { margin-left: auto; font-size: 10px; background: var(--border); color: var(--text-2); padding: 2px 8px; border-radius: 999px; font-weight: 600; letter-spacing: 0.04em; }
+        .cat-item .gear {
+            width: 24px; height: 24px; border-radius: 6px; background: transparent;
+            border: none; cursor: pointer; color: var(--muted);
+            display: none; align-items: center; justify-content: center; margin-left: 4px;
+        }
+        .cat-item:hover .gear { display: inline-flex; }
+        .cat-item.active .gear { display: inline-flex; color: rgba(255,255,255,0.7); }
+        .cat-item .gear:hover { background: rgba(0,0,0,0.08); color: var(--text); }
+        .cat-item.active .gear:hover { background: rgba(255,255,255,0.15); color: white; }
 
         .side-foot { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--border); }
         .foot-link {
@@ -179,6 +194,10 @@
         }
         .card h2 { font-size: 14px; font-weight: 600; margin-bottom: 4px; letter-spacing: -0.005em; }
         .card .hint { color: var(--muted); font-size: 12.5px; margin-bottom: 14px; }
+
+        /* Dashboard two-up row — collapses on narrower screens. */
+        .dash-row { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; align-items: start; }
+        @media (max-width: 1100px) { .dash-row { grid-template-columns: 1fr; } }
 
         .section { display: none; }
         .section.active { display: block; animation: fade .22s var(--ease); }
@@ -331,13 +350,17 @@
         /* ── Modal (add category) ───────────────────── */
         .modal-backdrop {
             position: fixed; inset: 0; background: rgba(23,20,14,0.45); backdrop-filter: blur(4px);
-            display: none; z-index: 100; align-items: center; justify-content: center; padding: 20px;
+            display: none; z-index: 100;
+            padding: 20px; overflow-y: auto;
+            /* Use block + text-align: center so the modal can grow
+               naturally and the whole backdrop scrolls when it overflows
+               — avoids the case where flex centring clips a tall modal. */
         }
-        .modal-backdrop.open { display: flex; }
+        .modal-backdrop.open { display: block; }
         .modal {
             background: var(--surface); border-radius: var(--radius-lg); padding: 24px;
             box-shadow: var(--shadow-md); max-width: 480px; width: 100%;
-            max-height: calc(100vh - 40px); overflow-y: auto;
+            margin: 40px auto; text-align: left;
             animation: fade .2s var(--ease);
         }
         .modal h2 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
@@ -459,7 +482,7 @@
         <div class="content">
             <div id="tab-dashboard" class="section active">
                 <div class="stat-cards" id="dash-stats"></div>
-                <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:16px;align-items:start">
+                <div class="dash-row">
                     <div class="card">
                         <h2>ბოლო 7 დღე</h2>
                         <p class="hint">ყოველდღიური შეკვეთები და შემოსავალი.</p>
@@ -567,20 +590,28 @@
 
 <div class="modal-backdrop" id="cat-modal" onclick="if(event.target===this) closeAddCategoryModal()">
     <div class="modal">
-        <h2>ახალი კატეგორია</h2>
-        <p class="hint">მაგ: ქამრები, ყუთები, ყურსასმენები — ყველა კატეგორიას შეიძლება თავისი ველები (ფერი, ზომა, მასალა) ჰქონდეს.</p>
-        <label>ემოჯი</label>
-        <input type="text" id="cat-emoji" value="📦" maxlength="4" style="width:80px;text-align:center;font-size:18px">
-        <label>კატეგორიის სახელი</label>
-        <input type="text" id="cat-name" placeholder="მაგ: ქამრები">
-        <label>Slug (ინგლისურად, უნიკალური)</label>
+        <h2 id="cat-modal-title">ახალი კატეგორია</h2>
+        <p class="hint" id="cat-modal-hint">მაგ: ქამრები, ყუთები, ყურსასმენები — ყველა კატეგორიას შეიძლება თავისი ველები (ფერი, ზომა, მასალა) ჰქონდეს.</p>
+        <div style="display:flex;gap:12px;align-items:flex-end">
+            <div>
+                <label>ემოჯი</label>
+                <input type="text" id="cat-emoji" value="📦" maxlength="4" style="width:80px;text-align:center;font-size:18px">
+            </div>
+            <div style="flex:1">
+                <label>კატეგორიის სახელი</label>
+                <input type="text" id="cat-name" placeholder="მაგ: ქამრები">
+            </div>
+        </div>
+        <label id="cat-slug-label">Slug (ინგლისურად, უნიკალური)</label>
         <input type="text" id="cat-slug" placeholder="belts">
         <label>ველები (ტეგები)</label>
+        <p class="hint" style="margin-top:-4px;margin-bottom:8px">აქ ის ველებია რომელიც ავტომატურად ჩანს ყველა პროდუქტის კარტაზე. მაგ: ფერი, მასალა, სტილი. ცარიელი დატოვე თუ არ გინდა.</p>
         <div id="cat-fields"></div>
         <button class="btn btn-ghost btn-sm" onclick="addCatFieldRow()" style="margin-top:6px">+ ველის დამატება</button>
         <div class="modal-actions">
+            <button class="btn btn-danger btn-sm" id="cat-delete-btn" style="margin-right:auto;display:none" onclick="deleteCurrentCategory()">წაშლა</button>
             <button class="btn btn-ghost" onclick="closeAddCategoryModal()">გაუქმება</button>
-            <button class="btn btn-primary" onclick="submitNewCategory()">შენახვა</button>
+            <button class="btn btn-primary" id="cat-save-btn" onclick="submitNewCategory()">შენახვა</button>
         </div>
     </div>
 </div>
@@ -668,8 +699,11 @@
         host.innerHTML = allCategories.map(c => `
             <button class="cat-item ${c.slug === activeCategory ? 'active' : ''}" type="button" data-category="${c.slug}" onclick="switchCategory('${c.slug}', this)">
                 <span class="dot"></span>
-                ${c.emoji || '📦'} ${c.name}
+                <span style="flex:1">${c.emoji || '📦'} ${c.name}</span>
                 <span class="count">${c.count}</span>
+                <span class="gear" onclick="event.stopPropagation();openEditCategoryModal('${c.slug}')" title="ველების რედაქტირება">
+                    <svg style="width:13px;height:13px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.09.21.14.43.14.66V10a2 2 0 0 1 0 4h-.09c-.23 0-.45.05-.66.14z"/></svg>
+                </span>
             </button>`).join('');
     }
 
@@ -678,52 +712,124 @@
         document.querySelectorAll('.cat-item').forEach(b => b.classList.remove('active'));
         if (btn) btn.classList.add('active');
         const catDef = categoryBySlug(cat);
-        const tab = document.querySelector('.nav-item.active')?.dataset?.tab;
-        if (tab === 'inventory' || tab === 'pairs' || tab === 'extra-photos') {
-            document.getElementById('page-crumb').textContent = 'Catalog · ' + catDef.name;
-        }
+        const currentTab = document.querySelector('.nav-item.active')?.dataset?.tab;
         const addBtn = document.querySelector('#topbar-actions .btn-primary');
         if (addBtn) addBtn.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> ახალი ${catDef.name.replace(/ები$/, 'ი')}`;
+        // When the user is on a non-catalog tab (dashboard, orders, insights)
+        // and clicks a category, jump to the inventory view for that category.
+        // Otherwise they'd just see the pill highlight with no visible change.
+        if (currentTab !== 'inventory' && currentTab !== 'pairs' && currentTab !== 'extra-photos') {
+            showTab('inventory', document.querySelector('.nav-item[data-tab="inventory"]'));
+        }
+        document.getElementById('page-crumb').textContent = 'Catalog · ' + catDef.name;
         renderGrid();
     }
 
-    // ── Add category modal ──────────────────────
+    // ── Category modal (add or edit) ────────────
+    let editingCategorySlug = null;
+
     function openAddCategoryModal() {
+        editingCategorySlug = null;
+        document.getElementById('cat-modal-title').textContent = 'ახალი კატეგორია';
+        document.getElementById('cat-modal-hint').textContent = 'მაგ: ქამრები, ყუთები, ყურსასმენები. slug-ი ინგლისურად უნიკალურია.';
         document.getElementById('cat-name').value = '';
         document.getElementById('cat-slug').value = '';
         document.getElementById('cat-emoji').value = '📦';
+        document.getElementById('cat-slug').disabled = false;
+        document.getElementById('cat-slug-label').style.display = '';
+        document.getElementById('cat-slug').style.display = '';
+        document.getElementById('cat-delete-btn').style.display = 'none';
+        document.getElementById('cat-save-btn').textContent = 'შენახვა';
         document.getElementById('cat-fields').innerHTML = '';
-        addCatFieldRow();
         document.getElementById('cat-modal').classList.add('open');
     }
+
+    function openEditCategoryModal(slug) {
+        const cat = categoryBySlug(slug);
+        editingCategorySlug = slug;
+        document.getElementById('cat-modal-title').textContent = `კატეგორიის რედაქტირება: ${cat.name}`;
+        document.getElementById('cat-modal-hint').textContent = 'სახელს, ემოჯის და ველებს შეცვლი; slug-ი უცვლელია. ველი რომ წაშალო, × ღილაკი დააჭირე.';
+        document.getElementById('cat-name').value = cat.name || '';
+        document.getElementById('cat-emoji').value = cat.emoji || '📦';
+        document.getElementById('cat-slug').value = slug;
+        document.getElementById('cat-slug').disabled = true;
+        document.getElementById('cat-slug-label').style.display = 'none';
+        document.getElementById('cat-slug').style.display = 'none';
+        document.getElementById('cat-delete-btn').style.display = (slug === 'bag' || slug === 'necklace') ? 'none' : 'inline-flex';
+        document.getElementById('cat-save-btn').textContent = 'განახლება';
+        const host = document.getElementById('cat-fields');
+        host.innerHTML = '';
+        (cat.fields || []).forEach(f => addCatFieldRow(f.key, f.label));
+        document.getElementById('cat-modal').classList.add('open');
+    }
+
     function closeAddCategoryModal() {
         document.getElementById('cat-modal').classList.remove('open');
+        editingCategorySlug = null;
     }
+
     function addCatFieldRow(key = '', label = '') {
         const host = document.getElementById('cat-fields');
         const row = document.createElement('div');
         row.className = 'fields-row';
         row.innerHTML = `
-            <input type="text" placeholder="key (ინგლ.)" value="${key}">
-            <input type="text" placeholder="ლეიბლი (მაგ: ფერი)" value="${label}">
+            <input type="text" placeholder="key (ინგლ.)" value="${key.replace(/"/g,'&quot;')}">
+            <input type="text" placeholder="ლეიბლი (მაგ: ფერი)" value="${label.replace(/"/g,'&quot;')}">
             <button class="x-btn" onclick="this.parentElement.remove()">×</button>`;
         host.appendChild(row);
     }
+
     async function submitNewCategory() {
         const name = document.getElementById('cat-name').value.trim();
-        let slug = document.getElementById('cat-slug').value.trim().toLowerCase();
         const emoji = document.getElementById('cat-emoji').value.trim() || '📦';
         if (!name) { alert('სახელი შეავსე'); return; }
-        if (!slug) slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'cat' + Date.now();
         const fields = [...document.querySelectorAll('#cat-fields .fields-row')].map(r => {
             const [keyIn, labelIn] = r.querySelectorAll('input');
             return { key: keyIn.value.trim(), label: labelIn.value.trim() };
         }).filter(f => f.key && f.label);
         try {
-            const res = await fetch(API + '/api/categories', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ slug, name, emoji, fields }),
-            });
+            if (editingCategorySlug) {
+                const res = await fetch(API + '/api/categories/' + encodeURIComponent(editingCategorySlug), {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, emoji, fields }),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({ detail: 'უცნობი შეცდომა' }));
+                    alert('შეცდომა: ' + (err.detail || ''));
+                    return;
+                }
+                const prevSlug = editingCategorySlug;
+                closeAddCategoryModal();
+                await loadCategories();
+                // Re-render grid with updated category fields (label/keys changed).
+                renderGrid();
+                // Keep the same category active after editing.
+                const stillActive = document.querySelector(`.cat-item[data-category="${prevSlug}"]`);
+                if (stillActive) stillActive.classList.add('active');
+            } else {
+                let slug = document.getElementById('cat-slug').value.trim().toLowerCase();
+                if (!slug) slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'cat' + Date.now();
+                const res = await fetch(API + '/api/categories', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ slug, name, emoji, fields }),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({ detail: 'უცნობი შეცდომა' }));
+                    alert('შეცდომა: ' + (err.detail || ''));
+                    return;
+                }
+                closeAddCategoryModal();
+                await loadCategories();
+                switchCategory(slug, document.querySelector(`.cat-item[data-category="${slug}"]`));
+            }
+        } catch (e) { alert('შეცდომა: ' + e.message); }
+    }
+
+    async function deleteCurrentCategory() {
+        if (!editingCategorySlug) return;
+        if (!confirm(`წაიშალოს კატეგორია "${editingCategorySlug}"? (თუ რომელიმე პროდუქტი ამ კატეგორიაშია, ჯერ უნდა გადაიტანო ან წაშალო.)`)) return;
+        try {
+            const res = await fetch(API + '/api/categories/' + encodeURIComponent(editingCategorySlug), { method: 'DELETE' });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({ detail: 'უცნობი შეცდომა' }));
                 alert('შეცდომა: ' + (err.detail || ''));
@@ -731,7 +837,8 @@
             }
             closeAddCategoryModal();
             await loadCategories();
-            switchCategory(slug, document.querySelector(`.cat-item[data-category="${slug}"]`));
+            // Fall back to bag if we deleted the active one.
+            switchCategory('bag', document.querySelector('.cat-item[data-category="bag"]'));
         } catch (e) { alert('შეცდომა: ' + e.message); }
     }
 
@@ -945,15 +1052,9 @@
     }
 
     function renderGrid() {
-        // Sidebar counts always reflect ALL inventory regardless of filters,
-        // so the user can see "bags 37 / necklaces 2" at a glance.
-        const bagCount = allInventory.filter(i => (i.category || 'bag') === 'bag').length;
-        const neckCount = allInventory.filter(i => i.category === 'necklace').length;
-        document.getElementById('sidebar-bags-count').textContent = bagCount;
-        document.getElementById('sidebar-necklaces-count').textContent = neckCount;
-
         // Main grid is scoped to the active category — switching via the
-        // sidebar pill flips what the user is editing.
+        // sidebar pill flips what the user is editing. Category counts in
+        // the sidebar come from /api/categories (re-fetched on add/delete).
         let items = allInventory.filter(i => (i.category || 'bag') === activeCategory);
         if (activeCategory === 'bag') {
             if (filterModel) items = items.filter(i => i.model === filterModel);
@@ -994,11 +1095,13 @@
                         </select>
                     </div>`;
             } else {
-                const fields = (catDef.fields && catDef.fields.length) ? catDef.fields : [{key:'size',label:'ზომა'}];
-                attrBlock = '<div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">' + fields.map(f => {
-                    const val = (attrs[f.key] ?? '').toString().replace(/"/g, '&quot;');
-                    return `<input type="text" placeholder="${f.label}" value="${val}" onchange="setAttr(${i.id},'${f.key}',this.value)">`;
-                }).join('') + '</div>';
+                const fields = (catDef.fields && catDef.fields.length) ? catDef.fields : [];
+                attrBlock = fields.length
+                    ? '<div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">' + fields.map(f => {
+                        const val = (attrs[f.key] ?? '').toString().replace(/"/g, '&quot;');
+                        return `<input type="text" placeholder="${f.label}" value="${val}" onchange="setAttr(${i.id},'${f.key}',this.value)">`;
+                    }).join('') + '</div>'
+                    : '';
             }
             return `
             <div class="product-card ${isSoldOut ? 'sold-out' : ''}" data-id="${i.id}">
@@ -1035,9 +1138,14 @@
                     <input type="text" value="${i.tags || ''}" placeholder="ტეგები (ფერი, სტილი...)"
                         onchange="setLabel(${i.id},'tags',this.value)" title="მაგ: ოქროსფერი, მარგალიტი">
                     ${attrBlock}
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:8px">
                         <span class="product-code">${i.code || '—'}</span>
-                        <div class="price">${i.price} ₾</div>
+                        <div style="display:flex;align-items:center;gap:3px">
+                            <input type="number" step="0.5" value="${i.price}" min="0"
+                                style="width:78px;font-size:16px;font-weight:700;padding:4px 6px;border:1px solid var(--border);border-radius:6px;text-align:right;background:var(--surface-2);color:var(--text);font-variant-numeric:tabular-nums"
+                                onchange="setLabel(${i.id},'price',this.value)">
+                            <span style="color:var(--muted);font-size:14px;font-weight:600">₾</span>
+                        </div>
                     </div>
                     <div class="stock-control">
                         <button class="minus" onclick="chg(${i.id},${i.stock-1})">−</button>
@@ -1230,6 +1338,8 @@
         fd.append('category', activeCategory);
 
         if (activeCategory === 'bag') {
+            // Bags have only two sizes with fixed prices, so a tiny prompt
+            // is still the fastest path here — no free-text needed.
             const model = prompt('მოდელი?\n1 = ფხრიწიანი\n2 = თასმიანი', '1');
             if (!model) return;
             const m = model === '2' ? 'თასმიანი' : 'ფხრიწიანი';
@@ -1243,24 +1353,15 @@
             fd.append('stock', 1);
             fd.append('attrs_json', '{}');
         } else {
-            // Custom category — ask for price, then one prompt per field defined
-            // on the category. Values go into the attrs JSONB.
+            // Custom categories — no prompts. Create a blank product and
+            // let the owner fill price / stock / fields inline on the card.
             const catDef = categoryBySlug(activeCategory);
-            const priceStr = prompt(`${catDef.name.replace(/ები$/,'ი')} — ფასი (₾)?`, '45');
-            if (!priceStr) return;
-            const price = parseFloat(priceStr);
-            if (isNaN(price) || price <= 0) { alert('არასწორი ფასი'); return; }
-            const attrs = {};
-            for (const f of (catDef.fields || [])) {
-                const v = prompt(`${f.label}?`, '') || '';
-                if (v) attrs[f.key] = v;
-            }
             fd.append('product_name', catDef.name.replace(/ები$/,'ი'));
             fd.append('model', '');
             fd.append('size', '');
-            fd.append('price', price);
+            fd.append('price', 0);
             fd.append('stock', 1);
-            fd.append('attrs_json', JSON.stringify(attrs));
+            fd.append('attrs_json', '{}');
         }
 
         fd.append('color', '');
