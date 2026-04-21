@@ -270,22 +270,26 @@
         }
 
         /* Price + check button group used across inventory and sale cards. */
-        .price-input-group { display: flex; align-items: center; gap: 4px; }
+        .price-input-group { display: inline-flex; align-items: center; gap: 4px; }
+        .price-input-group .price-cell { position: relative; display: inline-block; }
         .price-input-group input {
-            width: 84px; font-size: 15px; font-weight: 700; padding: 4px 6px;
+            width: 96px; font-size: 14px; font-weight: 700; padding: 5px 22px 5px 8px;
             border: 1px solid var(--border); border-radius: 6px; text-align: right;
             background: var(--surface-2); color: var(--text); font-variant-numeric: tabular-nums;
         }
         .price-input-group input::placeholder {
-            font-size: 11px; font-weight: 500; color: var(--muted);
+            font-size: 10.5px; font-weight: 500; color: var(--muted);
         }
         .price-input-group input:focus { outline: none; border-color: var(--hi); background: var(--surface); }
-        .price-input-group .price-suffix { color: var(--muted); font-size: 14px; font-weight: 600; }
+        .price-input-group .price-suffix {
+            position: absolute; right: 7px; top: 50%; transform: translateY(-50%);
+            color: var(--muted); font-size: 12px; font-weight: 600; pointer-events: none;
+        }
         .price-input-group .price-check {
             width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border);
             background: var(--surface); color: var(--muted); cursor: pointer;
             display: inline-flex; align-items: center; justify-content: center;
-            font-size: 13px; font-weight: 700; transition: all .12s;
+            font-size: 13px; font-weight: 700; transition: all .12s; flex-shrink: 0;
         }
         .price-input-group .price-check:hover { background: var(--success); color: white; border-color: var(--success); }
         .price-input-group.saved .price-check { background: var(--success); color: white; border-color: var(--success); }
@@ -904,11 +908,13 @@
                     </div>
                     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;flex-wrap:wrap">
                         <div class="price-input-group sale">
-                            <input type="number" step="0.5" min="0" value="${i.sale_price ?? ''}" placeholder="ახალი ფასი" id="salecard-${i.id}"
-                                onkeydown="if(event.key==='Enter') this.nextElementSibling.nextElementSibling.click()"
-                                onchange="setSalePrice(${i.id}, this.value, this)">
-                            <span class="price-suffix">₾</span>
-                            <button class="price-check" onclick="const inp=document.getElementById('salecard-${i.id}'); setSalePrice(${i.id}, inp.value, inp); loadSale()" title="შენახვა">✓</button>
+                            <div class="price-cell">
+                                <input type="number" step="0.5" min="0" value="${i.sale_price ?? ''}" placeholder="ახალი ფასი" id="salecard-${i.id}"
+                                    onkeydown="if(event.key==='Enter') document.getElementById('salecard-check-${i.id}').click()"
+                                    onchange="setSalePrice(${i.id}, this.value, this)">
+                                <span class="price-suffix">₾</span>
+                            </div>
+                            <button class="price-check" id="salecard-check-${i.id}" onclick="const inp=document.getElementById('salecard-${i.id}'); setSalePrice(${i.id}, inp.value, inp); loadSale()" title="შენახვა">✓</button>
                         </div>
                         <button class="btn btn-ghost btn-sm" onclick="toggleSale(${i.id}, false)" title="ფასდაკლებიდან ამოღება">გაუქმება</button>
                     </div>
@@ -1374,11 +1380,13 @@
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:8px">
                         <span class="product-code">${i.code || '—'}</span>
                         <div class="price-input-group">
-                            <input type="number" step="0.5" value="${i.price}" min="0" id="price-${i.id}"
-                                onkeydown="if(event.key==='Enter') this.nextElementSibling.nextElementSibling.click()"
-                                onchange="setLabel(${i.id},'price',this.value, this)">
-                            <span class="price-suffix">₾</span>
-                            <button class="price-check" onclick="const inp=document.getElementById('price-${i.id}'); setLabel(${i.id},'price',inp.value, inp)" title="შენახვა">✓</button>
+                            <div class="price-cell">
+                                <input type="number" step="0.5" value="${i.price}" min="0" id="price-${i.id}"
+                                    onkeydown="if(event.key==='Enter') document.getElementById('price-check-${i.id}').click()"
+                                    onchange="setLabel(${i.id},'price',this.value, this)">
+                                <span class="price-suffix">₾</span>
+                            </div>
+                            <button class="price-check" id="price-check-${i.id}" onclick="const inp=document.getElementById('price-${i.id}'); setLabel(${i.id},'price',inp.value, inp)" title="შენახვა">✓</button>
                         </div>
                     </div>
                     <div class="sale-row">
@@ -1387,11 +1395,13 @@
                             ${i.on_sale ? 'ფასდაკლებაშია' : 'ფასდაკლებაში'}
                         </button>
                         ${i.on_sale ? `<div class="price-input-group sale">
-                            <input type="number" step="0.5" value="${i.sale_price ?? ''}" min="0" placeholder="ახალი ფასი" id="sale-${i.id}"
-                                onkeydown="if(event.key==='Enter') this.nextElementSibling.nextElementSibling.click()"
-                                onchange="setSalePrice(${i.id}, this.value, this)">
-                            <span class="price-suffix">₾</span>
-                            <button class="price-check" onclick="const inp=document.getElementById('sale-${i.id}'); setSalePrice(${i.id}, inp.value, inp)" title="შენახვა">✓</button>
+                            <div class="price-cell">
+                                <input type="number" step="0.5" value="${i.sale_price ?? ''}" min="0" placeholder="ახალი ფასი" id="sale-${i.id}"
+                                    onkeydown="if(event.key==='Enter') document.getElementById('sale-check-${i.id}').click()"
+                                    onchange="setSalePrice(${i.id}, this.value, this)">
+                                <span class="price-suffix">₾</span>
+                            </div>
+                            <button class="price-check" id="sale-check-${i.id}" onclick="const inp=document.getElementById('sale-${i.id}'); setSalePrice(${i.id}, inp.value, inp)" title="შენახვა">✓</button>
                         </div>` : ''}
                     </div>
                     <div class="stock-control">
