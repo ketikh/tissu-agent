@@ -71,7 +71,12 @@ async def chat_ui():
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_ui():
     html_path = Path(__file__).parent / "admin.html"
-    return HTMLResponse(html_path.read_text(encoding="utf-8"))
+    # Always serve fresh — the admin HTML is small and iterating on UX
+    # feels broken when browsers cache the previous revision for hours.
+    return HTMLResponse(
+        html_path.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
 
 
 # ── Agent Chat Endpoints ─────────────────────────────────────
@@ -515,7 +520,10 @@ async def set_inventory_attr(item_id: int, request: Request):
 async def list_inventory(category: str = ""):
     """List inventory. Omit category to get everything (admin); pass
     `?category=bag` or `?category=necklace` to scope results — bot-facing
-    callers should always pass category='bag' to avoid cross-category leakage."""
+    callers should always pass category='bag' to avoid cross-category leakage.
+
+    Each row gets an `angles` field with the product's extra angle photos
+    (rows from product_extra_photos where photo_type='angle')."""
     pool = await get_db()
     if category:
         rows = await pool.fetch(
@@ -524,7 +532,65 @@ async def list_inventory(category: str = ""):
         )
     else:
         rows = await pool.fetch("SELECT * FROM inventory ORDER BY model, size")
-    return {"inventory": [dict(r) for r in rows]}
+
+    inv_ids = [r["id"] for r in rows]
+    angles_by_id: dict = {}
+    if inv_ids:
+        try:
+            angle_rows = await pool.fetch(
+                "SELECT id, inventory_id, image_url FROM product_extra_photos "
+                "WHERE photo_type = 'angle' AND inventory_id = ANY($1::int[]) "
+                "ORDER BY created_at ASC",
+                inv_ids,
+            )
+            for ar in angle_rows:
+                angles_by_id.setdefault(ar["inventory_id"], []).append(
+                    {"id": ar["id"], "image_url": ar["image_url"]}
+                )
+        except Exception as e:
+            # Table might not exist yet on very old schemas — degrade to no angles.
+            print(f"[inventory] angles query skipped: {e}", flush=True)
+
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["angles"] = angles_by_id.get(r["id"], [])
+        out.append(d)
+    return {"inventory": out}
+
+
+@app.post("/api/inventory/{item_id}/angle")
+async def add_product_angle(item_id: int, image: UploadFile = File(...)):
+    """Upload an extra angle photo for a product — goes into
+    product_extra_photos with photo_type='angle' so it lives alongside the
+    existing lifestyle photos but is clearly distinguishable. Returns the
+    new row's id + image_url for the frontend to insert inline."""
+    image_url = save_uploaded_image(image, f"angle_{item_id}")
+    pool = await get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    row = await pool.fetchrow(
+        "SELECT code FROM inventory WHERE id = $1", item_id,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Item not found")
+    code = row["code"] or ""
+    new = await pool.fetchrow(
+        "INSERT INTO product_extra_photos (inventory_id, code, image_url, photo_type, created_at) "
+        "VALUES ($1, $2, $3, 'angle', $4) RETURNING id",
+        item_id, code, image_url, now,
+    )
+    return {"id": new["id"], "image_url": image_url}
+
+
+@app.delete("/api/inventory/angle/{photo_id}")
+async def delete_product_angle(photo_id: int):
+    """Remove a single angle photo by its extra-photos row id."""
+    pool = await get_db()
+    await pool.execute(
+        "DELETE FROM product_extra_photos WHERE id = $1 AND photo_type = 'angle'",
+        photo_id,
+    )
+    return {"ok": True}
 
 
 @app.post("/api/inventory")

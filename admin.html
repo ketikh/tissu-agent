@@ -225,13 +225,24 @@
 
         .hot-badge { background: var(--danger); color: white; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
 
-        /* Hide native number spinners — the ✓ button is the explicit save. */
+        /* Hide native number spinners globally — the ✓ button is the
+           explicit save. Repeat with both selector variants because Safari
+           occasionally ignores the one-liner form. */
+        input[type=number]::-webkit-outer-spin-button,
+        input[type=number]::-webkit-inner-spin-button,
         input[type="number"]::-webkit-outer-spin-button,
-        input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-        input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+        input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none !important;
+            appearance: none !important;
+            margin: 0 !important;
+        }
+        input[type=number], input[type="number"] {
+            -moz-appearance: textfield !important;
+            appearance: textfield !important;
+        }
 
         /* ── Product grid ─────────────────────────── */
-        .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 18px; }
+        .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 18px; }
         .product-card {
             background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
             overflow: hidden; box-shadow: var(--shadow-xs); position: relative;
@@ -244,8 +255,25 @@
         .sold-overlay span { background: var(--danger); color: white; font-size: 12px; font-weight: 700; padding: 6px 16px; border-radius: 6px; letter-spacing: 0.08em; text-transform: uppercase; }
         .sold-overlay button { position: absolute; bottom: 12px; right: 12px; background: var(--surface); color: var(--text); border: none; padding: 6px 12px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 600; }
 
-        .photos { display: grid; grid-template-columns: 1fr 1fr; height: 180px; gap: 2px; background: var(--border); }
+        /* Photo strip — the first slot is the hero; extra angles squeeze
+           into narrower slots on its right. One product can hold as many
+           angles as the owner wants. */
+        .photos { display: grid; gap: 3px; background: var(--border); padding: 3px; border-radius: 10px 10px 0 0; }
+        .photos.n-1 { grid-template-columns: 1fr; height: 200px; }
+        .photos.n-2 { grid-template-columns: 1fr 1fr; height: 190px; }
+        .photos.n-3 { grid-template-columns: 2fr 1fr 1fr; height: 170px; }
+        .photos.n-4 { grid-template-columns: 2fr 1fr 1fr 1fr; height: 160px; }
+        .photos.n-5, .photos.n-6, .photos.n-7, .photos.n-8 {
+            grid-template-columns: 1.8fr repeat(4, 1fr); height: 150px; overflow-x: auto;
+        }
         .photos.one-slot { grid-template-columns: 1fr; }
+        /* Always-visible × on filled slots (no hover needed on touch). */
+        .photo-slot.filled .remove-btn {
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0.85; top: 4px; right: 4px; width: 22px; height: 22px;
+            font-size: 13px;
+        }
+        .photo-slot.filled:hover .remove-btn { opacity: 1; }
         .add-angle-btn {
             display: flex; align-items: center; justify-content: center; gap: 5px;
             padding: 7px 10px; border: 1px dashed var(--border-strong);
@@ -692,6 +720,7 @@
 </div>
 
 <input type="file" id="fileInput" class="hidden-input" accept="image/*" onchange="handleFileUpload(this)">
+<input type="file" id="angleInput" class="hidden-input" accept="image/*" onchange="handleAngleUpload(this)">
 
 <div class="modal-backdrop" id="cat-modal" onclick="if(event.target===this) closeAddCategoryModal()">
     <div class="modal">
@@ -1386,50 +1415,69 @@
                     }).join('') + '</div>'
                     : '';
             }
-            // Bags need both sides (reversible fabric); other categories
-            // start with a single slot and the owner reveals the second one
-            // only when they actually want to add another angle.
-            const showTwoSlots = (cat === 'bag') || hasBack;
-            const frontLabel = cat === 'bag' ? 'გარე ↑' : (showTwoSlots ? 'რაკურსი 1 ↑' : 'ფოტო ↑');
-            const backLabel  = cat === 'bag' ? 'შიდა ↑' : 'რაკურსი 2 ↑';
-            const backEmpty  = cat === 'bag' ? 'შიდა'    : 'სხვა რაკურსი';
+            // Bags need both front + back (reversible fabric); other
+            // categories start with a single slot. Extra angles live on
+            // the product_extra_photos table and come back via i.angles.
+            const angles = Array.isArray(i.angles) ? i.angles : [];
+            const frontLabel = cat === 'bag' ? 'გარე' : 'ფოტო';
+            const backLabel  = cat === 'bag' ? 'შიდა' : 'რაკურსი 2';
 
-            const frontSlot = `
-                    <div class="photo-slot"
+            const slots = [];
+            // Slot 0: image_url
+            slots.push(i.image_url
+                ? `<div class="photo-slot filled"
                         ondragover="event.preventDefault()" ondragenter="slotEnter(event)" ondragleave="slotLeave(event)"
                         ondrop="dropPhoto(event,${i.id},'front')">
-                        ${i.image_url
-                            ? `<img src="${i.image_url.startsWith('http') ? i.image_url : API + i.image_url}" draggable="true" ondragstart="dragPhoto(event,${i.id},'front')">
-                               <button class="remove-btn" onclick="clearSlot(${i.id},'front')">&times;</button>`
-                            : `<div class="empty-slot" onclick="clickUpload(${i.id},'front')"
-                                ondragover="event.preventDefault()" ondragenter="this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')"
-                                ondrop="dropPhoto(event,${i.id},'front')">
-                                <span style="font-size:22px">+</span>ფოტო
-                               </div>`}
-                        <span class="slot-label" onclick="event.stopPropagation();clickUpload(${i.id},'front')" title="ფოტოს ატვირთვა">${frontLabel}</span>
-                    </div>`;
+                        <img src="${i.image_url.startsWith('http') ? i.image_url : API + i.image_url}" draggable="true" ondragstart="dragPhoto(event,${i.id},'front')">
+                        <button class="remove-btn" onclick="clearSlot(${i.id},'front')" title="წაშლა">&times;</button>
+                        <span class="slot-label">${frontLabel}</span>
+                    </div>`
+                : `<div class="photo-slot">
+                        <div class="empty-slot" onclick="clickUpload(${i.id},'front')"
+                            ondragover="event.preventDefault()" ondragenter="this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')"
+                            ondrop="dropPhoto(event,${i.id},'front')">
+                            <span style="font-size:22px">+</span>${frontLabel}
+                        </div>
+                    </div>`);
 
-            const backSlot = `
-                    <div class="photo-slot"
-                        ondragover="event.preventDefault()" ondragenter="slotEnter(event)" ondragleave="slotLeave(event)"
-                        ondrop="dropPhoto(event,${i.id},'back')">
-                        ${hasBack
-                            ? `<img src="${i.image_url_back.startsWith('http') ? i.image_url_back : API + i.image_url_back}" draggable="true" ondragstart="dragPhoto(event,${i.id},'back')">
-                               <button class="remove-btn" onclick="clearSlot(${i.id},'back')">&times;</button>`
-                            : `<div class="empty-slot" onclick="clickUpload(${i.id},'back')"
+            // Slot 1: image_url_back — only shown when bag (always) or when
+            // the owner already uploaded one for this non-bag product.
+            if (cat === 'bag' || hasBack) {
+                slots.push(hasBack
+                    ? `<div class="photo-slot filled"
+                            ondragover="event.preventDefault()" ondragenter="slotEnter(event)" ondragleave="slotLeave(event)"
+                            ondrop="dropPhoto(event,${i.id},'back')">
+                            <img src="${i.image_url_back.startsWith('http') ? i.image_url_back : API + i.image_url_back}" draggable="true" ondragstart="dragPhoto(event,${i.id},'back')">
+                            <button class="remove-btn" onclick="clearSlot(${i.id},'back')" title="წაშლა">&times;</button>
+                            <span class="slot-label">${backLabel}</span>
+                        </div>`
+                    : `<div class="photo-slot">
+                            <div class="empty-slot" onclick="clickUpload(${i.id},'back')"
                                 ondragover="event.preventDefault()" ondragenter="this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')"
                                 ondrop="dropPhoto(event,${i.id},'back')">
-                                <span style="font-size:22px">+</span>${backEmpty}
-                               </div>`}
-                        <span class="slot-label" onclick="event.stopPropagation();clickUpload(${i.id},'back')" title="ფოტოს ატვირთვა">${backLabel}</span>
-                    </div>`;
+                                <span style="font-size:22px">+</span>${backLabel}
+                            </div>
+                        </div>`);
+            }
 
-            const photosBlock = showTwoSlots
-                ? `<div class="photos">${frontSlot}${backSlot}</div>`
-                : `<div class="photos one-slot">${frontSlot}</div>
-                   <button class="add-angle-btn" onclick="clickUpload(${i.id},'back')">
-                       <span style="font-size:14px">+</span> სხვა რაკურსი
-                   </button>`;
+            // Extra angle slots (from product_extra_photos, photo_type='angle').
+            angles.forEach((a, idx) => {
+                slots.push(`<div class="photo-slot filled">
+                    <img src="${a.image_url.startsWith('http') ? a.image_url : API + a.image_url}">
+                    <button class="remove-btn" onclick="deleteAngle(${a.id})" title="წაშლა">&times;</button>
+                    <span class="slot-label">რაკურსი ${3 + idx}</span>
+                </div>`);
+            });
+
+            // + tile to upload another angle — always present so the owner
+            // can add a 3rd, 4th, … shot whenever they want.
+            slots.push(`<div class="photo-slot">
+                <div class="empty-slot" onclick="addAngle(${i.id})">
+                    <span style="font-size:20px">+</span>სხვა რაკურსი
+                </div>
+            </div>`);
+
+            const photosBlock = `<div class="photos n-${slots.length}">${slots.join('')}</div>`;
 
             return `
             <div class="product-card ${isSoldOut ? 'sold-out' : ''}" data-id="${i.id}">
@@ -1569,7 +1617,31 @@
     }
 
     async function clearSlot(id, side) {
+        if (!confirm('წავშალოთ ეს ფოტო?')) return;
         await fetch(API+'/api/inventory/'+id+'/clear-image?side='+side, {method:'POST'});
+        loadData();
+    }
+
+    // ── Extra angles (3rd, 4th, … photos per product) ──
+    let _angleTargetId = null;
+    function addAngle(itemId) {
+        _angleTargetId = itemId;
+        const picker = document.getElementById('angleInput');
+        picker.value = '';
+        picker.click();
+    }
+    async function handleAngleUpload(input) {
+        if (!input.files[0] || !_angleTargetId) return;
+        const fd = new FormData();
+        fd.append('image', input.files[0]);
+        await fetch(API+'/api/inventory/'+_angleTargetId+'/angle', {method:'POST', body:fd});
+        input.value = '';
+        _angleTargetId = null;
+        loadData();
+    }
+    async function deleteAngle(photoId) {
+        if (!confirm('წავშალოთ ეს რაკურსი?')) return;
+        await fetch(API+'/api/inventory/angle/'+photoId, {method:'DELETE'});
         loadData();
     }
 
