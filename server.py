@@ -79,6 +79,85 @@ async def admin_ui():
     )
 
 
+# ── Legal pages (public) ────────────────────────
+# Required by Meta App Review and by customer-facing trust. These are
+# plain static HTML served from /legal/. Browsers can cache them.
+
+def _legal_page(filename: str) -> HTMLResponse:
+    path = Path(__file__).parent / "legal" / filename
+    return HTMLResponse(
+        path.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+async def privacy_page():
+    return _legal_page("privacy.html")
+
+
+@app.get("/terms", response_class=HTMLResponse)
+async def terms_page():
+    return _legal_page("terms.html")
+
+
+@app.get("/data-deletion", response_class=HTMLResponse)
+async def data_deletion_page():
+    return _legal_page("data-deletion.html")
+
+
+# ── Meta Data-Deletion Callback ─────────────────
+# Meta calls this when a user removes the app through Facebook's
+# "Apps and Websites" panel. We must respond with a URL + confirmation
+# code so Meta can show the user a status page. The heavy lifting
+# (actually deleting the rows) is queued via the tickets table and the
+# owner processes it manually from the admin insights.
+
+@app.post("/api/meta/data-deletion")
+async def meta_data_deletion(request: Request):
+    import base64
+    import hashlib
+    import hmac
+    import urllib.parse
+
+    form = await request.form()
+    signed_request = form.get("signed_request", "")
+    user_id = ""
+    if signed_request and "." in signed_request:
+        try:
+            _sig, payload_b64 = signed_request.split(".", 1)
+            # base64url-decode with padding fix
+            pad = "=" * (-len(payload_b64) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(payload_b64 + pad).decode("utf-8"))
+            user_id = str(payload.get("user_id", ""))
+        except Exception as e:
+            print(f"[DATA-DELETE] Could not parse signed_request: {e}", flush=True)
+
+    # Log the request so the owner can act on it. Uses the tickets table
+    # which already surfaces in the admin Insights section.
+    pool = await get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        await pool.execute(
+            "INSERT INTO tickets (subject, description, status, priority, customer_email, conversation_id, created_at, updated_at) "
+            "VALUES ($1, $2, 'open', 'urgent', $3, $4, $5, $5)",
+            "[DATA-DELETION] Meta user requested deletion",
+            json.dumps({"user_id": user_id, "source": "meta_callback"}, ensure_ascii=False),
+            "", f"meta_user_{user_id}" if user_id else "meta_user_unknown", now,
+        )
+    except Exception as e:
+        print(f"[DATA-DELETE] Failed to log ticket: {e}", flush=True)
+
+    # Per Meta spec, respond with a URL where the user can check status
+    # plus an opaque confirmation code.
+    code = user_id or "anon"
+    public = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app").rstrip("/")
+    return {
+        "url": f"{public}/data-deletion?code={urllib.parse.quote(code)}",
+        "confirmation_code": code,
+    }
+
+
 # ── Agent Chat Endpoints ─────────────────────────────────────
 
 @app.post("/api/support", response_model=ChatResponse)
