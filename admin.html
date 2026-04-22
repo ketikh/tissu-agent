@@ -267,19 +267,20 @@
             grid-template-columns: 1.8fr repeat(4, 1fr); height: 150px; overflow-x: auto;
         }
         .photos.one-slot { grid-template-columns: 1fr; }
-        /* Remove button — stays out of the way until you hover the slot.
-           Visible at 0 opacity keeps it interactive on touch but invisible
-           on desktop when you're just scanning the card. */
-        .photo-slot.filled .remove-btn {
-            display: flex; align-items: center; justify-content: center;
-            opacity: 0; top: 5px; right: 5px; width: 24px; height: 24px;
+        /* Remove button — shows on hover on both filled AND empty slots.
+           Filled: delete the photo. Empty: hide the slot itself (useful
+           for bags where a specific product has no back photo). */
+        .photo-slot .remove-btn, .photo-slot .empty-remove {
+            position: absolute; top: 5px; right: 5px; width: 24px; height: 24px;
             font-size: 14px; background: rgba(23,20,14,0.82); color: white;
             border: 1px solid rgba(255,255,255,0.12); border-radius: 999px;
-            transition: opacity .15s ease-out, transform .12s;
+            cursor: pointer; z-index: 4;
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; transition: opacity .15s ease-out, transform .12s;
             box-shadow: 0 1px 4px rgba(0,0,0,0.25);
         }
-        .photo-slot.filled:hover .remove-btn { opacity: 1; }
-        .photo-slot.filled .remove-btn:hover { background: var(--danger); transform: scale(1.06); }
+        .photo-slot:hover .remove-btn, .photo-slot:hover .empty-remove { opacity: 1; }
+        .photo-slot .remove-btn:hover, .photo-slot .empty-remove:hover { background: var(--danger); transform: scale(1.06); }
         .add-angle-btn {
             display: flex; align-items: center; justify-content: center; gap: 5px;
             padding: 7px 10px; border: 1px dashed var(--border-strong);
@@ -1436,7 +1437,7 @@
                         ondragover="event.preventDefault()" ondragenter="slotEnter(event)" ondragleave="slotLeave(event)"
                         ondrop="dropPhoto(event,${i.id},'front')">
                         <img src="${i.image_url.startsWith('http') ? i.image_url : API + i.image_url}" draggable="true" ondragstart="dragPhoto(event,${i.id},'front')">
-                        <button class="remove-btn" onclick="clearSlot(${i.id},'front')" title="წაშლა">&times;</button>
+                        <button class="remove-btn" onclick="clearSlot(${i.id},'front')" title="ფოტოს წაშლა">&times;</button>
                         <span class="slot-label">${frontLabel}</span>
                     </div>`
                 : `<div class="photo-slot">
@@ -1447,18 +1448,21 @@
                         </div>
                     </div>`);
 
-            // Slot 1: image_url_back — only shown when bag (always) or when
-            // the owner already uploaded one for this non-bag product.
-            if (cat === 'bag' || hasBack) {
+            // Slot 1: image_url_back — shown when bag (unless the owner
+            // dismissed the empty back slot for this specific product) or
+            // when a non-bag product already has a back photo uploaded.
+            const backHidden = !hasBack && isSlotHidden(i.id, 'back');
+            if ((cat === 'bag' && !backHidden) || hasBack) {
                 slots.push(hasBack
                     ? `<div class="photo-slot filled"
                             ondragover="event.preventDefault()" ondragenter="slotEnter(event)" ondragleave="slotLeave(event)"
                             ondrop="dropPhoto(event,${i.id},'back')">
                             <img src="${i.image_url_back.startsWith('http') ? i.image_url_back : API + i.image_url_back}" draggable="true" ondragstart="dragPhoto(event,${i.id},'back')">
-                            <button class="remove-btn" onclick="clearSlot(${i.id},'back')" title="წაშლა">&times;</button>
+                            <button class="remove-btn" onclick="clearSlot(${i.id},'back')" title="ფოტოს წაშლა">&times;</button>
                             <span class="slot-label">${backLabel}</span>
                         </div>`
                     : `<div class="photo-slot">
+                            <button class="empty-remove" onclick="event.stopPropagation();hideEmptySlot(${i.id},'back')" title="ამ სლოტის დამალვა">&times;</button>
                             <div class="empty-slot" onclick="clickUpload(${i.id},'back')"
                                 ondragover="event.preventDefault()" ondragenter="this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')"
                                 ondrop="dropPhoto(event,${i.id},'back')">
@@ -1623,6 +1627,9 @@
         if (uploadTarget.id) {
             const endpoint = uploadTarget.side === 'front' ? 'image' : 'image_back';
             await fetch(API+'/api/inventory/'+uploadTarget.id+'/'+endpoint, {method:'POST', body:fd});
+            // If this side was previously hidden (owner dismissed it),
+            // un-hide it now that we have a real photo there.
+            unhideSlot(uploadTarget.id, uploadTarget.side);
         }
         input.value = '';
         uploadTarget = null;
@@ -1633,6 +1640,29 @@
         if (!confirm('წავშალოთ ეს ფოტო?')) return;
         await fetch(API+'/api/inventory/'+id+'/clear-image?side='+side, {method:'POST'});
         loadData();
+    }
+
+    // Per-product empty-slot hide list. Stored in localStorage so the
+    // owner can dismiss a slot they don't need (e.g. bag without a back
+    // photo) and it stays hidden across refreshes. Uploading a photo to
+    // that side or clearing it re-enables the slot automatically.
+    function _hiddenSlots() {
+        try { return JSON.parse(localStorage.getItem('tissuAdmin:hiddenSlots') || '{}'); }
+        catch { return {}; }
+    }
+    function isSlotHidden(id, side) {
+        return _hiddenSlots()[id + ':' + side] === true;
+    }
+    function hideEmptySlot(id, side) {
+        const map = _hiddenSlots();
+        map[id + ':' + side] = true;
+        try { localStorage.setItem('tissuAdmin:hiddenSlots', JSON.stringify(map)); } catch {}
+        renderGrid();
+    }
+    function unhideSlot(id, side) {
+        const map = _hiddenSlots();
+        delete map[id + ':' + side];
+        try { localStorage.setItem('tissuAdmin:hiddenSlots', JSON.stringify(map)); } catch {}
     }
 
     // ── Extra angles (3rd, 4th, … photos per product) ──
