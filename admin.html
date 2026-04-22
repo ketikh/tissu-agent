@@ -207,6 +207,11 @@
             padding: 6px 12px; border-radius: 999px; font-size: 12.5px;
         }
         .filter-bar .btn:hover { border-color: var(--border-strong); color: var(--text); background: var(--surface); }
+        .filter-bar .btn.active {
+            background: var(--accent); color: var(--surface); border-color: var(--accent);
+            font-weight: 600; box-shadow: var(--shadow-xs);
+        }
+        .filter-bar .btn.active:hover { background: #000; color: var(--surface); border-color: #000; }
 
         /* ── Tables ──────────────────────────────── */
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -605,14 +610,14 @@
                     <span class="inv-bag-filters" style="display:contents">
                         <span style="width:1px;height:18px;background:var(--border);margin:0 4px"></span>
                         <b>მოდელი</b>
-                        <button class="btn btn-sm" onclick="setFilter('model','')">ყველა</button>
-                        <button class="btn btn-sm" onclick="setFilter('model','ფხრიწიანი')">ფხრიწიანი</button>
-                        <button class="btn btn-sm" onclick="setFilter('model','თასმიანი')">თასმიანი</button>
+                        <button class="btn btn-sm active" data-filter="model" data-value="" onclick="setFilter('model','')">ყველა</button>
+                        <button class="btn btn-sm" data-filter="model" data-value="ფხრიწიანი" onclick="setFilter('model','ფხრიწიანი')">ფხრიწიანი</button>
+                        <button class="btn btn-sm" data-filter="model" data-value="თასმიანი" onclick="setFilter('model','თასმიანი')">თასმიანი</button>
                         <span style="width:1px;height:18px;background:var(--border);margin:0 4px"></span>
                         <b>ზომა</b>
-                        <button class="btn btn-sm" onclick="setFilter('size','')">ყველა</button>
-                        <button class="btn btn-sm" onclick="setFilter('size','პატარა')">პატარა</button>
-                        <button class="btn btn-sm" onclick="setFilter('size','დიდი')">დიდი</button>
+                        <button class="btn btn-sm active" data-filter="size" data-value="" onclick="setFilter('size','')">ყველა</button>
+                        <button class="btn btn-sm" data-filter="size" data-value="პატარა" onclick="setFilter('size','პატარა')">პატარა</button>
+                        <button class="btn btn-sm" data-filter="size" data-value="დიდი" onclick="setFilter('size','დიდი')">დიდი</button>
                     </span>
                 </div>
                 <div class="product-grid" id="inv-grid"></div>
@@ -1351,6 +1356,11 @@
     function setFilter(type, val) {
         if (type === 'model') filterModel = val;
         if (type === 'size') filterSize = val;
+        // Flip .active on the filter row so the highlighted chip tells
+        // the owner which filter is currently applied at a glance.
+        document.querySelectorAll(`.filter-bar .btn[data-filter="${type}"]`).forEach(b => {
+            b.classList.toggle('active', b.dataset.value === (val || ''));
+        });
         renderGrid();
     }
 
