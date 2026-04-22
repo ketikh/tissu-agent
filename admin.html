@@ -267,13 +267,19 @@
             grid-template-columns: 1.8fr repeat(4, 1fr); height: 150px; overflow-x: auto;
         }
         .photos.one-slot { grid-template-columns: 1fr; }
-        /* Always-visible × on filled slots (no hover needed on touch). */
+        /* Remove button — stays out of the way until you hover the slot.
+           Visible at 0 opacity keeps it interactive on touch but invisible
+           on desktop when you're just scanning the card. */
         .photo-slot.filled .remove-btn {
             display: flex; align-items: center; justify-content: center;
-            opacity: 0.85; top: 4px; right: 4px; width: 22px; height: 22px;
-            font-size: 13px;
+            opacity: 0; top: 5px; right: 5px; width: 24px; height: 24px;
+            font-size: 14px; background: rgba(23,20,14,0.82); color: white;
+            border: 1px solid rgba(255,255,255,0.12); border-radius: 999px;
+            transition: opacity .15s ease-out, transform .12s;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.25);
         }
         .photo-slot.filled:hover .remove-btn { opacity: 1; }
+        .photo-slot.filled .remove-btn:hover { background: var(--danger); transform: scale(1.06); }
         .add-angle-btn {
             display: flex; align-items: center; justify-content: center; gap: 5px;
             padding: 7px 10px; border: 1px dashed var(--border-strong);
@@ -815,6 +821,7 @@
         if (tab === 'dashboard') loadDashboard();
         if (tab === 'sale') loadSale();
         if (tab === 'chats') loadChats();
+        if (tab === 'insights') loadInsights();
     }
 
     let allOrders = [];
@@ -1548,7 +1555,13 @@
         const countEl = document.getElementById('sidebar-orders-count');
         if (countEl) countEl.textContent = activeOrders.length;
         renderOrders();
-        loadInsights();
+        // Insights are expensive (3 separate queries over the messages
+        // table); only load them when the user is actually looking at
+        // the Insights tab. Cuts ~4 extra round trips off every other
+        // tab click.
+        if (document.getElementById('tab-insights')?.classList.contains('active')) {
+            loadInsights();
+        }
     }
 
     async function loadInsights() {

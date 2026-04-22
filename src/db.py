@@ -177,6 +177,14 @@ async def init_db():
         await conn.execute(
             "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS sale_price REAL"
         )
+        # Speed up the admin's angles lookup and the orders-by-conversation
+        # lookups the insights tab runs on every open.
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_extra_photos_inventory ON product_extra_photos (inventory_id)"
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages (conversation_id, created_at)"
+        )
         # Categories registry — lets the owner define new product categories
         # (e.g. ქამრები, ყუთები) from the admin UI with their own custom
         # field list (ფერი, სიგრძე, მასალა, …). Seeded below with the
