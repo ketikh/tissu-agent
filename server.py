@@ -36,6 +36,7 @@ from src.agents.marketing import get_marketing_agent
 from src.channels import get_adapter, ADAPTERS
 from src.webhooks.facebook import router as fb_router
 from src.webhooks.whatsapp import router as wa_router
+from src.api.storefront import router as storefront_router
 from src.auth import APIKeyMiddleware
 
 
@@ -70,6 +71,10 @@ app.add_middleware(APIKeyMiddleware)
 # Include webhook routers
 app.include_router(fb_router)
 app.include_router(wa_router)
+# Public storefront read API — also under /api/* so it goes through the
+# same X-API-Key gate; the router itself re-uses the tenant_id from the
+# middleware to scope every query.
+app.include_router(storefront_router)
 
 
 # ── Pages ────────────────────────────────────────────────────

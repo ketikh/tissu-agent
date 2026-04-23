@@ -29,6 +29,7 @@ from src.db import DEFAULT_TENANT_ID, resolve_tenant_id
 #     etc. where the token is part of the URL and varies per request.
 EXEMPT_EXACT: frozenset[str] = frozenset({
     "/api/health",
+    "/api/storefront/health",
     "/api/meta/data-deletion",
 })
 
