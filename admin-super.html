@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tissu Platform — კლიენტების მართვა</title>
+    <link rel="preconnect" href="https://rsms.me/">
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+    <style>
+        * { box-sizing: border-box; }
+        html, body { margin:0; padding:0; font-family:"Inter var","Inter",system-ui,sans-serif;
+            background:#F8F7F4; color:#17140E; min-height:100vh; }
+        .page { max-width: 1100px; margin: 0 auto; padding: 40px 24px; }
+        .top { display:flex; align-items:center; justify-content:space-between; margin-bottom: 28px; }
+        h1 { margin:0; font-size:26px; font-weight:600; letter-spacing:-0.01em; }
+        .sub { color:#8B8478; font-size:14px; margin-top:4px; }
+        .btn { display:inline-flex; align-items:center; gap:6px; padding:10px 16px;
+            background:#1F1B16; color:#FBFAF7; border:none; border-radius:8px;
+            font-size:14px; font-weight:500; cursor:pointer; text-decoration:none; font-family:inherit; }
+        .btn:hover { background:#000; }
+        .btn-secondary { background:#ECE7DF; color:#17140E; }
+        .btn-secondary:hover { background:#D8D2C7; }
+        .btn-danger { background:#B04A42; color:#FFF; }
+        .btn-danger:hover { background:#8B2A22; }
+        table { width:100%; border-collapse:collapse; background:#FFF; border:1px solid #ECE7DF;
+            border-radius:12px; overflow:hidden; }
+        th { text-align:left; padding:12px 16px; background:#FBFAF7; font-size:12px;
+            font-weight:600; color:#8B8478; text-transform:uppercase; letter-spacing:0.04em;
+            border-bottom:1px solid #ECE7DF; }
+        td { padding:14px 16px; border-bottom:1px solid #F0ECE5; font-size:14px; }
+        tr:last-child td { border-bottom:none; }
+        .badge { display:inline-block; padding:3px 8px; border-radius:20px; font-size:11px;
+            font-weight:600; text-transform:uppercase; letter-spacing:0.05em; }
+        .badge-active { background:#E0F0E8; color:#1F4A38; }
+        .badge-trial { background:#FFF4E0; color:#7A5A1F; }
+        .badge-suspended { background:#F7E1DE; color:#7F2A24; }
+        .actions { display:flex; gap:6px; flex-wrap:wrap; }
+        .actions button, .actions a { padding:5px 10px; font-size:12px; border-radius:6px;
+            border:1px solid #D8D2C7; background:#FFF; color:#4A443B; cursor:pointer;
+            text-decoration:none; font-family:inherit; }
+        .actions button:hover { background:#FBFAF7; }
+        .actions .btn-suspend { color:#B04A42; border-color:#F7E1DE; }
+        .actions .btn-activate { color:#2F7A5B; border-color:#E0F0E8; }
+        .muted { color:#8B8478; font-size:12px; }
+        .shop-name { font-weight:600; }
+        .empty { text-align:center; padding:40px; color:#8B8478; }
+        .modal-bg { display:none; position:fixed; inset:0; background:rgba(23,20,14,0.4);
+            z-index:50; align-items:center; justify-content:center; padding:24px; }
+        .modal-bg.open { display:flex; }
+        .modal { background:#FFF; border-radius:14px; padding:32px; max-width:440px; width:100%;
+            box-shadow:0 8px 40px rgba(23,20,14,.12); }
+        .modal h2 { margin:0 0 8px; font-size:20px; }
+        .modal .muted { margin-bottom:20px; }
+        .field { margin-bottom:16px; }
+        .field label { display:block; font-size:13px; font-weight:500; color:#4A443B; margin-bottom:6px; }
+        .field input, .field select { width:100%; padding:9px 11px; border:1px solid #D8D2C7;
+            border-radius:7px; font-size:14px; font-family:inherit; background:#FBFAF7; }
+        .field input:focus, .field select:focus { outline:none; border-color:#1F1B16; background:#FFF; }
+        .modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:20px; }
+        .activation-card { background:#FBFAF7; border:1px solid #ECE7DF; border-radius:10px;
+            padding:16px; margin-top:16px; font-family:ui-monospace,monospace; font-size:12px;
+            word-break:break-all; }
+        .copy-btn { display:inline-flex; align-items:center; gap:4px; padding:4px 8px;
+            background:#1F1B16; color:#FBFAF7; border:none; border-radius:5px; font-size:11px;
+            cursor:pointer; margin-left:8px; }
+        .logout-link { color:#8B8478; font-size:13px; text-decoration:none; margin-left:16px; }
+        .logout-link:hover { color:#17140E; }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="top">
+            <div>
+                <h1>კლიენტების მართვა</h1>
+                <div class="sub">Tissu Platform super-admin</div>
+            </div>
+            <div>
+                <button class="btn" onclick="openCreateModal()">+ ახალი კლიენტი</button>
+                <a class="logout-link" href="/admin">← ადმინზე</a>
+                <a class="logout-link" href="/admin/logout">გამოსვლა</a>
+            </div>
+        </div>
+
+        <table id="tenantsTable">
+            <thead>
+                <tr>
+                    <th>მაღაზია</th>
+                    <th>ელფოსტა</th>
+                    <th>სტატუსი</th>
+                    <th>ტარიფი</th>
+                    <th>გადახდის ვადა</th>
+                    <th>პროდუქტი / ორდ.</th>
+                    <th>FB</th>
+                    <th>მოქმედება</th>
+                </tr>
+            </thead>
+            <tbody id="tenantsBody">
+                <tr><td colspan="8" class="empty">იტვირთება…</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Create-new-customer modal -->
+    <div class="modal-bg" id="createModal">
+        <form class="modal" id="createForm">
+            <h2>ახალი კლიენტი</h2>
+            <div class="muted">ანგარიში შეიქმნება, activation-ბმული გამოჩნდება. ბმული გაუგზავნე კლიენტს WhatsApp-ით ან ელფოსტით.</div>
+            <div class="field">
+                <label for="shop_name">მაღაზიის სახელი</label>
+                <input id="shop_name" name="shop_name" required placeholder="Ketino's Handmade">
+            </div>
+            <div class="field">
+                <label for="owner_email">მფლობელის ელფოსტა</label>
+                <input type="email" id="owner_email" name="owner_email" required placeholder="ketino@gmail.com">
+            </div>
+            <div class="field">
+                <label for="plan">ტარიფი</label>
+                <select id="plan" name="plan">
+                    <option value="start">Start — 30₾/თვე</option>
+                    <option value="grow">Grow — 60₾/თვე</option>
+                    <option value="pro">Pro — 120₾/თვე</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeCreateModal()">გაუქმება</button>
+                <button type="submit" class="btn">შექმნა</button>
+            </div>
+            <div id="createResult"></div>
+        </form>
+    </div>
+
+    <script>
+        function _cookie(n) {
+            const m = document.cookie.match(new RegExp('(?:^|; )' + n + '=([^;]*)'));
+            return m ? decodeURIComponent(m[1]) : '';
+        }
+        async function api(url, opts) {
+            opts = opts || {};
+            opts.credentials = 'same-origin';
+            if (['POST','PUT','DELETE'].includes((opts.method||'GET').toUpperCase())) {
+                opts.headers = Object.assign({}, opts.headers || {}, {
+                    'X-CSRF-Token': _cookie('admin_csrf'),
+                    'Content-Type': 'application/json',
+                });
+            }
+            const resp = await fetch(url, opts);
+            if (resp.status === 401) { window.location.href = '/admin/login?error=expired'; return; }
+            if (resp.status === 403) { alert('არ გაქვს წვდომა ამ მოქმედებაზე.'); return; }
+            return resp;
+        }
+
+        async function load() {
+            const resp = await api('/api/super/tenants');
+            if (!resp) return;
+            const data = await resp.json();
+            const body = document.getElementById('tenantsBody');
+            if (!data.tenants.length) {
+                body.innerHTML = '<tr><td colspan="8" class="empty">ჯერ არც ერთი კლიენტი. დააწკაპე „ახალი კლიენტი"-ზე.</td></tr>';
+                return;
+            }
+            body.innerHTML = data.tenants.map(t => `
+                <tr>
+                    <td>
+                        <div class="shop-name">${esc(t.shop_name)}</div>
+                        <div class="muted">${esc(t.tenant_id)}</div>
+                    </td>
+                    <td>${esc(t.owner_email)}</td>
+                    <td><span class="badge badge-${t.status}">${esc(t.status)}</span></td>
+                    <td>${esc(t.plan)}</td>
+                    <td>${t.payment_due_date ? esc(t.payment_due_date.slice(0,10)) : '<span class="muted">—</span>'}</td>
+                    <td>${t.product_count} / ${t.order_count}</td>
+                    <td>${t.has_fb ? '✅' : '<span class="muted">—</span>'}</td>
+                    <td class="actions">
+                        ${t.status === 'active' || t.status === 'trial'
+                            ? '<button class="btn-suspend" onclick="suspend(\''+t.tenant_id+'\')">გაყინვა</button>'
+                            : '<button class="btn-activate" onclick="markPaid(\''+t.tenant_id+'\')">გადახდა მიიღე</button>'}
+                        ${t.status === 'trial'
+                            ? '<button class="btn-activate" onclick="markPaid(\''+t.tenant_id+'\')">გააქტიურე</button>'
+                            : ''}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function esc(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+        function openCreateModal() {
+            document.getElementById('createModal').classList.add('open');
+            document.getElementById('createResult').innerHTML = '';
+        }
+        function closeCreateModal() {
+            document.getElementById('createModal').classList.remove('open');
+            document.getElementById('createForm').reset();
+        }
+
+        document.getElementById('createForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const body = {
+                shop_name: document.getElementById('shop_name').value.trim(),
+                owner_email: document.getElementById('owner_email').value.trim(),
+                plan: document.getElementById('plan').value,
+            };
+            const resp = await api('/api/super/tenants', { method:'POST', body: JSON.stringify(body) });
+            if (!resp) return;
+            const data = await resp.json();
+            if (!resp.ok) {
+                document.getElementById('createResult').innerHTML =
+                    '<div style="margin-top:16px; color:#7F2A24;">შეცდომა: ' + esc(data.detail || 'ცნობილი არაა') + '</div>';
+                return;
+            }
+            document.getElementById('createResult').innerHTML = `
+                <div style="margin-top:20px; padding:14px; background:#E0F0E8; border-radius:8px; color:#1F4A38; font-size:13px;">
+                    ✅ კლიენტი შექმნილია. გაუგზავნე ეს ბმული — მოქმედია 7 დღე:
+                </div>
+                <div class="activation-card" id="actLink">${esc(data.activation_url)}</div>
+                <button class="copy-btn" onclick="navigator.clipboard.writeText('${data.activation_url}'); this.textContent='✓ დაკოპირდა'">დაკოპირება</button>
+            `;
+            load();
+        });
+
+        async function suspend(tenantId) {
+            if (!confirm('დარწმუნებული ხარ რომ კლიენტს გაყინავ? ის ვეღარ შევა ადმინში.')) return;
+            const r = await api('/api/super/tenants/' + encodeURIComponent(tenantId) + '/suspend', { method:'POST' });
+            if (r && r.ok) load();
+        }
+        async function markPaid(tenantId) {
+            const r = await api('/api/super/tenants/' + encodeURIComponent(tenantId) + '/mark-paid', { method:'POST' });
+            if (r && r.ok) load();
+        }
+
+        load();
+    </script>
+</body>
+</html>

@@ -23,7 +23,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from src.db import DEFAULT_TENANT_ID, resolve_api_key
+from src.db import DEFAULT_TENANT_ID, resolve_api_key, get_tenant
 from src.sessions import (
     SESSION_COOKIE_NAME, CSRF_COOKIE_NAME,
     SHORT_SESSION_SECONDS, LONG_SESSION_SECONDS,
@@ -39,12 +39,13 @@ UNSAFE_METHODS: frozenset[str] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 # /admin/* POST targets that must stay CSRF-free because there is no
 # prior session to bind a token to (logging in, starting/finishing a
-# password reset).
+# password reset, first-time activation).
 CSRF_EXEMPT_ADMIN_POSTS: frozenset[str] = frozenset({
     "/admin/login",
     "/admin/logout",
     "/admin/forgot-password",
     "/admin/reset-password",
+    "/admin/activate",
 })
 
 
@@ -168,6 +169,22 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
                 status_code=403,
             )
 
+        # Suspended tenants are read/write blocked. We still allow
+        # health checks and the storefront (customers of the shop
+        # shouldn't see the frontend break when the shop falls behind
+        # on payment — that's a matter between operator and shop).
+        if tenant_id != DEFAULT_TENANT_ID and not path.startswith("/api/storefront/"):
+            try:
+                t = await get_tenant(tenant_id)
+            except Exception:
+                t = None
+            if t and t.get("status") == "suspended":
+                return JSONResponse(
+                    {"error": "account_suspended",
+                     "message": "Tenant account is suspended. Contact the platform operator."},
+                    status_code=402,  # 402 Payment Required — fits the semantics
+                )
+
         request.state.tenant_id = tenant_id
         request.state.api_key_scope = scope
         request.state.auth_source = auth_source
@@ -175,13 +192,17 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
 
 
 # Paths under /admin/* that do NOT require a logged-in session (the
-# login flow itself, plus password-reset, plus logout). Everything
-# else under /admin/* redirects to /admin/login when unauthenticated.
+# login flow itself, plus password-reset, plus logout, plus the
+# first-time activation link the super-admin sends to new customers).
+# Everything else under /admin/* redirects to /admin/login when
+# unauthenticated.
 ADMIN_PUBLIC_PATHS: frozenset[str] = frozenset({
     "/admin/login",
     "/admin/logout",
     "/admin/forgot-password",
     "/admin/reset-password",
+    "/admin/activate",
+    "/admin/suspended",
 })
 
 
@@ -205,7 +226,8 @@ class AdminSessionMiddleware(BaseHTTPMiddleware):
         # with any query string works.
         if (path in ADMIN_PUBLIC_PATHS
                 or path.startswith("/admin/reset-password")
-                or path.startswith("/admin/forgot-password")):
+                or path.startswith("/admin/forgot-password")
+                or path.startswith("/admin/activate")):
             return await call_next(request)
 
         cookie = request.cookies.get(SESSION_COOKIE_NAME, "")
@@ -224,8 +246,19 @@ class AdminSessionMiddleware(BaseHTTPMiddleware):
                     return JSONResponse(
                         {"error": "csrf_failed"}, status_code=403,
                     )
+                tenant_id = session.get("tenant_id") or DEFAULT_TENANT_ID
+                # Suspended tenants get bounced to the frozen page.
+                # Default tenant stays open even if somehow flipped to
+                # suspended (the super-admin lives there).
+                if tenant_id != DEFAULT_TENANT_ID and path != "/admin/suspended":
+                    try:
+                        t = await get_tenant(tenant_id)
+                    except Exception:
+                        t = None
+                    if t and t.get("status") == "suspended":
+                        return _redirect_to("/admin/suspended")
                 request.state.admin_user_id = session["user_id"]
-                request.state.tenant_id = session.get("tenant_id") or DEFAULT_TENANT_ID
+                request.state.tenant_id = tenant_id
                 return await call_next(request)
 
         # No / expired / tampered cookie → send them to the login form.
@@ -242,3 +275,8 @@ def _redirect_to_login():
     at module-import time)."""
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/admin/login?error=expired", status_code=302)
+
+
+def _redirect_to(url: str):
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=url, status_code=302)

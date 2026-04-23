@@ -23,10 +23,12 @@ from fastapi.staticfiles import StaticFiles
 from src.config import API_HOST, API_PORT
 from src.db import (
     init_db, get_db, close_pool, DEFAULT_TENANT_ID,
-    find_admin_user_by_email, mark_admin_user_logged_in,
-    update_admin_user_password,
+    find_admin_user_by_email, find_admin_user_by_id,
+    mark_admin_user_logged_in, update_admin_user_password,
     create_password_reset, consume_password_reset,
     invalidate_all_password_resets_for,
+    list_tenants, get_tenant, create_tenant, update_tenant_status,
+    create_admin_user_pending, create_activation_token,
 )
 from src.passwords import needs_rehash, verify_password, hash_password
 from src.sessions import (
@@ -328,6 +330,208 @@ async def admin_reset_password_form(request: Request, token: str = ""):
         html_path.read_text(encoding="utf-8"),
         headers={"Cache-Control": "no-store"},
     )
+
+
+async def _require_super_admin(request: Request) -> dict:
+    """Guard used by every /api/super/* endpoint. Loads the logged-in
+    admin user, returns it if role='super', otherwise raises 403.
+    Relies on AdminSessionMiddleware / APIKeyMiddleware to already
+    have verified the session and stashed admin_user_id on state."""
+    user_id = getattr(request.state, "admin_user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="not signed in")
+    user = await find_admin_user_by_id(int(user_id))
+    if not user or user.get("role") != "super":
+        raise HTTPException(status_code=403, detail="super-admin only")
+    return user
+
+
+@app.get("/admin/suspended", response_class=HTMLResponse)
+async def admin_suspended_page():
+    html_path = Path(__file__).parent / "admin-suspended.html"
+    return HTMLResponse(
+        html_path.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/admin/super", response_class=HTMLResponse)
+async def admin_super_page(request: Request):
+    """Serve the super-admin HTML. The API behind it enforces the
+    super-admin role — this route just serves the shell, so even a
+    plain admin loading the page sees an empty table."""
+    html_path = Path(__file__).parent / "admin-super.html"
+    return HTMLResponse(
+        html_path.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
+@app.get("/api/super/tenants")
+async def api_super_list_tenants(request: Request):
+    await _require_super_admin(request)
+    return {"tenants": await list_tenants()}
+
+
+@app.post("/api/super/tenants")
+async def api_super_create_tenant(request: Request):
+    """Create a new tenant + their first admin_user + a 7-day
+    activation link. Returns the activation URL — this is the *only*
+    time the super-admin gets to see it, so the UI copies it into a
+    one-off card for the operator to send to the customer."""
+    await _require_super_admin(request)
+    data = await request.json()
+    shop_name = (data.get("shop_name") or "").strip()
+    owner_email = (data.get("owner_email") or "").strip().lower()
+    plan = (data.get("plan") or "start").strip().lower()
+    if not shop_name or not owner_email:
+        raise HTTPException(400, "shop_name + owner_email required")
+    if plan not in ("start", "grow", "pro"):
+        raise HTTPException(400, "plan must be start/grow/pro")
+    if "@" not in owner_email or len(owner_email) > 120:
+        raise HTTPException(400, "invalid email")
+
+    # Deterministic tenant_id from the shop name + a 6-char suffix so
+    # two shops with the same name don't collide. The suffix uses
+    # secrets.token_hex so it's hard to guess and doesn't leak order
+    # of creation to an external observer.
+    import re
+    import secrets
+    slug_base = re.sub(r"[^a-z0-9]+", "_", shop_name.lower()).strip("_")[:24] or "shop"
+    tenant_id = f"{slug_base}_{secrets.token_hex(3)}"
+
+    try:
+        await create_tenant(tenant_id, shop_name, owner_email, plan=plan, status="trial")
+    except asyncpg.exceptions.UniqueViolationError:
+        raise HTTPException(409, "tenant_id clash, please retry")
+
+    # Create the pending admin_user (no usable password yet) and a
+    # 7-day activation token.
+    user_id = await create_admin_user_pending(tenant_id, owner_email, role="owner")
+    raw, token_hash = generate_reset_token()
+    await create_activation_token(user_id, token_hash)
+
+    public = os.getenv("PUBLIC_URL", "http://localhost:8000").rstrip("/")
+    activation_url = f"{public}/admin/activate?token={raw}"
+
+    return {
+        "tenant_id": tenant_id,
+        "activation_url": activation_url,
+        "note": "Link is one-time use, 7 day expiry.",
+    }
+
+
+@app.post("/api/super/tenants/{tenant_id}/suspend")
+async def api_super_suspend(tenant_id: str, request: Request):
+    await _require_super_admin(request)
+    # Don't let the super-admin accidentally lock themselves out of
+    # the default tenant (that's where their own account lives).
+    if tenant_id == DEFAULT_TENANT_ID:
+        raise HTTPException(400, "cannot suspend the default tenant")
+    t = await get_tenant(tenant_id)
+    if not t:
+        raise HTTPException(404, "tenant not found")
+    await update_tenant_status(tenant_id, "suspended")
+    return {"ok": True}
+
+
+@app.post("/api/super/tenants/{tenant_id}/mark-paid")
+async def api_super_mark_paid(tenant_id: str, request: Request):
+    """Extend the paid-through date by 30 days and flip the status
+    back to 'active'. This is the button the super-admin presses
+    when a bank transfer lands."""
+    await _require_super_admin(request)
+    from datetime import timedelta
+    t = await get_tenant(tenant_id)
+    if not t:
+        raise HTTPException(404, "tenant not found")
+    # Extend from whichever is later: today, or the current paid-through.
+    now = datetime.now(timezone.utc)
+    current = t.get("payment_due_date")
+    base = now
+    if current:
+        try:
+            base = max(now, datetime.fromisoformat(current))
+        except Exception:
+            base = now
+    new_due = (base + timedelta(days=30)).isoformat()
+    await update_tenant_status(tenant_id, "active", payment_due_date=new_due)
+    return {"ok": True, "payment_due_date": new_due}
+
+
+# ── Activation (set your password on first login) ──────────
+# Uses the same admin_password_resets table as the regular reset
+# flow — an activation token is just a reset token with a 7-day TTL
+# handed out by the super-admin instead of requested by the user.
+
+@app.get("/admin/activate", response_class=HTMLResponse)
+async def admin_activate_form(request: Request, token: str = ""):
+    """Render the 'set your password' page for first-time activation.
+    Reuses the reset-password HTML with a flag in the URL so the form
+    can show the right Georgian welcome copy."""
+    html_path = Path(__file__).parent / "admin-reset-password.html"
+    html = html_path.read_text(encoding="utf-8")
+    # Light tweak: replace the default heading for activation flow so
+    # it reads "ანგარიშის გააქტიურება" instead of "ახალი პაროლი".
+    html = html.replace(
+        "<h1>ახალი პაროლი</h1>",
+        "<h1>ანგარიშის გააქტიურება</h1>",
+    ).replace(
+        "<p class=\"subtitle\">შეარჩიე ახალი პაროლი ანგარიშისთვის — მინიმუმ 8 სიმბოლო.</p>",
+        "<p class=\"subtitle\">კეთილი იყოს მობრძანება! შექმენი პაროლი და გადადი ადმინზე — მინიმუმ 8 სიმბოლო.</p>",
+    ).replace(
+        'action="/admin/reset-password"',
+        'action="/admin/activate"',
+    )
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/admin/activate")
+async def admin_activate_submit(
+    request: Request,
+    token: str = Form(...),
+    password: str = Form(...),
+    password2: str = Form(...),
+):
+    """Set the initial password via the same consume-token flow as the
+    reset endpoint. After success, auto-log-in so the customer lands
+    straight on /admin without a second password prompt."""
+    if len(password) < 8:
+        return RedirectResponse(
+            url=f"/admin/activate?token={token}&error=short", status_code=303,
+        )
+    if password != password2:
+        return RedirectResponse(
+            url=f"/admin/activate?token={token}&error=mismatch", status_code=303,
+        )
+    token_hash = hash_reset_token(token)
+    user_id = await consume_password_reset(token_hash)
+    if not user_id:
+        return RedirectResponse(
+            url="/admin/activate?error=invalid", status_code=303,
+        )
+    new_hash = hash_password(password)
+    await update_admin_user_password(user_id, new_hash)
+    await invalidate_all_password_resets_for(user_id)
+    # Auto-login: issue a fresh session cookie so the newly activated
+    # user lands on /admin without a separate trip through /admin/login.
+    user = await find_admin_user_by_id(user_id)
+    if not user:
+        return RedirectResponse(url="/admin/login?activated=1", status_code=303)
+    await mark_admin_user_logged_in(user_id)
+    session_token = issue_session_token(user["id"], user["tenant_id"])
+    csrf_token = issue_csrf_token(session_token)
+    response = RedirectResponse(url="/admin", status_code=303)
+    secure = _is_secure_request(request)
+    response.set_cookie(
+        SESSION_COOKIE_NAME, session_token, **cookie_kwargs(SHORT_SESSION_SECONDS, secure),
+    )
+    response.set_cookie(
+        CSRF_COOKIE_NAME, csrf_token,
+        max_age=SHORT_SESSION_SECONDS, httponly=False, secure=secure,
+        samesite="lax", path="/",
+    )
+    return response
 
 
 @app.post("/admin/reset-password")

@@ -332,6 +332,66 @@ async def init_db():
             "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS description TEXT"
         )
 
+        # ── Tenants registry ───────────────────────────────────
+        # Central table of all customers (shops) on the platform. The
+        # tenant_id column on every other table points here. Status /
+        # plan / payment_due_date drive the super-admin UI and the
+        # "your account is suspended" lock-out.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS tenants (
+                tenant_id TEXT PRIMARY KEY,
+                shop_name TEXT NOT NULL,
+                owner_email TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'trial',
+                plan TEXT NOT NULL DEFAULT 'start',
+                payment_due_date TEXT,
+                notes TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        # Encrypted Facebook / WhatsApp credentials per tenant — filled
+        # in by the super-admin when onboarding a new customer. The
+        # webhook looks up a tenant by fb_page_id so it knows which
+        # token to use when replying.
+        await conn.execute(
+            "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS fb_page_id TEXT"
+        )
+        await conn.execute(
+            "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS fb_page_token_encrypted TEXT"
+        )
+        await conn.execute(
+            "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS fb_verify_token TEXT"
+        )
+        await conn.execute(
+            "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS wa_phone_id TEXT"
+        )
+        await conn.execute(
+            "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS wa_token_encrypted TEXT"
+        )
+        await conn.execute(
+            "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS owner_whatsapp TEXT"
+        )
+        # Quick fb_page_id -> tenant lookup for the webhook dispatcher.
+        await conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_fb_page "
+            "ON tenants (fb_page_id) WHERE fb_page_id IS NOT NULL"
+        )
+        # Seed the existing default tenant row for Tissu so the shop
+        # shows up in the super-admin list with a known-good status.
+        # This INSERT is idempotent — ON CONFLICT skips once seeded.
+        now_iso = datetime.now(timezone.utc).isoformat()
+        await conn.execute(
+            """INSERT INTO tenants
+               (tenant_id, shop_name, owner_email, status, plan,
+                payment_due_date, created_at, updated_at)
+               VALUES ($1, $2, $3, 'active', 'pro', NULL, $4, $4)
+               ON CONFLICT (tenant_id) DO NOTHING""",
+            DEFAULT_TENANT_ID, "Tissu Shop",
+            os.environ.get("ADMIN_OWNER_EMAIL", "").strip().lower() or "owner@tissu.shop",
+            now_iso,
+        )
+
         # ── Admin users (owner / staff login) ──────────────────
         # Replaces the browser prompt() hack — /admin/login now takes a
         # real email + password and verifies an argon2id hash from here.
@@ -394,14 +454,30 @@ async def init_db():
                 except Exception as e:
                     print(f"[admin-seed] refusing to seed owner: {e}", flush=True)
                 else:
+                    # First seeded owner on the default tenant gets the
+                    # 'super' role — they are the platform operator who
+                    # can create / suspend other tenants. Everyone else
+                    # is plain 'owner' of their own tenant.
                     await conn.execute(
                         "INSERT INTO admin_users "
                         "(tenant_id, email, password_hash, role, created_at) "
-                        "VALUES ($1, $2, $3, 'owner', $4)",
+                        "VALUES ($1, $2, $3, 'super', $4)",
                         DEFAULT_TENANT_ID, owner_email, pw_hash,
                         datetime.now(timezone.utc).isoformat(),
                     )
-                    print(f"[admin-seed] seeded owner {owner_email}", flush=True)
+                    print(f"[admin-seed] seeded super-admin {owner_email}", flush=True)
+
+        # One-shot: if the seeded owner on the default tenant is still
+        # role='owner' from a previous migration, promote them to
+        # 'super'. Keeps a single source of truth for "who is the
+        # platform operator" without a separate table.
+        await conn.execute(
+            "UPDATE admin_users SET role = 'super' "
+            "WHERE tenant_id = $1 "
+            "AND LOWER(email) = $2 "
+            "AND role = 'owner'",
+            DEFAULT_TENANT_ID, owner_email or "",
+        )
 
 
 async def resolve_tenant_id(api_key: str) -> str | None:
@@ -540,6 +616,17 @@ async def create_password_reset(
     )
 
 
+async def create_activation_token(
+    user_id: int, token_hash: str, ttl_seconds: int = 7 * 24 * 60 * 60,
+) -> None:
+    """Activation tokens live in the same table as password-reset
+    tokens (they do the same thing mechanically: let a user set a
+    password). We just give them a 7-day TTL instead of 30 minutes
+    because the super-admin sends the link over WhatsApp and the
+    customer may take a few days to act on it."""
+    await create_password_reset(user_id, token_hash, ttl_seconds=ttl_seconds)
+
+
 async def consume_password_reset(token_hash: str) -> int | None:
     """Verify a reset token and mark it used. Returns the owning
     admin_user_id on success, None if the token is missing, already
@@ -560,6 +647,94 @@ async def consume_password_reset(token_hash: str) -> int | None:
         now, token_hash,
     )
     return row["admin_user_id"] if row else None
+
+
+async def list_tenants() -> list[dict]:
+    """Return every tenant with its headline fields + admin_user count.
+    Used by the super-admin list page."""
+    pool = await get_pool()
+    rows = await pool.fetch("""
+        SELECT
+            t.tenant_id, t.shop_name, t.owner_email, t.status, t.plan,
+            t.payment_due_date, t.notes, t.created_at, t.updated_at,
+            t.fb_page_id IS NOT NULL AS has_fb,
+            (SELECT COUNT(*) FROM admin_users WHERE tenant_id = t.tenant_id) AS admin_count,
+            (SELECT COUNT(*) FROM inventory WHERE tenant_id = t.tenant_id) AS product_count,
+            (SELECT COUNT(*) FROM orders WHERE tenant_id = t.tenant_id) AS order_count
+        FROM tenants t
+        ORDER BY t.created_at DESC
+    """)
+    return [dict(r) for r in rows]
+
+
+async def get_tenant(tenant_id: str) -> dict | None:
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT * FROM tenants WHERE tenant_id = $1", tenant_id,
+    )
+    return dict(row) if row else None
+
+
+async def create_tenant(
+    tenant_id: str,
+    shop_name: str,
+    owner_email: str,
+    plan: str = "start",
+    status: str = "trial",
+) -> None:
+    """Insert a new tenant row. Raises asyncpg.UniqueViolationError if
+    tenant_id clashes (super-admin UI regenerates on 409)."""
+    pool = await get_pool()
+    now = datetime.now(timezone.utc).isoformat()
+    await pool.execute(
+        """INSERT INTO tenants
+           (tenant_id, shop_name, owner_email, status, plan,
+            created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $6)""",
+        tenant_id, shop_name, owner_email.strip().lower(),
+        status, plan, now,
+    )
+
+
+async def update_tenant_status(
+    tenant_id: str,
+    status: str,
+    payment_due_date: str | None = None,
+) -> None:
+    """Flip a tenant's status (trial / active / suspended) and, when
+    moving to 'active', extend the paid-through date another 30 days."""
+    pool = await get_pool()
+    now = datetime.now(timezone.utc).isoformat()
+    if payment_due_date is None:
+        await pool.execute(
+            "UPDATE tenants SET status = $1, updated_at = $2 WHERE tenant_id = $3",
+            status, now, tenant_id,
+        )
+    else:
+        await pool.execute(
+            "UPDATE tenants SET status = $1, payment_due_date = $2, "
+            "updated_at = $3 WHERE tenant_id = $4",
+            status, payment_due_date, now, tenant_id,
+        )
+
+
+async def create_admin_user_pending(
+    tenant_id: str, email: str, role: str = "owner",
+) -> int:
+    """Create an admin_user with no usable password yet — they'll set
+    one via the activation link. Returns the new user's id."""
+    pool = await get_pool()
+    now = datetime.now(timezone.utc).isoformat()
+    # Use a sentinel hash that no argon2 verify can match. We mark it
+    # with a prefix so "pending" is visible in the DB at a glance.
+    sentinel = "pending:set-on-activation:" + now
+    row = await pool.fetchrow(
+        "INSERT INTO admin_users "
+        "(tenant_id, email, password_hash, role, created_at) "
+        "VALUES ($1, $2, $3, $4, $5) RETURNING id",
+        tenant_id, email.strip().lower(), sentinel, role, now,
+    )
+    return row["id"]
 
 
 async def invalidate_all_password_resets_for(user_id: int) -> None:
