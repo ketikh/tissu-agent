@@ -29,7 +29,9 @@ from src.db import (
     invalidate_all_password_resets_for,
     list_tenants, get_tenant, create_tenant, update_tenant_status,
     create_admin_user_pending, create_activation_token,
+    update_tenant_fb_credentials,
 )
+from src.secrets_vault import encrypt_secret, redacted
 from src.passwords import needs_rehash, verify_password, hash_password
 from src.sessions import (
     SESSION_COOKIE_NAME, CSRF_COOKIE_NAME,
@@ -433,6 +435,46 @@ async def api_super_suspend(tenant_id: str, request: Request):
         raise HTTPException(404, "tenant not found")
     await update_tenant_status(tenant_id, "suspended")
     return {"ok": True}
+
+
+@app.post("/api/super/tenants/{tenant_id}/fb-credentials")
+async def api_super_set_fb_credentials(tenant_id: str, request: Request):
+    """Save a tenant's Facebook Messenger webhook credentials. The
+    page token is stored encrypted via Fernet; the verify token and
+    page id stay plaintext (page_id is public anyway, verify token
+    is a shared secret with Meta's webhook POSTs — we just need to
+    match it on inbound)."""
+    await _require_super_admin(request)
+    data = await request.json()
+    fb_page_id = (data.get("fb_page_id") or "").strip()
+    fb_page_token = (data.get("fb_page_token") or "").strip()
+    fb_verify_token = (data.get("fb_verify_token") or "").strip()
+
+    if not fb_page_id or not fb_page_token or not fb_verify_token:
+        raise HTTPException(
+            400,
+            "fb_page_id, fb_page_token, fb_verify_token all required",
+        )
+
+    t = await get_tenant(tenant_id)
+    if not t:
+        raise HTTPException(404, "tenant not found")
+
+    try:
+        encrypted = encrypt_secret(fb_page_token)
+    except RuntimeError as e:
+        # FB_TOKEN_ENCRYPTION_KEY not set on the server — surface the
+        # error to the operator instead of storing garbage.
+        raise HTTPException(500, str(e))
+
+    await update_tenant_fb_credentials(
+        tenant_id, fb_page_id, encrypted, fb_verify_token,
+    )
+    return {
+        "ok": True,
+        "fb_page_id": fb_page_id,
+        "fb_page_token_preview": redacted(fb_page_token, keep=6),
+    }
 
 
 @app.post("/api/super/tenants/{tenant_id}/mark-paid")

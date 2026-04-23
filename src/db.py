@@ -675,6 +675,43 @@ async def get_tenant(tenant_id: str) -> dict | None:
     return dict(row) if row else None
 
 
+async def get_tenant_by_fb_page_id(page_id: str) -> dict | None:
+    """Reverse lookup: which tenant owns this Facebook page? Called by
+    the /webhook dispatcher on every incoming Messenger/IG event."""
+    if not page_id:
+        return None
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT * FROM tenants WHERE fb_page_id = $1", page_id,
+    )
+    return dict(row) if row else None
+
+
+async def update_tenant_fb_credentials(
+    tenant_id: str,
+    fb_page_id: str,
+    fb_page_token_encrypted: str,
+    fb_verify_token: str,
+) -> None:
+    """Store a tenant's Facebook webhook credentials — called from the
+    super-admin form when onboarding. fb_page_token MUST arrive
+    already encrypted via ``src.secrets_vault.encrypt_secret``."""
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE tenants SET "
+        "  fb_page_id = $1, "
+        "  fb_page_token_encrypted = $2, "
+        "  fb_verify_token = $3, "
+        "  updated_at = $4 "
+        "WHERE tenant_id = $5",
+        fb_page_id.strip() or None,
+        fb_page_token_encrypted or None,
+        fb_verify_token.strip() or None,
+        datetime.now(timezone.utc).isoformat(),
+        tenant_id,
+    )
+
+
 async def create_tenant(
     tenant_id: str,
     shop_name: str,

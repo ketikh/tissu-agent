@@ -13,9 +13,13 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 
 from src.agents.support_sales import get_support_sales_agent
-from src.db import get_db
+from src.db import (
+    get_db, DEFAULT_TENANT_ID,
+    get_tenant, get_tenant_by_fb_page_id,
+)
 from src.engine import run_agent
 from src.notifications import send_whatsapp_image, send_whatsapp_text
+from src.secrets_vault import decrypt_secret
 from src.tools.support import _pending_photos, _ai_hints
 from src.vision import download_image, is_payment_receipt
 from src.webhooks.whatsapp import build_confirm_url, create_confirm_token
@@ -24,10 +28,43 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Legacy single-tenant fallbacks — used for the current Tissu
+# deployment until (and unless) the super-admin fills in
+# fb_page_id / fb_page_token for a tenant. Multi-tenant onboarding
+# stores per-tenant credentials in the tenants table; the webhook
+# dispatcher below prefers those when available.
 VERIFY_TOKEN = "tissu_verify_2026"
 FB_PAGE_TOKEN = os.getenv("FB_PAGE_TOKEN", "")
 PUBLIC_URL = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
 PAGE_ID = "447377388462459"
+
+
+async def _resolve_tenant_context(page_id: str) -> tuple[str, str]:
+    """Given a Meta webhook entry's page_id, return the tenant_id and
+    page access token to use for replies. Falls back to the legacy
+    env var token + DEFAULT_TENANT_ID when the page is the original
+    Tissu page (so nothing breaks for the existing single-shop
+    deployment). Returns ('', '') when the page is unknown — the
+    caller should ignore unknown-page events."""
+    if not page_id:
+        return (DEFAULT_TENANT_ID, FB_PAGE_TOKEN)
+    try:
+        tenant = await get_tenant_by_fb_page_id(page_id)
+    except Exception:
+        tenant = None
+    if tenant and tenant.get("fb_page_token_encrypted"):
+        token = decrypt_secret(tenant["fb_page_token_encrypted"])
+        if token:
+            return (tenant["tenant_id"], token)
+    # Legacy Tissu page: use env var token.
+    if page_id == PAGE_ID:
+        return (DEFAULT_TENANT_ID, FB_PAGE_TOKEN)
+    # Unknown page — log but don't crash. The webhook handler can
+    # return 200 so Meta doesn't retry, and the event is dropped.
+    logger.warning(
+        "[webhook] unknown fb page_id=%s — event dropped", page_id,
+    )
+    return ("", "")
 # Instagram Business Account ID — used to filter self-echoes on IG DMs.
 # Set this in Railway env after connecting IG to the Facebook Page.
 IG_USER_ID = os.getenv("IG_USER_ID", "")
@@ -958,11 +995,29 @@ async def _send_product_images(
 
 @router.get("/webhook")
 async def webhook_verify(request: Request):
+    """Meta hits this URL during webhook setup with hub.verify_token.
+    We accept either the legacy hardcoded token (Tissu page) or any
+    value that matches a tenant's stored fb_verify_token — that way
+    every shop can use its own verify string without us redeploying."""
     params = request.query_params
     mode = params.get("hub.mode")
     token = params.get("hub.verify_token")
     challenge = params.get("hub.challenge")
-    if mode == "subscribe" and token == VERIFY_TOKEN:
+    if mode != "subscribe":
+        raise HTTPException(status_code=403, detail="Verification failed")
+    if token == VERIFY_TOKEN:
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(challenge)
+    # Multi-tenant: is this a verify_token we have on file for any tenant?
+    try:
+        pool = await get_db()
+        match = await pool.fetchval(
+            "SELECT tenant_id FROM tenants WHERE fb_verify_token = $1",
+            token or "",
+        )
+    except Exception:
+        match = None
+    if match:
         from fastapi.responses import PlainTextResponse
         return PlainTextResponse(challenge)
     raise HTTPException(status_code=403, detail="Verification failed")
@@ -976,6 +1031,25 @@ async def webhook_receive(request: Request):
         return {"status": "ignored"}
 
     for entry in body.get("entry", []):
+        # Multi-tenant dispatcher: the page that received the event
+        # decides which tenant owns it. Unknown pages are dropped
+        # (return 200 to Meta so they don't retry; we don't reply).
+        entry_page_id = str(entry.get("id", ""))
+        tenant_id_for_entry, _page_token_for_entry = await _resolve_tenant_context(entry_page_id)
+        if not tenant_id_for_entry:
+            # Unknown page — dropped with a log line in _resolve_tenant_context.
+            continue
+        # NOTE: the per-tenant token isn't threaded through the rest
+        # of this handler yet — that's the next refactor. For now
+        # replies still use the env-var FB_PAGE_TOKEN, which is right
+        # for the default Tissu tenant. See TISSU-HANDOFF.md §7.
+        if tenant_id_for_entry != DEFAULT_TENANT_ID:
+            logger.info(
+                "[webhook] event for non-default tenant=%s page=%s — "
+                "dispatcher recognized but reply path still single-tenant",
+                tenant_id_for_entry, entry_page_id,
+            )
+
         for event in entry.get("messaging", []):
             if event.get("delivery") or event.get("read"):
                 continue
@@ -986,7 +1060,13 @@ async def webhook_receive(request: Request):
             mid = message.get("mid", "")
 
             # Drop self-echoes: FB page, IG business account, or Meta's is_echo flag.
-            if message.get("is_echo") or sender_id == PAGE_ID or (IG_USER_ID and sender_id == IG_USER_ID) or not sender_id:
+            # The page-id check uses the entry's own id, so a second
+            # tenant's page doesn't get misclassified as a self-echo.
+            if (message.get("is_echo")
+                    or sender_id == entry_page_id
+                    or sender_id == PAGE_ID
+                    or (IG_USER_ID and sender_id == IG_USER_ID)
+                    or not sender_id):
                 continue
 
             image_url = ""

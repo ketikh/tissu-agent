@@ -12,3 +12,4 @@ pillow-heif>=1.1.0
 cloudinary>=1.41.0
 argon2-cffi>=23.1.0
 itsdangerous>=2.2.0
+cryptography>=42.0.0

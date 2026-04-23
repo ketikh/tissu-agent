@@ -100,6 +100,32 @@
         </table>
     </div>
 
+    <!-- FB credentials modal -->
+    <div class="modal-bg" id="fbModal">
+        <form class="modal" id="fbForm">
+            <h2>Facebook Messenger credentials</h2>
+            <div class="muted">დააკოპირე Page ID და Page Access Token Meta Developers-დან. Verify token შენ ირჩევ — იგივე ჩასვი Meta-ს Webhook Config-ში.</div>
+            <input type="hidden" id="fb_tenant_id">
+            <div class="field">
+                <label for="fb_page_id">Facebook Page ID</label>
+                <input id="fb_page_id" required placeholder="123456789012345">
+            </div>
+            <div class="field">
+                <label for="fb_page_token">Page Access Token</label>
+                <input id="fb_page_token" required placeholder="EAA… (long string)">
+            </div>
+            <div class="field">
+                <label for="fb_verify_token">Verify Token (ნებისმიერი გრძელი სტრიქონი)</label>
+                <input id="fb_verify_token" required placeholder="ketino_verify_2026">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeFbModal()">გაუქმება</button>
+                <button type="submit" class="btn">შენახვა</button>
+            </div>
+            <div id="fbResult"></div>
+        </form>
+    </div>
+
     <!-- Create-new-customer modal -->
     <div class="modal-bg" id="createModal">
         <form class="modal" id="createForm">
@@ -177,6 +203,7 @@
                         ${t.status === 'trial'
                             ? '<button class="btn-activate" onclick="markPaid(\''+t.tenant_id+'\')">გააქტიურე</button>'
                             : ''}
+                        <button onclick="openFbModal('${t.tenant_id}')">FB…</button>
                     </td>
                 </tr>
             `).join('');
@@ -227,6 +254,36 @@
             const r = await api('/api/super/tenants/' + encodeURIComponent(tenantId) + '/mark-paid', { method:'POST' });
             if (r && r.ok) load();
         }
+        function openFbModal(tenantId) {
+            document.getElementById('fb_tenant_id').value = tenantId;
+            document.getElementById('fbModal').classList.add('open');
+            document.getElementById('fbResult').innerHTML = '';
+        }
+        function closeFbModal() {
+            document.getElementById('fbModal').classList.remove('open');
+            document.getElementById('fbForm').reset();
+        }
+        document.getElementById('fbForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const tenantId = document.getElementById('fb_tenant_id').value;
+            const body = {
+                fb_page_id: document.getElementById('fb_page_id').value.trim(),
+                fb_page_token: document.getElementById('fb_page_token').value.trim(),
+                fb_verify_token: document.getElementById('fb_verify_token').value.trim(),
+            };
+            const resp = await api('/api/super/tenants/' + encodeURIComponent(tenantId) + '/fb-credentials',
+                { method: 'POST', body: JSON.stringify(body) });
+            if (!resp) return;
+            const data = await resp.json();
+            if (!resp.ok) {
+                document.getElementById('fbResult').innerHTML =
+                    '<div style="margin-top:16px; color:#7F2A24;">შეცდომა: ' + esc(data.detail || 'ცნობილი არაა') + '</div>';
+                return;
+            }
+            document.getElementById('fbResult').innerHTML =
+                '<div style="margin-top:16px; color:#1F4A38;">✅ შენახულია. Token preview: ' + esc(data.fb_page_token_preview) + '</div>';
+            load();
+        });
 
         load();
     </script>
