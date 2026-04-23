@@ -8,9 +8,13 @@ links that the shop owner opens from their phone after a WhatsApp
 notification.
 
 The middleware resolves an X-API-Key to a tenant_id via the ``api_keys``
-table and stashes it on ``request.state.tenant_id`` so route handlers can
-scope their queries. Exempt paths and non-/api routes fall back to
-``DEFAULT_TENANT_ID`` — the single-shop Tissu deployment lives there.
+table, checks the key's scope against the path, and stashes both on the
+request for downstream handlers. Exempt paths and non-/api routes fall
+back to ``DEFAULT_TENANT_ID``.
+
+Key scopes:
+  - 'admin'      — unrestricted, every /api/* path
+  - 'storefront' — read-only, only /api/storefront/* paths
 """
 from __future__ import annotations
 
@@ -19,7 +23,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from src.db import DEFAULT_TENANT_ID, resolve_tenant_id
+from src.db import DEFAULT_TENANT_ID, resolve_api_key
 
 # Paths under /api/* that bypass the API key check.
 #
@@ -70,27 +74,44 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
 
         # Primary path: resolve via the api_keys table — that's the
-        # multi-tenant source of truth.
+        # multi-tenant source of truth. Returns (tenant_id, scope) or None.
+        tenant_id: str | None = None
+        scope: str = "admin"
         try:
-            tenant_id = await resolve_tenant_id(provided)
+            hit = await resolve_api_key(provided)
         except Exception:
-            # DB hiccup — fall back to env comparison rather than locking
-            # the owner out of their own admin panel. Still single-tenant.
-            tenant_id = None
+            hit = None
 
-        if tenant_id is None:
-            # Bootstrap path: if the presented key matches the env var and
-            # the api_keys row hasn't been seeded yet, accept it as the
-            # default tenant. init_db seeds this row on boot, so this
-            # only helps the very first request after a fresh migration.
-            expected_env = os.environ.get("ADMIN_API_KEY", "").strip()
-            if expected_env and provided == expected_env:
+        if hit is not None:
+            tenant_id, scope = hit
+        else:
+            # Bootstrap path: if the presented key matches one of the
+            # env vars and the api_keys row hasn't been seeded yet,
+            # accept it with the appropriate scope. init_db seeds these
+            # rows on boot, so this only helps the very first request
+            # after a fresh migration.
+            admin_env = os.environ.get("ADMIN_API_KEY", "").strip()
+            sf_env = os.environ.get("STOREFRONT_API_KEY", "").strip()
+            if admin_env and provided == admin_env:
                 tenant_id = DEFAULT_TENANT_ID
+                scope = "admin"
+            elif sf_env and provided == sf_env:
+                tenant_id = DEFAULT_TENANT_ID
+                scope = "storefront"
             else:
                 return JSONResponse(
                     {"error": "unauthorized"},
                     status_code=401,
                 )
 
+        # Scope enforcement: storefront-scoped keys can only touch
+        # /api/storefront/*. Admin-scoped keys can touch anything.
+        if scope == "storefront" and not path.startswith("/api/storefront/"):
+            return JSONResponse(
+                {"error": "forbidden", "reason": "key is read-only storefront scope"},
+                status_code=403,
+            )
+
         request.state.tenant_id = tenant_id
+        request.state.api_key_scope = scope
         return await call_next(request)

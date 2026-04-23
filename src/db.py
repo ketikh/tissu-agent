@@ -285,6 +285,11 @@ async def init_db():
         # data it can see. The middleware looks up tenant_id here; if the
         # table is empty (first boot after migration) we seed it from the
         # ADMIN_API_KEY env var so the existing admin UI keeps working.
+        #
+        # `scope` decides which /api/* paths the key is allowed to hit:
+        #   - 'admin'      — everything under /api/* (the shop owner)
+        #   - 'storefront' — only /api/storefront/* (the public website)
+        # Defaults to 'admin' so the existing bootstrap key keeps working.
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS api_keys (
                 key TEXT PRIMARY KEY,
@@ -293,32 +298,69 @@ async def init_db():
                 created_at TEXT NOT NULL
             )
         """)
+        await conn.execute(
+            "ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS "
+            "scope TEXT NOT NULL DEFAULT 'admin'"
+        )
         admin_key = os.environ.get("ADMIN_API_KEY", "").strip()
         if admin_key:
             await conn.execute(
-                """INSERT INTO api_keys (key, tenant_id, label, created_at)
-                   VALUES ($1, $2, $3, $4)
+                """INSERT INTO api_keys (key, tenant_id, label, scope, created_at)
+                   VALUES ($1, $2, $3, 'admin', $4)
                    ON CONFLICT (key) DO NOTHING""",
                 admin_key, DEFAULT_TENANT_ID, "bootstrap-admin",
                 datetime.now(timezone.utc).isoformat(),
             )
 
+        # Read-only storefront key — seeded from the STOREFRONT_API_KEY
+        # env var so the public website can hit /api/storefront/* without
+        # sharing the admin master key.
+        storefront_key = os.environ.get("STOREFRONT_API_KEY", "").strip()
+        if storefront_key:
+            await conn.execute(
+                """INSERT INTO api_keys (key, tenant_id, label, scope, created_at)
+                   VALUES ($1, $2, $3, 'storefront', $4)
+                   ON CONFLICT (key) DO NOTHING""",
+                storefront_key, DEFAULT_TENANT_ID, "bootstrap-storefront",
+                datetime.now(timezone.utc).isoformat(),
+            )
+
+        # Product description — per-row copy the storefront renders on
+        # the /product/[id] detail page. Nullable text, defaults to empty
+        # so existing rows don't need a backfill.
+        await conn.execute(
+            "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS description TEXT"
+        )
+
 
 async def resolve_tenant_id(api_key: str) -> str | None:
     """Return the tenant_id for a given api_key, or None if unknown.
 
-    Called by the auth middleware on every /api/* request. Kept tiny and
-    DB-hit-per-call for now — a per-process cache is fine to add later
-    once we have real multi-tenant traffic.
+    Thin wrapper around :func:`resolve_api_key` that only hands back the
+    tenant portion. Kept for existing callers (tests, legacy imports).
+    """
+    hit = await resolve_api_key(api_key)
+    return hit[0] if hit else None
+
+
+async def resolve_api_key(api_key: str) -> tuple[str, str] | None:
+    """Return ``(tenant_id, scope)`` for a given api_key, or None.
+
+    Called by the auth middleware on every /api/* request. Scope is one
+    of 'admin' (everything under /api/*) or 'storefront' (only
+    /api/storefront/*). Kept DB-hit-per-call for now — a process cache
+    is worth adding once we have real multi-tenant traffic.
     """
     if not api_key:
         return None
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT tenant_id FROM api_keys WHERE key = $1",
+        "SELECT tenant_id, scope FROM api_keys WHERE key = $1",
         api_key,
     )
-    return row["tenant_id"] if row else None
+    if not row:
+        return None
+    return (row["tenant_id"], row["scope"] or "admin")
 
 
 async def save_message(

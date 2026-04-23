@@ -83,6 +83,7 @@ def test_serialize_matches_task_contract():
         "model": "ფხრიწიანი",
         "size": "პატარა (33x25)",
         "color": "",
+        "description": "Handmade canvas pouch",
         "price": 69.0,
         "stock": 1,
         "image_url": "https://cdn/front.jpg",
@@ -104,7 +105,9 @@ def test_serialize_matches_task_contract():
         "model": "ფხრიწიანი",
         "size": "პატარა (33x25)",
         "color": "",
+        "description": "Handmade canvas pouch",
         "price": 69.0,
+        "original_price": None,
         "currency": "GEL",
         "stock": 1,
         "in_stock": True,
@@ -114,6 +117,34 @@ def test_serialize_matches_task_contract():
         "tags": ["new"],
         "updated_at": "2026-04-23T12:34:56Z",
     }
+
+
+def test_serialize_exposes_original_price_on_sale():
+    row = {
+        "id": 42, "code": "FD2", "product_name": "Big",
+        "model": "", "size": "", "color": "",
+        "description": None,
+        "price": 74.0, "stock": 2,
+        "image_url": "", "image_url_back": "",
+        "category": "bag", "tags": "",
+        "on_sale": True, "sale_price": 59.0,
+        "updated_at": "2026-04-23T12:34:56Z", "created_at": "",
+    }
+    out = _serialize(row)
+    assert out["price"] == 59.0
+    assert out["original_price"] == 74.0
+
+
+def test_serialize_normalizes_empty_description_to_none():
+    row = {
+        "id": 1, "code": "", "product_name": "",
+        "model": "", "size": "", "color": "",
+        "description": "   ",
+        "price": 0, "stock": 0, "image_url": "", "image_url_back": "",
+        "category": "bag", "tags": "", "on_sale": False, "sale_price": None,
+        "updated_at": "", "created_at": "",
+    }
+    assert _serialize(row)["description"] is None
 
 
 def test_serialize_marks_zero_stock_as_out():

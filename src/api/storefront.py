@@ -100,6 +100,21 @@ def _effective_price(row: dict) -> float:
 def _serialize(row: dict) -> dict:
     """Turn an inventory row into the public response shape."""
     stock = int(row.get("stock") or 0)
+    effective = _effective_price(row)
+    # original_price exposes the pre-discount number so the storefront
+    # can render a strike-through. Null when the product isn't on sale
+    # (so the UI can simply check for null to decide whether to render).
+    original_price = None
+    if row.get("on_sale"):
+        try:
+            base = float(row.get("price") or 0)
+            if base > 0 and base != effective:
+                original_price = base
+        except (TypeError, ValueError):
+            pass
+    description = row.get("description")
+    if description is not None:
+        description = str(description).strip() or None
     return {
         "id": str(row["id"]),
         "code": row.get("code") or "",
@@ -107,7 +122,9 @@ def _serialize(row: dict) -> dict:
         "model": row.get("model") or "",
         "size": row.get("size") or "",
         "color": row.get("color") or "",
-        "price": _effective_price(row),
+        "description": description,
+        "price": effective,
+        "original_price": original_price,
         "currency": CURRENCY,
         "stock": stock,
         "in_stock": stock > 0,
