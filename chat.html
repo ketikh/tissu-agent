@@ -87,32 +87,20 @@
         let conversationId = null;
         const API = window.location.origin;
 
-        // chat.html is an internal testing tool for the Tissu bot, not the
-        // customer-facing UI (customers go through Facebook Messenger). It
-        // hits /api/support and /api/marketing, which are now guarded by
-        // the X-API-Key middleware, so wrap fetch to attach the key.
-        function getApiKey() {
-            let k = localStorage.getItem('admin_api_key') || '';
-            if (!k) {
-                k = (prompt('API Key (ADMIN_API_KEY):') || '').trim();
-                if (k) localStorage.setItem('admin_api_key', k);
-            }
-            return k;
-        }
+        // chat.html lives at /admin/chat-test — auth is the admin
+        // session cookie, set by /admin/login. The browser sends it
+        // on every same-origin fetch. If it ever comes back 401 (the
+        // session expired), bounce to the login page.
         const _origFetch = window.fetch.bind(window);
         window.fetch = async function(input, init) {
             init = init || {};
             const url = (typeof input === 'string') ? input : (input && input.url) || '';
             const isApi = url.startsWith('/api/') || url.startsWith(API + '/api/');
-            if (isApi) {
-                const headers = new Headers(init.headers || {});
-                if (!headers.has('X-API-Key')) headers.set('X-API-Key', getApiKey());
-                init.headers = headers;
-            }
+            if (isApi && !init.credentials) init.credentials = 'same-origin';
             const resp = await _origFetch(input, init);
             if (isApi && resp.status === 401) {
-                localStorage.removeItem('admin_api_key');
-                alert('API key არასწორია — გთხოვთ შეიყვანოთ თავიდან.');
+                window.location.href = '/admin/login?error=expired';
+                return resp;
             }
             return resp;
         };

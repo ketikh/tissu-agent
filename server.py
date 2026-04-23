@@ -49,7 +49,7 @@ from src.channels import get_adapter, ADAPTERS
 from src.webhooks.facebook import router as fb_router
 from src.webhooks.whatsapp import router as wa_router
 from src.api.storefront import router as storefront_router
-from src.auth import APIKeyMiddleware
+from src.auth import APIKeyMiddleware, AdminSessionMiddleware
 
 
 @asynccontextmanager
@@ -76,9 +76,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# API key guard on /api/*. Must be added AFTER CORS so preflight (OPTIONS)
-# requests still get the CORS headers before we check the key.
+# API key / session guard on /api/*. Must be added AFTER CORS so
+# preflight (OPTIONS) requests still get the CORS headers before we
+# check the key.
 app.add_middleware(APIKeyMiddleware)
+
+# Redirect unauthenticated /admin/* HTML requests to /admin/login.
+# Runs in addition to the API key middleware; the two don't overlap
+# because this one only acts on /admin/* paths.
+app.add_middleware(AdminSessionMiddleware)
 
 # Include webhook routers
 app.include_router(fb_router)

@@ -779,37 +779,38 @@
 <script>
     const API = window.location.origin;
 
-    // Every /api/* request needs X-API-Key. We store it in localStorage so
-    // the shop owner only has to paste it once per browser. If it's missing
-    // on page load, prompt for it; if a request comes back 401, clear and
-    // reprompt.
-    function getApiKey() {
-        let k = localStorage.getItem('admin_api_key') || '';
-        if (!k) {
-            k = (prompt('API Key (შეიყვანე შენი ADMIN_API_KEY):') || '').trim();
-            if (k) localStorage.setItem('admin_api_key', k);
-        }
-        return k;
-    }
-
+    // Auth is now handled by the admin_session cookie (set by
+    // /admin/login). The browser auto-sends it on every /api/* fetch
+    // because it's a same-origin request. We keep a thin fetch wrapper
+    // only to handle 401s — if the session expires while the user has
+    // the panel open, send them back to the login page instead of
+    // silently failing.
+    //
+    // Legacy: an X-API-Key stored in localStorage from the old prompt()
+    // era is still attached for backward compat, in case the owner
+    // happens to have both — the server accepts either and prefers
+    // the header. Delete that localStorage entry with console:
+    //   localStorage.removeItem('admin_api_key')
     const _origFetch = window.fetch.bind(window);
     window.fetch = async function(input, init) {
         init = init || {};
         const url = (typeof input === 'string') ? input : (input && input.url) || '';
         const isApi = url.startsWith('/api/') || url.startsWith(API + '/api/');
         if (isApi) {
-            const headers = new Headers(init.headers || {});
-            if (!headers.has('X-API-Key')) {
-                headers.set('X-API-Key', getApiKey());
+            const legacyKey = localStorage.getItem('admin_api_key') || '';
+            if (legacyKey) {
+                const headers = new Headers(init.headers || {});
+                if (!headers.has('X-API-Key')) headers.set('X-API-Key', legacyKey);
+                init.headers = headers;
             }
-            init.headers = headers;
+            // Always include the session cookie on same-origin fetches.
+            if (!init.credentials) init.credentials = 'same-origin';
         }
         const resp = await _origFetch(input, init);
         if (isApi && resp.status === 401) {
-            localStorage.removeItem('admin_api_key');
-            alert('API key არასწორია — გთხოვთ შეიყვანოთ თავიდან.');
-            // Force a re-prompt on the next call; don't reload because
-            // the user may have unsaved input.
+            // Session expired or cookie missing — bounce to login.
+            window.location.href = '/admin/login?error=expired';
+            return resp;
         }
         return resp;
     };
