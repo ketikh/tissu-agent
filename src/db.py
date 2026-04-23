@@ -522,6 +522,59 @@ async def update_admin_user_password(user_id: int, new_hash: str) -> None:
     )
 
 
+async def create_password_reset(
+    user_id: int, token_hash: str, ttl_seconds: int = 30 * 60,
+) -> None:
+    """Record a password-reset token's hash + expiry. Called when the
+    user hits POST /admin/forgot-password."""
+    from datetime import timedelta
+    pool = await get_pool()
+    now = datetime.now(timezone.utc)
+    await pool.execute(
+        "INSERT INTO admin_password_resets "
+        "(token_hash, admin_user_id, expires_at, created_at) "
+        "VALUES ($1, $2, $3, $4)",
+        token_hash, user_id,
+        (now + timedelta(seconds=ttl_seconds)).isoformat(),
+        now.isoformat(),
+    )
+
+
+async def consume_password_reset(token_hash: str) -> int | None:
+    """Verify a reset token and mark it used. Returns the owning
+    admin_user_id on success, None if the token is missing, already
+    used, or expired.
+
+    The update + check is done in one SQL statement so a concurrent
+    replay of the same token can only succeed once — whichever call
+    wins the ``used_at IS NULL`` race updates the row; the other
+    walks away with None.
+    """
+    pool = await get_pool()
+    now = datetime.now(timezone.utc).isoformat()
+    row = await pool.fetchrow(
+        "UPDATE admin_password_resets SET used_at = $1 "
+        "WHERE token_hash = $2 AND used_at IS NULL "
+        "AND expires_at > $1 "
+        "RETURNING admin_user_id",
+        now, token_hash,
+    )
+    return row["admin_user_id"] if row else None
+
+
+async def invalidate_all_password_resets_for(user_id: int) -> None:
+    """Mark every unused reset token for a user as used. Called after
+    a successful reset so any other outstanding links in the user's
+    inbox stop working."""
+    pool = await get_pool()
+    now = datetime.now(timezone.utc).isoformat()
+    await pool.execute(
+        "UPDATE admin_password_resets SET used_at = $1 "
+        "WHERE admin_user_id = $2 AND used_at IS NULL",
+        now, user_id,
+    )
+
+
 async def ensure_conversation(
     conversation_id: str,
     agent_type: str,

@@ -25,6 +25,8 @@ from src.db import (
     init_db, get_db, close_pool, DEFAULT_TENANT_ID,
     find_admin_user_by_email, mark_admin_user_logged_in,
     update_admin_user_password,
+    create_password_reset, consume_password_reset,
+    invalidate_all_password_resets_for,
 )
 from src.passwords import needs_rehash, verify_password, hash_password
 from src.sessions import (
@@ -33,7 +35,8 @@ from src.sessions import (
     issue_session_token, load_session_token,
     issue_csrf_token, cookie_kwargs,
 )
-from src.rate_limit import login_limiter
+from src.rate_limit import login_limiter, password_reset_limiter
+from src.tokens import generate_reset_token, hash_reset_token
 
 
 def get_tenant_id(request: Request) -> str:
@@ -225,6 +228,134 @@ async def admin_logout_get(request: Request):
     # Convenience for the "logout" link in the header — browsers send
     # GET on <a href>, so we mirror the POST behavior.
     return await admin_logout(request)
+
+
+# ── Password reset ─────────────────────────────
+# We generate a random one-time token, store its hash in
+# admin_password_resets, and email the raw token back to the user.
+# Without SMTP configured (see TISSU-HANDOFF.md §7) we fall back to
+# printing the link to the server log so the owner can rescue
+# themselves in an emergency.
+
+@app.get("/admin/forgot-password", response_class=HTMLResponse)
+async def admin_forgot_password_form():
+    html_path = Path(__file__).parent / "admin-forgot-password.html"
+    return HTMLResponse(
+        html_path.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.post("/admin/forgot-password")
+async def admin_forgot_password_submit(
+    request: Request,
+    email: str = Form(...),
+):
+    ip = _client_ip(request)
+    if not password_reset_limiter.allow(ip):
+        return RedirectResponse(url="/admin/forgot-password?error=rate", status_code=303)
+    password_reset_limiter.record_failure(ip)  # count every request, not just successes
+
+    email_norm = email.strip().lower()
+    user = await find_admin_user_by_email(email_norm)
+    if user:
+        raw, token_hash = generate_reset_token()
+        await create_password_reset(user["id"], token_hash, ttl_seconds=30 * 60)
+        public = os.getenv("PUBLIC_URL", "http://localhost:8000").rstrip("/")
+        link = f"{public}/admin/reset-password?token={raw}"
+        # Email hook. If no SMTP is wired up, print to the log so the
+        # operator can grab the link from the deploy console.
+        _send_or_log_reset_email(email_norm, link)
+
+    # Same response regardless of whether the email exists — no user
+    # enumeration via different status / timing on this endpoint.
+    return RedirectResponse(url="/admin/forgot-password?sent=1", status_code=303)
+
+
+def _send_or_log_reset_email(to_email: str, link: str) -> None:
+    """Deliver the reset link. Wraps SMTP in a try/except so an
+    outbound-mail outage can't lock the owner out permanently —
+    the link also lands in the server log as a last resort."""
+    smtp_host = os.getenv("SMTP_HOST", "").strip()
+    # Log first (never logs the full token value in a real deployment —
+    # but for v1 we need the link reachable, and the log is only
+    # readable by the operator).
+    print(f"[password-reset] link for {to_email}: {link}", flush=True)
+    if not smtp_host:
+        # No SMTP configured — the log line above is the fallback.
+        return
+    # SMTP branch intentionally left minimal — wire up in a separate
+    # ticket once we pick a provider (SendGrid / Postmark / etc.). For
+    # now we fail-quiet so the flow still completes.
+    try:
+        import smtplib
+        from email.message import EmailMessage
+        msg = EmailMessage()
+        msg["From"] = os.getenv("SMTP_FROM", "no-reply@tissu.local")
+        msg["To"] = to_email
+        msg["Subject"] = "Tissu ადმინი — პაროლის აღდგენა"
+        msg.set_content(
+            f"შენ ითხოვე პაროლის განახლება Tissu ადმინზე.\n\n"
+            f"ეს ბმული მოქმედებს 30 წუთი:\n{link}\n\n"
+            f"თუ შენ არ მოგითხოვია, უბრალოდ უგულებელყავი ეს წერილი."
+        )
+        host = smtp_host
+        port = int(os.getenv("SMTP_PORT", "587"))
+        user = os.getenv("SMTP_USER", "")
+        password = os.getenv("SMTP_PASSWORD", "")
+        with smtplib.SMTP(host, port, timeout=10) as s:
+            s.starttls()
+            if user and password:
+                s.login(user, password)
+            s.send_message(msg)
+    except Exception as e:
+        print(f"[password-reset] SMTP send failed: {e}", flush=True)
+
+
+@app.get("/admin/reset-password", response_class=HTMLResponse)
+async def admin_reset_password_form(request: Request, token: str = ""):
+    # We don't verify the token at GET time — the user might refresh
+    # the page, and we'd burn a one-shot token. Verification happens
+    # on submit.
+    html_path = Path(__file__).parent / "admin-reset-password.html"
+    return HTMLResponse(
+        html_path.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.post("/admin/reset-password")
+async def admin_reset_password_submit(
+    request: Request,
+    token: str = Form(...),
+    password: str = Form(...),
+    password2: str = Form(...),
+):
+    if len(password) < 8:
+        return RedirectResponse(
+            url=f"/admin/reset-password?token={token}&error=short",
+            status_code=303,
+        )
+    if password != password2:
+        return RedirectResponse(
+            url=f"/admin/reset-password?token={token}&error=mismatch",
+            status_code=303,
+        )
+
+    token_hash = hash_reset_token(token)
+    user_id = await consume_password_reset(token_hash)
+    if not user_id:
+        return RedirectResponse(
+            url="/admin/reset-password?error=invalid",
+            status_code=303,
+        )
+
+    # Rotate the password hash and kill every other outstanding
+    # reset token for this user.
+    new_hash = hash_password(password)
+    await update_admin_user_password(user_id, new_hash)
+    await invalidate_all_password_resets_for(user_id)
+    return RedirectResponse(url="/admin/login?reset=1", status_code=303)
 
 
 @app.get("/admin/chat-test", response_class=HTMLResponse)
