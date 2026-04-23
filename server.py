@@ -17,7 +17,7 @@ register_heif_opener()
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.config import API_HOST, API_PORT
@@ -79,10 +79,13 @@ app.include_router(storefront_router)
 
 # ── Pages ────────────────────────────────────────────────────
 
-@app.get("/", response_class=HTMLResponse)
-async def chat_ui():
-    html_path = Path(__file__).parent / "chat.html"
-    return HTMLResponse(html_path.read_text(encoding="utf-8"))
+@app.get("/")
+async def root_redirect():
+    """The root URL used to serve the chat widget, but the Tissu bot lives
+    on Facebook Messenger / Instagram DMs — this server is the admin
+    backend, not a customer-facing site. Send visitors straight to the
+    admin panel instead of a confusing chat shell."""
+    return RedirectResponse(url="/admin", status_code=302)
 
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -90,6 +93,19 @@ async def admin_ui():
     html_path = Path(__file__).parent / "admin.html"
     # Always serve fresh — the admin HTML is small and iterating on UX
     # feels broken when browsers cache the previous revision for hours.
+    return HTMLResponse(
+        html_path.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
+@app.get("/admin/chat-test", response_class=HTMLResponse)
+async def admin_chat_test():
+    """Text-only bot prompt tester. Handy for iterating on the system
+    prompt without opening Messenger, but limited — it can't send
+    photos and therefore doesn't exercise the Vision pipeline. For the
+    full flow (photo → match → owner confirm) still use Facebook/IG."""
+    html_path = Path(__file__).parent / "chat.html"
     return HTMLResponse(
         html_path.read_text(encoding="utf-8"),
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
