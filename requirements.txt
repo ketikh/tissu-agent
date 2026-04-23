@@ -10,3 +10,5 @@ python-multipart>=0.0.9
 Pillow>=11.0.0
 pillow-heif>=1.1.0
 cloudinary>=1.41.0
+argon2-cffi>=23.1.0
+itsdangerous>=2.2.0

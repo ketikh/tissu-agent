@@ -332,6 +332,77 @@ async def init_db():
             "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS description TEXT"
         )
 
+        # ── Admin users (owner / staff login) ──────────────────
+        # Replaces the browser prompt() hack — /admin/login now takes a
+        # real email + password and verifies an argon2id hash from here.
+        # tenant_id keeps the table multi-tenant-ready; each tenant has
+        # their own owner seeded from ADMIN_OWNER_EMAIL / PASSWORD.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS admin_users (
+                id SERIAL PRIMARY KEY,
+                tenant_id TEXT NOT NULL DEFAULT 'default',
+                email TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'owner',
+                created_at TEXT NOT NULL,
+                last_login_at TEXT
+            )
+        """)
+        # Email is unique per tenant — two different shops can each have
+        # owner@tissu.com without clashing.
+        await conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_tenant_email "
+            "ON admin_users (tenant_id, LOWER(email))"
+        )
+
+        # Password-reset tokens. We store only the hash of the token so
+        # a DB dump doesn't hand out active reset links. used_at gets
+        # stamped the moment the token is redeemed, and a successful
+        # reset also invalidates every other unused token for the user.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS admin_password_resets (
+                token_hash TEXT PRIMARY KEY,
+                admin_user_id INTEGER NOT NULL REFERENCES admin_users(id),
+                expires_at TEXT NOT NULL,
+                used_at TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_admin_password_resets_user "
+            "ON admin_password_resets (admin_user_id)"
+        )
+
+        # Seed an owner account from the env vars if both are set AND
+        # no account exists for that tenant yet. This mirrors the
+        # bootstrap-admin pattern for api_keys — first-boot convenience
+        # that becomes a no-op after rotation.
+        owner_email = os.environ.get("ADMIN_OWNER_EMAIL", "").strip().lower()
+        owner_password = os.environ.get("ADMIN_OWNER_PASSWORD", "")
+        if owner_email and owner_password:
+            existing = await conn.fetchval(
+                "SELECT id FROM admin_users WHERE tenant_id = $1 "
+                "AND LOWER(email) = $2",
+                DEFAULT_TENANT_ID, owner_email,
+            )
+            if not existing:
+                # Import locally so the rest of the module doesn't pay
+                # the argon2-cffi import cost when the seed is a no-op.
+                from src.passwords import hash_password
+                try:
+                    pw_hash = hash_password(owner_password)
+                except Exception as e:
+                    print(f"[admin-seed] refusing to seed owner: {e}", flush=True)
+                else:
+                    await conn.execute(
+                        "INSERT INTO admin_users "
+                        "(tenant_id, email, password_hash, role, created_at) "
+                        "VALUES ($1, $2, $3, 'owner', $4)",
+                        DEFAULT_TENANT_ID, owner_email, pw_hash,
+                        datetime.now(timezone.utc).isoformat(),
+                    )
+                    print(f"[admin-seed] seeded owner {owner_email}", flush=True)
+
 
 async def resolve_tenant_id(api_key: str) -> str | None:
     """Return the tenant_id for a given api_key, or None if unknown.
@@ -400,6 +471,55 @@ async def get_conversation_messages(conversation_id: str) -> list[dict]:
         conversation_id,
     )
     return [{"role": r["role"], "content": r["content"]} for r in rows]
+
+
+async def find_admin_user_by_email(
+    email: str, tenant_id: str = DEFAULT_TENANT_ID,
+) -> dict | None:
+    """Return the admin_users row matching ``email`` (case-insensitive)
+    for the given tenant, or None. Used on the login path."""
+    if not email:
+        return None
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT id, tenant_id, email, password_hash, role, "
+        "created_at, last_login_at FROM admin_users "
+        "WHERE tenant_id = $1 AND LOWER(email) = LOWER($2)",
+        tenant_id, email,
+    )
+    return dict(row) if row else None
+
+
+async def find_admin_user_by_id(user_id: int) -> dict | None:
+    """Return the admin_users row for ``user_id`` or None. Used by the
+    session middleware to load the current user on every admin request.
+    """
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT id, tenant_id, email, password_hash, role, "
+        "created_at, last_login_at FROM admin_users WHERE id = $1",
+        user_id,
+    )
+    return dict(row) if row else None
+
+
+async def mark_admin_user_logged_in(user_id: int) -> None:
+    """Stamp last_login_at on successful login."""
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE admin_users SET last_login_at = $1 WHERE id = $2",
+        datetime.now(timezone.utc).isoformat(), user_id,
+    )
+
+
+async def update_admin_user_password(user_id: int, new_hash: str) -> None:
+    """Replace the password hash for ``user_id`` (used by rehash on
+    login and by the password-reset flow)."""
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE admin_users SET password_hash = $1 WHERE id = $2",
+        new_hash, user_id,
+    )
 
 
 async def ensure_conversation(
