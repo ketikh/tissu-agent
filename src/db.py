@@ -1,11 +1,40 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 
 import asyncpg
 
 from src.config import DATABASE_URL
+
+# Every tenant-scoped table carries a tenant_id so we can host multiple
+# shops out of one database + one deployment. The single-shop Tissu
+# install stays on 'default'; new tenants get their own slug when an
+# operator seeds a row into api_keys.
+DEFAULT_TENANT_ID = "default"
+
+TENANT_SCOPED_TABLES = (
+    "conversations",
+    "messages",
+    "leads",
+    "tickets",
+    "content",
+    "knowledge_base",
+    "inventory",
+    "orders",
+    "confirm_tokens",
+    "categories",
+    "product_extra_photos",
+    # These tables are created lazily by other modules (image_match,
+    # vision_match, the Facebook webhook's photo-hint pipeline). ADD
+    # COLUMN will fail if the table isn't there yet, so init_db wraps
+    # each statement in its own try/except to keep going.
+    "product_pairs",
+    "product_embeddings",
+    "product_fingerprints",
+    "ai_photo_hints",
+)
 
 _pool: asyncpg.Pool | None = None
 
@@ -200,6 +229,12 @@ async def init_db():
             )
         """)
         now_iso = datetime.now(timezone.utc).isoformat()
+        # Note: tenant_id is supplied by the DEFAULT in the column spec,
+        # so these seed rows land in the DEFAULT_TENANT_ID tenant without
+        # us having to mention it explicitly. We keep them row-locked with
+        # ON CONFLICT (slug) DO NOTHING — slugs are treated as globally
+        # unique for now; we'll revisit if we ever allow two tenants to
+        # reuse the same category slug.
         await conn.execute(
             """INSERT INTO categories (slug, name, emoji, fields, sort_order, created_at)
                VALUES ($1, $2, $3, $4::jsonb, $5, $6)
@@ -225,14 +260,90 @@ async def init_db():
                AND fields = '[{"key": "length", "label": "სიგრძე"}, {"key": "material", "label": "მასალა"}]'::jsonb"""
         )
 
+        # ── Multi-tenant migration ─────────────────────────────
+        # Every tenant-scoped table gets a tenant_id column with the default
+        # 'default'. This is idempotent: ADD COLUMN IF NOT EXISTS is a no-op
+        # on re-run, and the DEFAULT 'default' backfills existing rows on
+        # the very first migration so the single-shop Tissu deployment keeps
+        # working without any data update.
+        for table in TENANT_SCOPED_TABLES:
+            try:
+                await conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS "
+                    f"tenant_id TEXT NOT NULL DEFAULT '{DEFAULT_TENANT_ID}'"
+                )
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{table}_tenant "
+                    f"ON {table} (tenant_id)"
+                )
+            except asyncpg.exceptions.UndefinedTableError:
+                # Lazy tables (product_embeddings, ai_photo_hints, …) get
+                # their tenant_id when their owning module creates them.
+                print(f"[migration] skipping {table}: not created yet", flush=True)
 
-async def save_message(conversation_id: str, role: str, content: str, tool_calls: list | None = None):
+        # api_keys maps each X-API-Key value to the tenant that owns the
+        # data it can see. The middleware looks up tenant_id here; if the
+        # table is empty (first boot after migration) we seed it from the
+        # ADMIN_API_KEY env var so the existing admin UI keeps working.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS api_keys (
+                key TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL,
+                label TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+        admin_key = os.environ.get("ADMIN_API_KEY", "").strip()
+        if admin_key:
+            await conn.execute(
+                """INSERT INTO api_keys (key, tenant_id, label, created_at)
+                   VALUES ($1, $2, $3, $4)
+                   ON CONFLICT (key) DO NOTHING""",
+                admin_key, DEFAULT_TENANT_ID, "bootstrap-admin",
+                datetime.now(timezone.utc).isoformat(),
+            )
+
+
+async def resolve_tenant_id(api_key: str) -> str | None:
+    """Return the tenant_id for a given api_key, or None if unknown.
+
+    Called by the auth middleware on every /api/* request. Kept tiny and
+    DB-hit-per-call for now — a per-process cache is fine to add later
+    once we have real multi-tenant traffic.
+    """
+    if not api_key:
+        return None
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT tenant_id FROM api_keys WHERE key = $1",
+        api_key,
+    )
+    return row["tenant_id"] if row else None
+
+
+async def save_message(
+    conversation_id: str,
+    role: str,
+    content: str,
+    tool_calls: list | None = None,
+    tenant_id: str = DEFAULT_TENANT_ID,
+):
+    """Insert a message and bump the parent conversation's updated_at.
+
+    tenant_id defaults to the single-shop value — the bot webhooks don't
+    carry a tenant yet (one Facebook page per deployment), so every
+    message lands in the default tenant. Admin callers can pass tenant_id
+    explicitly if they ever need to write on behalf of a different shop.
+    """
     pool = await get_pool()
     now = datetime.now(timezone.utc).isoformat()
     async with pool.acquire() as conn:
         await conn.execute(
-            "INSERT INTO messages (conversation_id, role, content, tool_calls, created_at) VALUES ($1, $2, $3, $4, $5)",
-            conversation_id, role, content, json.dumps(tool_calls) if tool_calls else None, now,
+            "INSERT INTO messages (conversation_id, role, content, tool_calls, tenant_id, created_at) "
+            "VALUES ($1, $2, $3, $4, $5, $6)",
+            conversation_id, role, content,
+            json.dumps(tool_calls) if tool_calls else None,
+            tenant_id, now,
         )
         await conn.execute(
             "UPDATE conversations SET updated_at = $1 WHERE id = $2",
@@ -249,10 +360,15 @@ async def get_conversation_messages(conversation_id: str) -> list[dict]:
     return [{"role": r["role"], "content": r["content"]} for r in rows]
 
 
-async def ensure_conversation(conversation_id: str, agent_type: str):
+async def ensure_conversation(
+    conversation_id: str,
+    agent_type: str,
+    tenant_id: str = DEFAULT_TENANT_ID,
+):
     pool = await get_pool()
     now = datetime.now(timezone.utc).isoformat()
     await pool.execute(
-        "INSERT INTO conversations (id, agent_type, created_at, updated_at) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING",
-        conversation_id, agent_type, now, now,
+        "INSERT INTO conversations (id, agent_type, tenant_id, created_at, updated_at) "
+        "VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING",
+        conversation_id, agent_type, tenant_id, now, now,
     )

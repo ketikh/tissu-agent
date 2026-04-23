@@ -117,20 +117,22 @@ def _contains_complaint(text: str) -> bool:
 
 # ── Public queries ───────────────────────────────────────────────
 
-async def list_complaints(limit: int = 50) -> list[dict]:
+async def list_complaints(limit: int = 50, tenant_id: str = "default") -> list[dict]:
     """Customer messages that look like complaints, newest first.
 
     We also grab the bot reply that preceded the complaint so the owner can
-    see what the customer was reacting to.
+    see what the customer was reacting to. Scoped to tenant_id so a future
+    multi-tenant deployment doesn't leak one shop's complaints into another.
     """
     pool = await get_db()
     rows = await pool.fetch(
         """
         SELECT id, conversation_id, role, content, created_at
         FROM messages
-        WHERE conversation_id NOT LIKE 'debug_%'
+        WHERE tenant_id = $1 AND conversation_id NOT LIKE 'debug_%'
         ORDER BY conversation_id, created_at ASC
-        """
+        """,
+        tenant_id,
     )
     # Group by conversation so we can find the bot reply right before each
     # flagged user message.
@@ -162,8 +164,8 @@ async def list_complaints(limit: int = 50) -> list[dict]:
     return out[:limit]
 
 
-async def list_faq_candidates(min_count: int = 2, limit: int = 30) -> list[dict]:
-    """Most frequent customer questions after normalisation.
+async def list_faq_candidates(min_count: int = 2, limit: int = 30, tenant_id: str = "default") -> list[dict]:
+    """Most frequent customer questions after normalisation, per tenant.
 
     Shown descending by count; the owner can scan this to spot questions
     worth encoding as canned responses in the bot prompt.
@@ -173,9 +175,10 @@ async def list_faq_candidates(min_count: int = 2, limit: int = 30) -> list[dict]
         """
         SELECT content, MIN(created_at) AS first_seen, MAX(created_at) AS last_seen
         FROM messages
-        WHERE role = 'user' AND conversation_id NOT LIKE 'debug_%'
+        WHERE tenant_id = $1 AND role = 'user' AND conversation_id NOT LIKE 'debug_%'
         GROUP BY content
-        """
+        """,
+        tenant_id,
     )
     groups: dict[str, dict] = {}
     for r in rows:
@@ -205,8 +208,8 @@ async def list_faq_candidates(min_count: int = 2, limit: int = 30) -> list[dict]
     return ranked[:limit]
 
 
-async def list_product_requests(limit: int = 100) -> list[dict]:
-    """Customer messages mentioning categories we don't carry.
+async def list_product_requests(limit: int = 100, tenant_id: str = "default") -> list[dict]:
+    """Customer messages mentioning categories we don't carry, per tenant.
 
     Aggregated per category so the owner sees "iPad case: 8 asks" rather
     than 8 near-duplicate rows. Also keeps one sample message per category
@@ -217,9 +220,10 @@ async def list_product_requests(limit: int = 100) -> list[dict]:
         """
         SELECT content, conversation_id, created_at
         FROM messages
-        WHERE role = 'user' AND conversation_id NOT LIKE 'debug_%'
+        WHERE tenant_id = $1 AND role = 'user' AND conversation_id NOT LIKE 'debug_%'
         ORDER BY created_at DESC
-        """
+        """,
+        tenant_id,
     )
     agg: dict[str, dict] = {}
     for r in rows:

@@ -15,13 +15,20 @@ from PIL import Image
 from pillow_heif import register_heif_opener
 register_heif_opener()
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.config import API_HOST, API_PORT
-from src.db import init_db, get_db, close_pool
+from src.db import init_db, get_db, close_pool, DEFAULT_TENANT_ID
+
+
+def get_tenant_id(request: Request) -> str:
+    """Pull the tenant_id that the APIKeyMiddleware stashed on the request.
+    Falls back to DEFAULT_TENANT_ID for non-/api paths and exempt endpoints,
+    so internal callers and Meta webhooks get a sensible value."""
+    return getattr(request.state, "tenant_id", DEFAULT_TENANT_ID)
 from src.models import ChatRequest, ChatResponse, LeadCreate, ContentCreate
 from src.engine import run_agent
 from src.agents.support_sales import get_support_sales_agent
@@ -144,11 +151,12 @@ async def meta_data_deletion(request: Request):
     now = datetime.now(timezone.utc).isoformat()
     try:
         await pool.execute(
-            "INSERT INTO tickets (subject, description, status, priority, customer_email, conversation_id, created_at, updated_at) "
-            "VALUES ($1, $2, 'open', 'urgent', $3, $4, $5, $5)",
+            "INSERT INTO tickets (subject, description, status, priority, customer_email, conversation_id, tenant_id, created_at, updated_at) "
+            "VALUES ($1, $2, 'open', 'urgent', $3, $4, $5, $6, $6)",
             "[DATA-DELETION] Meta user requested deletion",
             json.dumps({"user_id": user_id, "source": "meta_callback"}, ensure_ascii=False),
-            "", f"meta_user_{user_id}" if user_id else "meta_user_unknown", now,
+            "", f"meta_user_{user_id}" if user_id else "meta_user_unknown",
+            DEFAULT_TENANT_ID, now,
         )
     except Exception as e:
         print(f"[DATA-DELETE] Failed to log ticket: {e}", flush=True)
@@ -230,11 +238,11 @@ async def chat_marketing(req: ChatRequest):
 # ── Data Endpoints ───────────────────────────────────────────
 
 @app.get("/api/leads")
-async def list_leads(status: str = "", limit: int = 50):
+async def list_leads(status: str = "", limit: int = 50, tenant_id: str = Depends(get_tenant_id)):
     pool = await get_db()
-    query = "SELECT * FROM leads WHERE 1=1"
-    params = []
-    idx = 1
+    query = "SELECT * FROM leads WHERE tenant_id = $1"
+    params: list = [tenant_id]
+    idx = 2
     if status:
         query += f" AND status = ${idx}"
         params.append(status)
@@ -246,22 +254,23 @@ async def list_leads(status: str = "", limit: int = 50):
 
 
 @app.post("/api/leads")
-async def create_lead(lead: LeadCreate):
+async def create_lead(lead: LeadCreate, tenant_id: str = Depends(get_tenant_id)):
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
     row = await pool.fetchrow(
-        "INSERT INTO leads (name, email, company, phone, source, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
-        lead.name, lead.email, lead.company, lead.phone, lead.source, lead.notes, now, now,
+        "INSERT INTO leads (name, email, company, phone, source, notes, tenant_id, created_at, updated_at) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
+        lead.name, lead.email, lead.company, lead.phone, lead.source, lead.notes, tenant_id, now, now,
     )
     return {"id": row["id"], "message": "Lead created"}
 
 
 @app.get("/api/tickets")
-async def list_tickets(status: str = "", limit: int = 50):
+async def list_tickets(status: str = "", limit: int = 50, tenant_id: str = Depends(get_tenant_id)):
     pool = await get_db()
-    query = "SELECT * FROM tickets WHERE 1=1"
-    params = []
-    idx = 1
+    query = "SELECT * FROM tickets WHERE tenant_id = $1"
+    params: list = [tenant_id]
+    idx = 2
     if status:
         query += f" AND status = ${idx}"
         params.append(status)
@@ -273,11 +282,11 @@ async def list_tickets(status: str = "", limit: int = 50):
 
 
 @app.get("/api/content")
-async def list_content(content_type: str = "", status: str = "", limit: int = 50):
+async def list_content(content_type: str = "", status: str = "", limit: int = 50, tenant_id: str = Depends(get_tenant_id)):
     pool = await get_db()
-    query = "SELECT * FROM content WHERE 1=1"
-    params = []
-    idx = 1
+    query = "SELECT * FROM content WHERE tenant_id = $1"
+    params: list = [tenant_id]
+    idx = 2
     if content_type:
         query += f" AND content_type = ${idx}"
         params.append(content_type)
@@ -293,18 +302,19 @@ async def list_content(content_type: str = "", status: str = "", limit: int = 50
 
 
 @app.post("/api/content")
-async def create_content(item: ContentCreate):
+async def create_content(item: ContentCreate, tenant_id: str = Depends(get_tenant_id)):
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
     row = await pool.fetchrow(
-        "INSERT INTO content (title, body, content_type, tags, scheduled_at, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, 'draft', $6, $7) RETURNING id",
-        item.title, item.body, item.content_type, json.dumps(item.tags), item.scheduled_at, now, now,
+        "INSERT INTO content (title, body, content_type, tags, scheduled_at, status, tenant_id, created_at, updated_at) "
+        "VALUES ($1, $2, $3, $4, $5, 'draft', $6, $7, $8) RETURNING id",
+        item.title, item.body, item.content_type, json.dumps(item.tags), item.scheduled_at, tenant_id, now, now,
     )
     return {"id": row["id"], "message": "Content created"}
 
 
 @app.get("/api/conversations")
-async def list_conversations(agent_type: str = "", limit: int = 100):
+async def list_conversations(agent_type: str = "", limit: int = 100, tenant_id: str = Depends(get_tenant_id)):
     """List recent conversations with message count and a snippet of the
     last customer message. Powers the admin ჩატები tab."""
     pool = await get_db()
@@ -318,10 +328,10 @@ async def list_conversations(agent_type: str = "", limit: int = 100):
                  WHERE m.conversation_id = c.id AND m.role IN ('assistant','model')
                  ORDER BY m.created_at DESC LIMIT 1) AS last_bot_msg
         FROM conversations c
-        WHERE c.id NOT LIKE 'debug_%'
+        WHERE c.tenant_id = $1 AND c.id NOT LIKE 'debug_%'
     """
-    params: list = []
-    idx = 1
+    params: list = [tenant_id]
+    idx = 2
     if agent_type:
         query += f" AND c.agent_type = ${idx}"
         params.append(agent_type)
@@ -346,11 +356,20 @@ async def list_conversations(agent_type: str = "", limit: int = 100):
 
 
 @app.get("/api/conversations/{conversation_id}")
-async def get_conversation(conversation_id: str):
+async def get_conversation(conversation_id: str, tenant_id: str = Depends(get_tenant_id)):
     pool = await get_db()
+    # Verify the conversation belongs to this tenant before returning its
+    # messages — prevents a tenant with a valid key from reading another
+    # tenant's chat history by guessing IDs.
+    owner = await pool.fetchrow(
+        "SELECT tenant_id FROM conversations WHERE id = $1", conversation_id,
+    )
+    if not owner or owner["tenant_id"] != tenant_id:
+        raise HTTPException(status_code=404, detail="Conversation not found")
     rows = await pool.fetch(
-        "SELECT role, content, created_at FROM messages WHERE conversation_id = $1 ORDER BY created_at",
-        conversation_id,
+        "SELECT role, content, created_at FROM messages "
+        "WHERE conversation_id = $1 AND tenant_id = $2 ORDER BY created_at",
+        conversation_id, tenant_id,
     )
     if not rows:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -358,11 +377,11 @@ async def get_conversation(conversation_id: str):
 
 
 @app.get("/api/knowledge")
-async def list_knowledge(category: str = ""):
+async def list_knowledge(category: str = "", tenant_id: str = Depends(get_tenant_id)):
     pool = await get_db()
-    query = "SELECT * FROM knowledge_base WHERE 1=1"
-    params = []
-    idx = 1
+    query = "SELECT * FROM knowledge_base WHERE tenant_id = $1"
+    params: list = [tenant_id]
+    idx = 2
     if category:
         query += f" AND category = ${idx}"
         params.append(category)
@@ -372,12 +391,13 @@ async def list_knowledge(category: str = ""):
 
 
 @app.post("/api/knowledge")
-async def add_knowledge(question: str, answer: str, category: str = "general"):
+async def add_knowledge(question: str, answer: str, category: str = "general", tenant_id: str = Depends(get_tenant_id)):
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
     row = await pool.fetchrow(
-        "INSERT INTO knowledge_base (question, answer, category, created_at) VALUES ($1, $2, $3, $4) RETURNING id",
-        question, answer, category, now,
+        "INSERT INTO knowledge_base (question, answer, category, tenant_id, created_at) "
+        "VALUES ($1, $2, $3, $4, $5) RETURNING id",
+        question, answer, category, tenant_id, now,
     )
     return {"id": row["id"], "message": "Knowledge article added"}
 
@@ -469,7 +489,7 @@ def save_uploaded_image(upload: UploadFile, prefix: str) -> str:
 # ── Categories registry ────────────────────────────────────
 
 @app.get("/api/categories")
-async def list_categories():
+async def list_categories(tenant_id: str = Depends(get_tenant_id)):
     """Return every catalog category with its field schema and live count.
     Driven by the `categories` table — new rows show up in the admin
     sidebar the moment they're inserted."""
@@ -479,10 +499,13 @@ async def list_categories():
                COALESCE(cnt.n, 0) AS count
         FROM categories c
         LEFT JOIN (
-            SELECT category, COUNT(*) AS n FROM inventory GROUP BY category
+            SELECT category, COUNT(*) AS n FROM inventory
+            WHERE tenant_id = $1
+            GROUP BY category
         ) cnt ON cnt.category = c.slug
+        WHERE c.tenant_id = $1
         ORDER BY c.sort_order ASC, c.name ASC
-    """)
+    """, tenant_id)
     out = []
     for r in rows:
         fields = r["fields"]
@@ -503,7 +526,7 @@ async def list_categories():
 
 
 @app.post("/api/categories")
-async def add_category(request: Request):
+async def add_category(request: Request, tenant_id: str = Depends(get_tenant_id)):
     """Register a new product category. Body: {slug, name, emoji, fields}.
     `fields` is a list of {key, label} objects describing the per-product
     custom attributes the admin UI should render."""
@@ -525,9 +548,9 @@ async def add_category(request: Request):
     now = datetime.now(timezone.utc).isoformat()
     try:
         await pool.execute(
-            """INSERT INTO categories (slug, name, emoji, fields, sort_order, created_at)
-               VALUES ($1, $2, $3, $4::jsonb, $5, $6)""",
-            slug, name, emoji, json.dumps(cleaned_fields), 100, now,
+            """INSERT INTO categories (slug, name, emoji, fields, sort_order, tenant_id, created_at)
+               VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)""",
+            slug, name, emoji, json.dumps(cleaned_fields), 100, tenant_id, now,
         )
     except asyncpg.exceptions.UniqueViolationError:
         raise HTTPException(status_code=409, detail="ეს slug უკვე არსებობს")
@@ -535,23 +558,27 @@ async def add_category(request: Request):
 
 
 @app.delete("/api/categories/{slug}")
-async def delete_category(slug: str):
+async def delete_category(slug: str, tenant_id: str = Depends(get_tenant_id)):
     """Delete a category — refuses when any inventory row still uses it,
     so the owner doesn't orphan products by accident."""
     if slug in ("bag", "necklace"):
         raise HTTPException(status_code=400, detail="ძირითადი კატეგორიები არ წაიშლება")
     pool = await get_db()
     in_use = await pool.fetchval(
-        "SELECT COUNT(*) FROM inventory WHERE category = $1", slug
+        "SELECT COUNT(*) FROM inventory WHERE tenant_id = $1 AND category = $2",
+        tenant_id, slug,
     )
     if int(in_use or 0) > 0:
         raise HTTPException(status_code=409, detail=f"ამ კატეგორიაში {in_use} პროდუქტია, ჯერ გადაიტანე სხვაგან")
-    await pool.execute("DELETE FROM categories WHERE slug = $1", slug)
+    await pool.execute(
+        "DELETE FROM categories WHERE slug = $1 AND tenant_id = $2",
+        slug, tenant_id,
+    )
     return {"ok": True}
 
 
 @app.put("/api/categories/{slug}")
-async def update_category(slug: str, request: Request):
+async def update_category(slug: str, request: Request, tenant_id: str = Depends(get_tenant_id)):
     """Update the name / emoji / fields of an existing category."""
     data = await request.json()
     pool = await get_db()
@@ -575,15 +602,17 @@ async def update_category(slug: str, request: Request):
     if not updates:
         return {"ok": True, "updated": False}
     params.append(slug)
+    params.append(tenant_id)
     await pool.execute(
-        f"UPDATE categories SET {', '.join(updates)} WHERE slug = ${idx}",
+        f"UPDATE categories SET {', '.join(updates)} "
+        f"WHERE slug = ${idx} AND tenant_id = ${idx + 1}",
         *params,
     )
     return {"ok": True}
 
 
 @app.put("/api/inventory/{item_id}/attr")
-async def set_inventory_attr(item_id: int, request: Request):
+async def set_inventory_attr(item_id: int, request: Request, tenant_id: str = Depends(get_tenant_id)):
     """Merge a single key/value into inventory.attrs — used by admin to
     save the per-field text inputs for category-driven products."""
     data = await request.json()
@@ -594,14 +623,15 @@ async def set_inventory_attr(item_id: int, request: Request):
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
     await pool.execute(
-        "UPDATE inventory SET attrs = attrs || jsonb_build_object($1::text, $2::text), updated_at = $3 WHERE id = $4",
-        key, str(value), now, item_id,
+        "UPDATE inventory SET attrs = attrs || jsonb_build_object($1::text, $2::text), updated_at = $3 "
+        "WHERE id = $4 AND tenant_id = $5",
+        key, str(value), now, item_id, tenant_id,
     )
     return {"ok": True}
 
 
 @app.get("/api/inventory")
-async def list_inventory(category: str = ""):
+async def list_inventory(category: str = "", tenant_id: str = Depends(get_tenant_id)):
     """List inventory. Omit category to get everything (admin); pass
     `?category=bag` or `?category=necklace` to scope results — bot-facing
     callers should always pass category='bag' to avoid cross-category leakage.
@@ -611,11 +641,14 @@ async def list_inventory(category: str = ""):
     pool = await get_db()
     if category:
         rows = await pool.fetch(
-            "SELECT * FROM inventory WHERE category = $1 ORDER BY model, size",
-            category,
+            "SELECT * FROM inventory WHERE tenant_id = $1 AND category = $2 ORDER BY model, size",
+            tenant_id, category,
         )
     else:
-        rows = await pool.fetch("SELECT * FROM inventory ORDER BY model, size")
+        rows = await pool.fetch(
+            "SELECT * FROM inventory WHERE tenant_id = $1 ORDER BY model, size",
+            tenant_id,
+        )
 
     inv_ids = [r["id"] for r in rows]
     angles_by_id: dict = {}
@@ -623,9 +656,9 @@ async def list_inventory(category: str = ""):
         try:
             angle_rows = await pool.fetch(
                 "SELECT id, inventory_id, image_url FROM product_extra_photos "
-                "WHERE photo_type = 'angle' AND inventory_id = ANY($1::int[]) "
-                "ORDER BY created_at ASC",
-                inv_ids,
+                "WHERE tenant_id = $1 AND photo_type = 'angle' "
+                "AND inventory_id = ANY($2::int[]) ORDER BY created_at ASC",
+                tenant_id, inv_ids,
             )
             for ar in angle_rows:
                 angles_by_id.setdefault(ar["inventory_id"], []).append(
@@ -644,7 +677,7 @@ async def list_inventory(category: str = ""):
 
 
 @app.post("/api/inventory/{item_id}/angle")
-async def add_product_angle(item_id: int, image: UploadFile = File(...)):
+async def add_product_angle(item_id: int, image: UploadFile = File(...), tenant_id: str = Depends(get_tenant_id)):
     """Upload an extra angle photo for a product — goes into
     product_extra_photos with photo_type='angle' so it lives alongside the
     existing lifestyle photos but is clearly distinguishable. Returns the
@@ -653,26 +686,28 @@ async def add_product_angle(item_id: int, image: UploadFile = File(...)):
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
     row = await pool.fetchrow(
-        "SELECT code FROM inventory WHERE id = $1", item_id,
+        "SELECT code FROM inventory WHERE id = $1 AND tenant_id = $2",
+        item_id, tenant_id,
     )
     if not row:
         raise HTTPException(status_code=404, detail="Item not found")
     code = row["code"] or ""
     new = await pool.fetchrow(
-        "INSERT INTO product_extra_photos (inventory_id, code, image_url, photo_type, created_at) "
-        "VALUES ($1, $2, $3, 'angle', $4) RETURNING id",
-        item_id, code, image_url, now,
+        "INSERT INTO product_extra_photos (inventory_id, code, image_url, photo_type, tenant_id, created_at) "
+        "VALUES ($1, $2, $3, 'angle', $4, $5) RETURNING id",
+        item_id, code, image_url, tenant_id, now,
     )
     return {"id": new["id"], "image_url": image_url}
 
 
 @app.delete("/api/inventory/angle/{photo_id}")
-async def delete_product_angle(photo_id: int):
+async def delete_product_angle(photo_id: int, tenant_id: str = Depends(get_tenant_id)):
     """Remove a single angle photo by its extra-photos row id."""
     pool = await get_db()
     await pool.execute(
-        "DELETE FROM product_extra_photos WHERE id = $1 AND photo_type = 'angle'",
-        photo_id,
+        "DELETE FROM product_extra_photos "
+        "WHERE id = $1 AND tenant_id = $2 AND photo_type = 'angle'",
+        photo_id, tenant_id,
     )
     return {"ok": True}
 
@@ -689,6 +724,7 @@ async def add_inventory(
     category: str = Form("bag"),
     attrs_json: str = Form("{}"),
     image: UploadFile = File(None),
+    tenant_id: str = Depends(get_tenant_id),
 ):
     image_url = ""
     if image and image.filename:
@@ -701,14 +737,15 @@ async def add_inventory(
     # Auto-generate a code for non-bag categories using the first two
     # uppercase letters of the slug (e.g. necklace → NE, belt → BE). Bag
     # codes stay on the legacy FP/TP/FD/TD convention and are not
-    # generated here.
+    # generated here. Codes are unique per tenant.
     new_code = ""
     if category and category != "bag":
         prefix = (category[:2] or "XX").upper()
         max_n = await pool.fetchval(
             "SELECT COALESCE(MAX(CAST(SUBSTRING(code, 3) AS INTEGER)), 0) "
-            "FROM inventory WHERE category = $1 AND code ~ ('^' || $2 || '[0-9]+$')",
-            category, prefix,
+            "FROM inventory WHERE tenant_id = $1 AND category = $2 "
+            "AND code ~ ('^' || $3 || '[0-9]+$')",
+            tenant_id, category, prefix,
         )
         new_code = f"{prefix}{int(max_n or 0) + 1}"
 
@@ -719,59 +756,65 @@ async def add_inventory(
         attrs_value = "{}"
 
     row = await pool.fetchrow(
-        "INSERT INTO inventory (product_name, model, size, color, style, code, category, attrs, price, stock, image_url, created_at, updated_at) "
-        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13) RETURNING id",
-        product_name, model, size, color, style, new_code, category, attrs_value, price, stock, image_url, now, now,
+        "INSERT INTO inventory (product_name, model, size, color, style, code, category, attrs, price, stock, image_url, tenant_id, created_at, updated_at) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, $14) RETURNING id",
+        product_name, model, size, color, style, new_code, category, attrs_value, price, stock, image_url, tenant_id, now, now,
     )
     return {"id": row["id"], "code": new_code, "category": category, "image_url": image_url, "message": "Product added"}
 
 
 @app.put("/api/inventory/{item_id}")
-async def update_inventory(item_id: int, stock: int = None, price: float = None, model: str = None, size: str = None, color: str = None, tags: str = None, on_sale: bool = None, sale_price: float = None):
+async def update_inventory(
+    item_id: int,
+    stock: int = None, price: float = None, model: str = None,
+    size: str = None, color: str = None, tags: str = None,
+    on_sale: bool = None, sale_price: float = None,
+    tenant_id: str = Depends(get_tenant_id),
+):
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
     if stock is not None:
-        await pool.execute("UPDATE inventory SET stock = $1, updated_at = $2 WHERE id = $3", stock, now, item_id)
+        await pool.execute("UPDATE inventory SET stock = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", stock, now, item_id, tenant_id)
     if price is not None:
-        await pool.execute("UPDATE inventory SET price = $1, updated_at = $2 WHERE id = $3", price, now, item_id)
+        await pool.execute("UPDATE inventory SET price = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", price, now, item_id, tenant_id)
     if model is not None:
-        await pool.execute("UPDATE inventory SET model = $1, updated_at = $2 WHERE id = $3", model, now, item_id)
+        await pool.execute("UPDATE inventory SET model = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", model, now, item_id, tenant_id)
     if size is not None:
         new_price = 74 if "დიდი" in size else 69
-        await pool.execute("UPDATE inventory SET size = $1, price = $2, updated_at = $3 WHERE id = $4", size, new_price, now, item_id)
+        await pool.execute("UPDATE inventory SET size = $1, price = $2, updated_at = $3 WHERE id = $4 AND tenant_id = $5", size, new_price, now, item_id, tenant_id)
     if color is not None:
-        await pool.execute("UPDATE inventory SET color = $1, updated_at = $2 WHERE id = $3", color, now, item_id)
+        await pool.execute("UPDATE inventory SET color = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", color, now, item_id, tenant_id)
     if tags is not None:
-        await pool.execute("UPDATE inventory SET tags = $1, updated_at = $2 WHERE id = $3", tags, now, item_id)
+        await pool.execute("UPDATE inventory SET tags = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", tags, now, item_id, tenant_id)
     if on_sale is not None:
-        await pool.execute("UPDATE inventory SET on_sale = $1, updated_at = $2 WHERE id = $3", on_sale, now, item_id)
+        await pool.execute("UPDATE inventory SET on_sale = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", on_sale, now, item_id, tenant_id)
     if sale_price is not None:
         # Passing a literal 0 or negative clears the sale price back to null.
         sp = sale_price if sale_price > 0 else None
-        await pool.execute("UPDATE inventory SET sale_price = $1, updated_at = $2 WHERE id = $3", sp, now, item_id)
+        await pool.execute("UPDATE inventory SET sale_price = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", sp, now, item_id, tenant_id)
     return {"message": f"Item #{item_id} updated"}
 
 
 @app.post("/api/inventory/{item_id}/image")
-async def upload_product_image(item_id: int, image: UploadFile = File(...)):
+async def upload_product_image(item_id: int, image: UploadFile = File(...), tenant_id: str = Depends(get_tenant_id)):
     image_url = save_uploaded_image(image, f"product_{item_id}_front")
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
-    await pool.execute("UPDATE inventory SET image_url = $1, updated_at = $2 WHERE id = $3", image_url, now, item_id)
+    await pool.execute("UPDATE inventory SET image_url = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", image_url, now, item_id, tenant_id)
     return {"image_url": image_url}
 
 
 @app.post("/api/inventory/{item_id}/image_back")
-async def upload_back_image(item_id: int, image: UploadFile = File(...)):
+async def upload_back_image(item_id: int, image: UploadFile = File(...), tenant_id: str = Depends(get_tenant_id)):
     image_url = save_uploaded_image(image, f"product_{item_id}_back")
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
-    await pool.execute("UPDATE inventory SET image_url_back = $1, updated_at = $2 WHERE id = $3", image_url, now, item_id)
+    await pool.execute("UPDATE inventory SET image_url_back = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", image_url, now, item_id, tenant_id)
     return {"image_url": image_url}
 
 
 @app.post("/api/inventory/swap-images")
-async def swap_images(request: Request):
+async def swap_images(request: Request, tenant_id: str = Depends(get_tenant_id)):
     """Swap images between two inventory slots (drag & drop support)."""
     data = await request.json()
     from_id = data["from_id"]
@@ -780,8 +823,8 @@ async def swap_images(request: Request):
     to_side = data["to_side"]
 
     pool = await get_db()
-    r1 = await pool.fetchrow("SELECT image_url, image_url_back FROM inventory WHERE id = $1", from_id)
-    r2 = await pool.fetchrow("SELECT image_url, image_url_back FROM inventory WHERE id = $1", to_id)
+    r1 = await pool.fetchrow("SELECT image_url, image_url_back FROM inventory WHERE id = $1 AND tenant_id = $2", from_id, tenant_id)
+    r2 = await pool.fetchrow("SELECT image_url, image_url_back FROM inventory WHERE id = $1 AND tenant_id = $2", to_id, tenant_id)
     if not r1 or not r2:
         raise HTTPException(status_code=404)
 
@@ -792,43 +835,43 @@ async def swap_images(request: Request):
     from_col = "image_url" if from_side == "front" else "image_url_back"
     to_col = "image_url" if to_side == "front" else "image_url_back"
 
-    await pool.execute(f"UPDATE inventory SET {from_col} = $1, updated_at = $2 WHERE id = $3", to_url, now, from_id)
-    await pool.execute(f"UPDATE inventory SET {to_col} = $1, updated_at = $2 WHERE id = $3", from_url, now, to_id)
+    await pool.execute(f"UPDATE inventory SET {from_col} = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", to_url, now, from_id, tenant_id)
+    await pool.execute(f"UPDATE inventory SET {to_col} = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", from_url, now, to_id, tenant_id)
     return {"message": "Images swapped"}
 
 
 @app.post("/api/inventory/{item_id}/clear-image")
-async def clear_image(item_id: int, side: str = "back"):
+async def clear_image(item_id: int, side: str = "back", tenant_id: str = Depends(get_tenant_id)):
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
     col = "image_url" if side == "front" else "image_url_back"
-    await pool.execute(f"UPDATE inventory SET {col} = '', updated_at = $1 WHERE id = $2", now, item_id)
+    await pool.execute(f"UPDATE inventory SET {col} = '', updated_at = $1 WHERE id = $2 AND tenant_id = $3", now, item_id, tenant_id)
     return {"message": f"{side} image cleared"}
 
 
 @app.post("/api/inventory/{item_id}/remove-back")
-async def remove_back_image(item_id: int):
+async def remove_back_image(item_id: int, tenant_id: str = Depends(get_tenant_id)):
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
-    await pool.execute("UPDATE inventory SET image_url_back = '', updated_at = $1 WHERE id = $2", now, item_id)
+    await pool.execute("UPDATE inventory SET image_url_back = '', updated_at = $1 WHERE id = $2 AND tenant_id = $3", now, item_id, tenant_id)
     return {"message": "Back image removed"}
 
 
 @app.delete("/api/inventory/{item_id}")
-async def delete_inventory(item_id: int):
+async def delete_inventory(item_id: int, tenant_id: str = Depends(get_tenant_id)):
     pool = await get_db()
-    await pool.execute("DELETE FROM inventory WHERE id = $1", item_id)
+    await pool.execute("DELETE FROM inventory WHERE id = $1 AND tenant_id = $2", item_id, tenant_id)
     return {"message": f"Item #{item_id} deleted"}
 
 
 # ── Orders ───────────────────────────────────────────────────
 
 @app.get("/api/orders")
-async def list_orders(status: str = "", limit: int = 50):
+async def list_orders(status: str = "", limit: int = 50, tenant_id: str = Depends(get_tenant_id)):
     pool = await get_db()
-    query = "SELECT * FROM orders WHERE 1=1"
-    params = []
-    idx = 1
+    query = "SELECT * FROM orders WHERE tenant_id = $1"
+    params: list = [tenant_id]
+    idx = 2
     if status:
         query += f" AND status = ${idx}"
         params.append(status)
@@ -840,29 +883,39 @@ async def list_orders(status: str = "", limit: int = 50):
 
 
 @app.put("/api/orders/{order_id}")
-async def update_order(order_id: int, request: Request):
+async def update_order(order_id: int, request: Request, tenant_id: str = Depends(get_tenant_id)):
     data = await request.json()
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
     allowed_fields = ("customer_phone", "customer_address", "status", "notes", "items", "total")
     for field in allowed_fields:
         if field in data:
-            await pool.execute(f"UPDATE orders SET {field} = $1, updated_at = $2 WHERE id = $3", data[field], now, order_id)
+            await pool.execute(
+                f"UPDATE orders SET {field} = $1, updated_at = $2 "
+                f"WHERE id = $3 AND tenant_id = $4",
+                data[field], now, order_id, tenant_id,
+            )
     return {"success": True}
 
 
 @app.delete("/api/orders/{order_id}")
-async def delete_order(order_id: int):
+async def delete_order(order_id: int, tenant_id: str = Depends(get_tenant_id)):
     pool = await get_db()
-    await pool.execute("DELETE FROM orders WHERE id = $1", order_id)
+    await pool.execute(
+        "DELETE FROM orders WHERE id = $1 AND tenant_id = $2",
+        order_id, tenant_id,
+    )
     return {"success": True}
 
 
 @app.post("/api/orders/{order_id}/decrease-stock")
-async def decrease_stock_for_order(order_id: int):
+async def decrease_stock_for_order(order_id: int, tenant_id: str = Depends(get_tenant_id)):
     """When order moves to ready_for_send, decrease stock for the product code."""
     pool = await get_db()
-    order = await pool.fetchrow("SELECT items FROM orders WHERE id = $1", order_id)
+    order = await pool.fetchrow(
+        "SELECT items FROM orders WHERE id = $1 AND tenant_id = $2",
+        order_id, tenant_id,
+    )
     if not order:
         raise HTTPException(status_code=404)
     items_raw = order["items"].strip().upper()
@@ -870,8 +923,9 @@ async def decrease_stock_for_order(order_id: int):
     code_match = _re.search(r'(FP|TP|FD|TD)\d+', items_raw)
     item_code = code_match.group(0) if code_match else items_raw
     await pool.execute(
-        "UPDATE inventory SET stock = GREATEST(0, stock - 1), updated_at = $1 WHERE UPPER(code) = $2 AND stock > 0",
-        datetime.now(timezone.utc).isoformat(), item_code,
+        "UPDATE inventory SET stock = GREATEST(0, stock - 1), updated_at = $1 "
+        "WHERE tenant_id = $2 AND UPPER(code) = $3 AND stock > 0",
+        datetime.now(timezone.utc).isoformat(), tenant_id, item_code,
     )
     return {"success": True, "code": item_code}
 
@@ -879,26 +933,33 @@ async def decrease_stock_for_order(order_id: int):
 # ── Product Pairs (same print, different style) ─────────────
 
 @app.get("/api/pairs")
-async def list_pairs():
+async def list_pairs(tenant_id: str = Depends(get_tenant_id)):
     pool = await get_db()
-    rows = await pool.fetch("SELECT * FROM product_pairs ORDER BY code_a")
+    rows = await pool.fetch(
+        "SELECT * FROM product_pairs WHERE tenant_id = $1 ORDER BY code_a",
+        tenant_id,
+    )
     return {"pairs": [dict(r) for r in rows]}
 
 
 @app.post("/api/pairs")
-async def add_pair(request: Request):
+async def add_pair(request: Request, tenant_id: str = Depends(get_tenant_id)):
     data = await request.json()
     code_a = data["code_a"].upper().strip()
     code_b = data["code_b"].upper().strip()
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
 
-    # Find all codes already connected to A or B (transitive group)
+    # Find all codes already connected to A or B (transitive group),
+    # scoped to this tenant so different shops' pairs can't merge.
     group = set([code_a, code_b])
     to_check = [code_a, code_b]
     while to_check:
         current = to_check.pop(0)
-        rows = await pool.fetch("SELECT code_b FROM product_pairs WHERE code_a = $1", current)
+        rows = await pool.fetch(
+            "SELECT code_b FROM product_pairs WHERE tenant_id = $1 AND code_a = $2",
+            tenant_id, current,
+        )
         for r in rows:
             if r["code_b"] not in group:
                 group.add(r["code_b"])
@@ -909,23 +970,32 @@ async def add_pair(request: Request):
     for i, a in enumerate(group):
         for b in group[i+1:]:
             await pool.execute(
-                "INSERT INTO product_pairs (code_a, code_b, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-                a, b, now,
+                "INSERT INTO product_pairs (code_a, code_b, tenant_id, created_at) "
+                "VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+                a, b, tenant_id, now,
             )
             await pool.execute(
-                "INSERT INTO product_pairs (code_a, code_b, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-                b, a, now,
+                "INSERT INTO product_pairs (code_a, code_b, tenant_id, created_at) "
+                "VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+                b, a, tenant_id, now,
             )
 
     return {"success": True, "group": group}
 
 
 @app.delete("/api/pairs/{pair_id}")
-async def delete_pair(pair_id: int):
+async def delete_pair(pair_id: int, tenant_id: str = Depends(get_tenant_id)):
     pool = await get_db()
-    row = await pool.fetchrow("SELECT code_a, code_b FROM product_pairs WHERE id = $1", pair_id)
+    row = await pool.fetchrow(
+        "SELECT code_a, code_b FROM product_pairs WHERE id = $1 AND tenant_id = $2",
+        pair_id, tenant_id,
+    )
     if row:
-        await pool.execute("DELETE FROM product_pairs WHERE (code_a=$1 AND code_b=$2) OR (code_a=$2 AND code_b=$1)", row["code_a"], row["code_b"])
+        await pool.execute(
+            "DELETE FROM product_pairs WHERE tenant_id = $1 AND "
+            "((code_a=$2 AND code_b=$3) OR (code_a=$3 AND code_b=$2))",
+            tenant_id, row["code_a"], row["code_b"],
+        )
     return {"success": True}
 
 
@@ -937,13 +1007,14 @@ async def health_check():
 # ── Sale (discounted products) ─────────────
 
 @app.get("/api/sale")
-async def list_sale():
+async def list_sale(tenant_id: str = Depends(get_tenant_id)):
     """Return every product currently marked on sale, across all categories.
     Powers the admin Sale tab and the bot when customers ask about discounts."""
     pool = await get_db()
     rows = await pool.fetch(
-        "SELECT * FROM inventory WHERE on_sale = true AND stock > 0 "
-        "ORDER BY category, model, size, code"
+        "SELECT * FROM inventory WHERE tenant_id = $1 AND on_sale = true AND stock > 0 "
+        "ORDER BY category, model, size, code",
+        tenant_id,
     )
     return {"sale": [dict(r) for r in rows]}
 
@@ -951,7 +1022,7 @@ async def list_sale():
 # ── Dashboard (admin home) ──────────────────
 
 @app.get("/api/dashboard")
-async def dashboard():
+async def dashboard(tenant_id: str = Depends(get_tenant_id)):
     """At-a-glance summary for the admin home: today's orders / revenue,
     low-stock alerts, a 7-day sales sparkline, and a recent-activity feed.
     All counts come from the existing tables — no new writes or migrations."""
@@ -961,28 +1032,33 @@ async def dashboard():
     seven_days_ago = (now - timedelta(days=6)).date().isoformat()
 
     today_orders = await pool.fetch(
-        "SELECT id, total FROM orders WHERE created_at LIKE $1",
-        f"{today_prefix}%",
+        "SELECT id, total FROM orders WHERE tenant_id = $1 AND created_at LIKE $2",
+        tenant_id, f"{today_prefix}%",
     )
     today_revenue = sum(float(o["total"] or 0) for o in today_orders)
 
     low_stock = await pool.fetch(
         "SELECT id, code, model, size, stock, price, image_url FROM inventory "
-        "WHERE stock <= 1 AND image_url != '' ORDER BY stock ASC, code ASC LIMIT 12"
+        "WHERE tenant_id = $1 AND stock <= 1 AND image_url != '' "
+        "ORDER BY stock ASC, code ASC LIMIT 12",
+        tenant_id,
     )
 
-    # Totals (lifetime-ish) for headline cards
+    # Totals (lifetime-ish) for headline cards — all scoped to this tenant.
     totals = await pool.fetchrow(
         "SELECT "
-        "  (SELECT COUNT(*) FROM orders) AS total_orders, "
-        "  (SELECT COALESCE(SUM(total), 0) FROM orders) AS total_revenue, "
-        "  (SELECT COUNT(*) FROM inventory WHERE stock > 0) AS in_stock, "
-        "  (SELECT COUNT(DISTINCT conversation_id) FROM messages WHERE conversation_id NOT LIKE 'debug_%') AS conversations"
+        "  (SELECT COUNT(*) FROM orders WHERE tenant_id = $1) AS total_orders, "
+        "  (SELECT COALESCE(SUM(total), 0) FROM orders WHERE tenant_id = $1) AS total_revenue, "
+        "  (SELECT COUNT(*) FROM inventory WHERE tenant_id = $1 AND stock > 0) AS in_stock, "
+        "  (SELECT COUNT(DISTINCT conversation_id) FROM messages "
+        "    WHERE tenant_id = $1 AND conversation_id NOT LIKE 'debug_%') AS conversations",
+        tenant_id,
     )
 
     recent_orders = await pool.fetch(
-        "SELECT id, total, created_at FROM orders WHERE created_at >= $1 ORDER BY created_at",
-        seven_days_ago,
+        "SELECT id, total, created_at FROM orders "
+        "WHERE tenant_id = $1 AND created_at >= $2 ORDER BY created_at",
+        tenant_id, seven_days_ago,
     )
     by_day: dict[str, dict[str, float]] = {}
     for o in recent_orders:
@@ -1001,7 +1077,8 @@ async def dashboard():
 
     recent_activity_rows = await pool.fetch(
         "SELECT id, customer_name, items, total, status, created_at "
-        "FROM orders ORDER BY created_at DESC LIMIT 8"
+        "FROM orders WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 8",
+        tenant_id,
     )
     recent_activity = [
         {
@@ -1033,7 +1110,7 @@ async def dashboard():
 # ── Conversation viewer (admin) ─────────────────────────────
 
 @app.get("/api/conversations/{conversation_id}/messages")
-async def conversation_messages(conversation_id: str):
+async def conversation_messages(conversation_id: str, tenant_id: str = Depends(get_tenant_id)):
     """Return every message in a conversation with the system-tag noise
     stripped from customer lines. Used by the admin conversation viewer to
     let the owner replay an entire chat without leaving the UI."""
@@ -1041,8 +1118,9 @@ async def conversation_messages(conversation_id: str):
     pool = await get_db()
     rows = await pool.fetch(
         "SELECT id, role, content, created_at "
-        "FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC, id ASC",
-        conversation_id,
+        "FROM messages WHERE conversation_id = $1 AND tenant_id = $2 "
+        "ORDER BY created_at ASC, id ASC",
+        conversation_id, tenant_id,
     )
     out = []
     for r in rows:
@@ -1067,69 +1145,108 @@ async def conversation_messages(conversation_id: str):
 # ── Insights (admin signals) ────────────────────────────────
 
 @app.get("/api/insights/complaints")
-async def insights_complaints():
+async def insights_complaints(tenant_id: str = Depends(get_tenant_id)):
     """Customer messages that look like complaints (wrong match, wants operator)."""
     from src.insights import list_complaints
-    return {"complaints": await list_complaints()}
+    return {"complaints": await list_complaints(tenant_id=tenant_id)}
 
 
 @app.get("/api/insights/faqs")
-async def insights_faqs():
+async def insights_faqs(tenant_id: str = Depends(get_tenant_id)):
     """Most frequent customer questions — candidates for canned answers."""
     from src.insights import list_faq_candidates
-    return {"faqs": await list_faq_candidates()}
+    return {"faqs": await list_faq_candidates(tenant_id=tenant_id)}
 
 
 @app.get("/api/insights/product-requests")
-async def insights_product_requests():
+async def insights_product_requests(tenant_id: str = Depends(get_tenant_id)):
     """Customer asks for categories we don't carry — stocking hints for owner."""
     from src.insights import list_product_requests
-    return {"requests": await list_product_requests()}
+    return {"requests": await list_product_requests(tenant_id=tenant_id)}
 
 
 @app.post("/api/reindex")
-async def reindex_catalog(full: bool = False):
+async def reindex_catalog(full: bool = False, tenant_id: str = Depends(get_tenant_id)):
     """Re-index product catalog embeddings. Use full=true to wipe and re-embed all
     products; otherwise only new/missing ones are indexed."""
     from src.image_match import index_all_products
     pool = await get_db()
     if full:
-        await pool.execute("DELETE FROM product_embeddings")
+        # Only wipe this tenant's embeddings so a second shop's embeddings
+        # keep working during a reindex of another.
+        try:
+            await pool.execute(
+                "DELETE FROM product_embeddings WHERE tenant_id = $1",
+                tenant_id,
+            )
+        except Exception:
+            # Fallback if product_embeddings doesn't have tenant_id yet
+            # (pre-migration state) — delete all. Safe on single-tenant.
+            await pool.execute("DELETE FROM product_embeddings")
     result = await index_all_products()
     return result
 
 
 @app.post("/api/clear-conversation/{conversation_id}")
-async def clear_conversation(conversation_id: str):
+async def clear_conversation(conversation_id: str, tenant_id: str = Depends(get_tenant_id)):
     """Wipe messages, AI hints, and tokens for one conversation so the bot
     starts fresh. Useful for re-testing the photo flow as a known customer."""
     pool = await get_db()
     stats: dict = {}
-    stats["messages"] = await pool.execute("DELETE FROM messages WHERE conversation_id = $1", conversation_id)
-    stats["ai_photo_hints"] = await pool.execute("DELETE FROM ai_photo_hints WHERE conversation_id = $1", conversation_id)
+    stats["messages"] = await pool.execute(
+        "DELETE FROM messages WHERE conversation_id = $1 AND tenant_id = $2",
+        conversation_id, tenant_id,
+    )
     try:
-        stats["confirm_tokens"] = await pool.execute("DELETE FROM confirm_tokens WHERE conversation_id = $1", conversation_id)
+        stats["ai_photo_hints"] = await pool.execute(
+            "DELETE FROM ai_photo_hints WHERE conversation_id = $1 AND tenant_id = $2",
+            conversation_id, tenant_id,
+        )
+    except Exception:
+        # ai_photo_hints may not have tenant_id yet on older schemas.
+        stats["ai_photo_hints"] = await pool.execute(
+            "DELETE FROM ai_photo_hints WHERE conversation_id = $1",
+            conversation_id,
+        )
+    try:
+        stats["confirm_tokens"] = await pool.execute(
+            "DELETE FROM confirm_tokens WHERE conversation_id = $1 AND tenant_id = $2",
+            conversation_id, tenant_id,
+        )
     except Exception:
         pass
     try:
-        stats["conversation"] = await pool.execute("DELETE FROM conversations WHERE id = $1", conversation_id)
+        stats["conversation"] = await pool.execute(
+            "DELETE FROM conversations WHERE id = $1 AND tenant_id = $2",
+            conversation_id, tenant_id,
+        )
     except Exception:
         pass
     return {"ok": True, "conversation_id": conversation_id, "stats": stats}
 
 
 @app.post("/api/reindex/{code}")
-async def reindex_one(code: str):
+async def reindex_one(code: str, tenant_id: str = Depends(get_tenant_id)):
     """Re-index a single product by code (useful when stored embedding is wrong)."""
     from src.image_match import index_product
     pool = await get_db()
     row = await pool.fetchrow(
-        "SELECT id, code, model, size, image_url, image_url_back FROM inventory WHERE UPPER(code) = UPPER($1) LIMIT 1",
-        code,
+        "SELECT id, code, model, size, image_url, image_url_back FROM inventory "
+        "WHERE tenant_id = $1 AND UPPER(code) = UPPER($2) LIMIT 1",
+        tenant_id, code,
     )
     if not row:
         return {"ok": False, "message": f"Code {code} not found"}
-    await pool.execute("DELETE FROM product_embeddings WHERE UPPER(code) = UPPER($1)", code)
+    try:
+        await pool.execute(
+            "DELETE FROM product_embeddings WHERE tenant_id = $1 AND UPPER(code) = UPPER($2)",
+            tenant_id, code,
+        )
+    except Exception:
+        await pool.execute(
+            "DELETE FROM product_embeddings WHERE UPPER(code) = UPPER($1)",
+            code,
+        )
     ok = await index_product(row["id"], row["code"], row["model"], row["size"], row["image_url"], row.get("image_url_back", ""))
     return {"ok": ok, "code": row["code"]}
 
@@ -1137,12 +1254,20 @@ async def reindex_one(code: str):
 # ── Extra Photos (lifestyle/marketing) ──────────────────────
 
 @app.get("/api/extra-photos")
-async def list_extra_photos(code: str = ""):
+async def list_extra_photos(code: str = "", tenant_id: str = Depends(get_tenant_id)):
     pool = await get_db()
     if code:
-        rows = await pool.fetch("SELECT * FROM product_extra_photos WHERE code = $1 ORDER BY created_at DESC", code)
+        rows = await pool.fetch(
+            "SELECT * FROM product_extra_photos WHERE tenant_id = $1 AND code = $2 "
+            "ORDER BY created_at DESC",
+            tenant_id, code,
+        )
     else:
-        rows = await pool.fetch("SELECT * FROM product_extra_photos ORDER BY code, created_at DESC")
+        rows = await pool.fetch(
+            "SELECT * FROM product_extra_photos WHERE tenant_id = $1 "
+            "ORDER BY code, created_at DESC",
+            tenant_id,
+        )
     return {"photos": [dict(r) for r in rows]}
 
 
@@ -1150,14 +1275,17 @@ async def list_extra_photos(code: str = ""):
 async def add_extra_photo(
     code: str = Form(...),
     image: UploadFile = File(...),
+    tenant_id: str = Depends(get_tenant_id),
 ):
     """Upload a lifestyle/marketing photo for a product."""
     image_url = save_uploaded_image(image, f"extra_{code}")
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
     row = await pool.fetchrow(
-        "INSERT INTO product_extra_photos (inventory_id, code, image_url, photo_type, created_at) VALUES ((SELECT id FROM inventory WHERE UPPER(code) = UPPER($1) LIMIT 1), $1, $2, 'lifestyle', $3) RETURNING id",
-        code.upper(), image_url, now,
+        "INSERT INTO product_extra_photos (inventory_id, code, image_url, photo_type, tenant_id, created_at) "
+        "VALUES ((SELECT id FROM inventory WHERE tenant_id = $1 AND UPPER(code) = UPPER($2) LIMIT 1), "
+        "$2, $3, 'lifestyle', $1, $4) RETURNING id",
+        tenant_id, code.upper(), image_url, now,
     )
 
     # Auto-index the new photo for AI matching
@@ -1171,9 +1299,12 @@ async def add_extra_photo(
 
 
 @app.delete("/api/extra-photos/{photo_id}")
-async def delete_extra_photo(photo_id: int):
+async def delete_extra_photo(photo_id: int, tenant_id: str = Depends(get_tenant_id)):
     pool = await get_db()
-    await pool.execute("DELETE FROM product_extra_photos WHERE id = $1", photo_id)
+    await pool.execute(
+        "DELETE FROM product_extra_photos WHERE id = $1 AND tenant_id = $2",
+        photo_id, tenant_id,
+    )
     return {"success": True}
 
 
@@ -1253,11 +1384,18 @@ async def seed_knowledge_base():
     """Seed Tissu Shop knowledge base (always) and inventory (only missing codes)."""
     pool = await get_db()
 
-    # Always reseed knowledge base (small, no user edits)
-    count_row = await pool.fetchrow("SELECT COUNT(*) as c FROM knowledge_base")
+    # Always reseed knowledge base (small, no user edits) for the
+    # default tenant. New tenants seed their own KB separately.
+    count_row = await pool.fetchrow(
+        "SELECT COUNT(*) as c FROM knowledge_base WHERE tenant_id = $1",
+        DEFAULT_TENANT_ID,
+    )
     kb_count = count_row["c"]
     if kb_count > 0:
-        await pool.execute("DELETE FROM knowledge_base")
+        await pool.execute(
+            "DELETE FROM knowledge_base WHERE tenant_id = $1",
+            DEFAULT_TENANT_ID,
+        )
 
     now = datetime.now(timezone.utc).isoformat()
 
@@ -1272,14 +1410,19 @@ async def seed_knowledge_base():
     ]
     for q, a, cat in articles:
         await pool.execute(
-            "INSERT INTO knowledge_base (question, answer, category, created_at) VALUES ($1, $2, $3, $4)",
-            q, a, cat, now,
+            "INSERT INTO knowledge_base (question, answer, category, tenant_id, created_at) "
+            "VALUES ($1, $2, $3, $4, $5)",
+            q, a, cat, DEFAULT_TENANT_ID, now,
         )
 
     # Seed inventory — only add products that don't exist yet (by code)
+    # for the default tenant.
     seed_file = Path(__file__).parent / "seed_inventory.json"
     if seed_file.exists():
-        existing = await pool.fetch("SELECT code FROM inventory")
+        existing = await pool.fetch(
+            "SELECT code FROM inventory WHERE tenant_id = $1",
+            DEFAULT_TENANT_ID,
+        )
         existing_codes = {row["code"] for row in existing}
 
         items = json.loads(seed_file.read_text())
@@ -1287,10 +1430,12 @@ async def seed_knowledge_base():
             code = item.get("code", "")
             if code and code not in existing_codes:
                 await pool.execute(
-                    "INSERT INTO inventory (product_name, model, size, color, style, code, tags, price, stock, image_url, image_url_back, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+                    "INSERT INTO inventory (product_name, model, size, color, style, code, tags, price, stock, image_url, image_url_back, tenant_id, created_at, updated_at) "
+                    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
                     item["product_name"], item["model"], item["size"], item.get("color", ""), item.get("style", ""),
                     code, item.get("tags", ""), item["price"], item["stock"],
-                    item.get("image_url", ""), item.get("image_url_back", ""), now, now,
+                    item.get("image_url", ""), item.get("image_url_back", ""),
+                    DEFAULT_TENANT_ID, now, now,
                 )
 
 
