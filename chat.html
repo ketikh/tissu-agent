@@ -91,12 +91,28 @@
         // session cookie, set by /admin/login. The browser sends it
         // on every same-origin fetch. If it ever comes back 401 (the
         // session expired), bounce to the login page.
+        function _readCookie(name) {
+            const m = document.cookie.match(
+                new RegExp('(?:^|; )' + name.replace(/[.$?*|{}()[\\]\\\\+^]/g, '\\\\$&') + '=([^;]*)')
+            );
+            return m ? decodeURIComponent(m[1]) : '';
+        }
+        const UNSAFE = new Set(['POST','PUT','PATCH','DELETE']);
         const _origFetch = window.fetch.bind(window);
         window.fetch = async function(input, init) {
             init = init || {};
             const url = (typeof input === 'string') ? input : (input && input.url) || '';
+            const method = (init.method || 'GET').toUpperCase();
             const isApi = url.startsWith('/api/') || url.startsWith(API + '/api/');
-            if (isApi && !init.credentials) init.credentials = 'same-origin';
+            if (isApi) {
+                if (UNSAFE.has(method)) {
+                    const headers = new Headers(init.headers || {});
+                    const csrf = _readCookie('admin_csrf');
+                    if (csrf && !headers.has('X-CSRF-Token')) headers.set('X-CSRF-Token', csrf);
+                    init.headers = headers;
+                }
+                if (!init.credentials) init.credentials = 'same-origin';
+            }
             const resp = await _origFetch(input, init);
             if (isApi && resp.status === 401) {
                 window.location.href = '/admin/login?error=expired';

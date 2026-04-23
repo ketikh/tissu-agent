@@ -53,6 +53,7 @@ from src.webhooks.facebook import router as fb_router
 from src.webhooks.whatsapp import router as wa_router
 from src.api.storefront import router as storefront_router
 from src.auth import APIKeyMiddleware, AdminSessionMiddleware
+from src.security_headers import SecurityHeadersMiddleware
 
 
 @asynccontextmanager
@@ -88,6 +89,11 @@ app.add_middleware(APIKeyMiddleware)
 # Runs in addition to the API key middleware; the two don't overlap
 # because this one only acts on /admin/* paths.
 app.add_middleware(AdminSessionMiddleware)
+
+# Baseline HTTP security headers on every response (HSTS, CSP,
+# X-Frame-Options, etc.). Added last so it wraps every other
+# middleware's output.
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Include webhook routers
 app.include_router(fb_router)

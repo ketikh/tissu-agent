@@ -25,9 +25,44 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.db import DEFAULT_TENANT_ID, resolve_api_key
 from src.sessions import (
-    SESSION_COOKIE_NAME, SHORT_SESSION_SECONDS, LONG_SESSION_SECONDS,
-    load_session_token,
+    SESSION_COOKIE_NAME, CSRF_COOKIE_NAME,
+    SHORT_SESSION_SECONDS, LONG_SESSION_SECONDS,
+    load_session_token, verify_csrf_token,
 )
+
+
+# Methods that modify state and therefore need CSRF protection when
+# the caller is authenticated via session cookie. Bearer-authenticated
+# (X-API-Key) requests are exempt because browsers don't auto-attach
+# custom headers cross-origin.
+UNSAFE_METHODS: frozenset[str] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+# /admin/* POST targets that must stay CSRF-free because there is no
+# prior session to bind a token to (logging in, starting/finishing a
+# password reset).
+CSRF_EXEMPT_ADMIN_POSTS: frozenset[str] = frozenset({
+    "/admin/login",
+    "/admin/logout",
+    "/admin/forgot-password",
+    "/admin/reset-password",
+})
+
+
+def _csrf_ok(request: Request, session_token: str) -> bool:
+    """Verify the X-CSRF-Token header matches the signed csrf cookie
+    that was issued alongside the session cookie. Both must be
+    present; neither alone is enough."""
+    header_token = request.headers.get("x-csrf-token", "")
+    cookie_token = request.cookies.get(CSRF_COOKIE_NAME, "")
+    if not header_token or not cookie_token:
+        return False
+    # The two must match bit-for-bit AND the cookie must still verify
+    # against the current session token. That way a stolen header+cookie
+    # pair from a different user can't be replayed after the session
+    # rotates on login.
+    if header_token != cookie_token:
+        return False
+    return verify_csrf_token(cookie_token, session_token)
 
 # Paths under /api/* that bypass the API key check.
 #
@@ -102,12 +137,21 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
 
         # Path 2 — admin session cookie. The admin HTML pages use this
         # (browsers send it automatically on same-origin fetches). We
-        # accept it as admin-scoped for the current tenant.
+        # accept it as admin-scoped for the current tenant, AND we
+        # require a matching CSRF token on unsafe methods because
+        # cookies are auto-attached cross-origin while custom headers
+        # aren't.
         if tenant_id is None:
             cookie = request.cookies.get(SESSION_COOKIE_NAME, "")
             if cookie:
                 session = load_session_token(cookie, max_age_seconds=LONG_SESSION_SECONDS)
                 if session and "user_id" in session:
+                    if (request.method in UNSAFE_METHODS
+                            and not _csrf_ok(request, cookie)):
+                        return JSONResponse(
+                            {"error": "csrf_failed"},
+                            status_code=403,
+                        )
                     tenant_id = session.get("tenant_id") or DEFAULT_TENANT_ID
                     scope = "admin"
                     auth_source = "session"
@@ -168,6 +212,18 @@ class AdminSessionMiddleware(BaseHTTPMiddleware):
         if cookie:
             session = load_session_token(cookie, max_age_seconds=LONG_SESSION_SECONDS)
             if session and "user_id" in session:
+                # Admin HTML POST endpoints (e.g. a future settings form)
+                # get the same CSRF check. Login, logout, and password
+                # reset are exempt — they either predate the session or
+                # authenticate with their own one-time tokens.
+                if (request.method in UNSAFE_METHODS
+                        and path not in CSRF_EXEMPT_ADMIN_POSTS
+                        and not path.startswith("/admin/reset-password")
+                        and not path.startswith("/admin/forgot-password")
+                        and not _csrf_ok(request, cookie)):
+                    return JSONResponse(
+                        {"error": "csrf_failed"}, status_code=403,
+                    )
                 request.state.admin_user_id = session["user_id"]
                 request.state.tenant_id = session.get("tenant_id") or DEFAULT_TENANT_ID
                 return await call_next(request)
