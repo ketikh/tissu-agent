@@ -778,6 +778,42 @@
 
 <script>
     const API = window.location.origin;
+
+    // Every /api/* request needs X-API-Key. We store it in localStorage so
+    // the shop owner only has to paste it once per browser. If it's missing
+    // on page load, prompt for it; if a request comes back 401, clear and
+    // reprompt.
+    function getApiKey() {
+        let k = localStorage.getItem('admin_api_key') || '';
+        if (!k) {
+            k = (prompt('API Key (შეიყვანე შენი ADMIN_API_KEY):') || '').trim();
+            if (k) localStorage.setItem('admin_api_key', k);
+        }
+        return k;
+    }
+
+    const _origFetch = window.fetch.bind(window);
+    window.fetch = async function(input, init) {
+        init = init || {};
+        const url = (typeof input === 'string') ? input : (input && input.url) || '';
+        const isApi = url.startsWith('/api/') || url.startsWith(API + '/api/');
+        if (isApi) {
+            const headers = new Headers(init.headers || {});
+            if (!headers.has('X-API-Key')) {
+                headers.set('X-API-Key', getApiKey());
+            }
+            init.headers = headers;
+        }
+        const resp = await _origFetch(input, init);
+        if (isApi && resp.status === 401) {
+            localStorage.removeItem('admin_api_key');
+            alert('API key არასწორია — გთხოვთ შეიყვანოთ თავიდან.');
+            // Force a re-prompt on the next call; don't reload because
+            // the user may have unsaved input.
+        }
+        return resp;
+    };
+
     let filterModel = '';
     let filterSize = '';
     let allInventory = [];

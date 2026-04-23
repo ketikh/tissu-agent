@@ -29,6 +29,7 @@ from src.agents.marketing import get_marketing_agent
 from src.channels import get_adapter, ADAPTERS
 from src.webhooks.facebook import router as fb_router
 from src.webhooks.whatsapp import router as wa_router
+from src.auth import APIKeyMiddleware
 
 
 @asynccontextmanager
@@ -54,6 +55,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# API key guard on /api/*. Must be added AFTER CORS so preflight (OPTIONS)
+# requests still get the CORS headers before we check the key.
+app.add_middleware(APIKeyMiddleware)
 
 # Include webhook routers
 app.include_router(fb_router)
