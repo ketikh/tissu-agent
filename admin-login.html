@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tissu Shop — ადმინის შესვლა</title>
+    <link rel="preconnect" href="https://rsms.me/">
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0; padding: 0;
+            font-family: "Inter var", "Inter", -apple-system, system-ui, sans-serif;
+            background: #F8F7F4;
+            color: #17140E;
+            min-height: 100vh;
+        }
+        body {
+            display: flex; align-items: center; justify-content: center;
+            padding: 24px;
+        }
+        .card {
+            background: #FFFFFF;
+            border: 1px solid #ECE7DF;
+            border-radius: 14px;
+            padding: 40px 36px 32px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 2px 20px rgba(23, 20, 14, 0.04);
+        }
+        h1 {
+            margin: 0 0 8px; font-size: 22px; font-weight: 600;
+            letter-spacing: -0.01em;
+        }
+        .subtitle {
+            margin: 0 0 28px; font-size: 14px; color: #8B8478;
+        }
+        label {
+            display: block; margin-bottom: 6px;
+            font-size: 13px; font-weight: 500; color: #4A443B;
+        }
+        input[type="email"], input[type="password"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #D8D2C7;
+            border-radius: 8px;
+            font-size: 15px;
+            font-family: inherit;
+            background: #FBFAF7;
+            color: #17140E;
+            transition: border-color .12s ease, background .12s ease;
+        }
+        input:focus {
+            outline: none;
+            border-color: #1F1B16;
+            background: #FFFFFF;
+        }
+        .field { margin-bottom: 18px; }
+        .remember {
+            display: flex; align-items: center; gap: 8px;
+            margin-bottom: 24px; font-size: 13px; color: #4A443B;
+        }
+        .remember input { margin: 0; }
+        button[type="submit"] {
+            width: 100%;
+            padding: 12px 16px;
+            background: #1F1B16;
+            color: #FBFAF7;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 500;
+            font-family: inherit;
+            cursor: pointer;
+            transition: background .12s ease;
+        }
+        button[type="submit"]:hover { background: #000000; }
+        button[type="submit"]:disabled { opacity: 0.55; cursor: not-allowed; }
+        .error {
+            display: none;
+            margin-bottom: 18px;
+            padding: 10px 12px;
+            background: #F7E1DE;
+            color: #7F2A24;
+            border-radius: 8px;
+            font-size: 13px;
+        }
+        .error.visible { display: block; }
+        .footer {
+            margin-top: 24px;
+            text-align: center;
+            font-size: 13px;
+            color: #8B8478;
+        }
+        .footer a {
+            color: #4A443B;
+            text-decoration: none;
+            border-bottom: 1px solid #D8D2C7;
+        }
+        .footer a:hover { color: #17140E; border-bottom-color: #17140E; }
+    </style>
+</head>
+<body>
+    <form class="card" id="loginForm" method="post" action="/admin/login" novalidate>
+        <h1>Tissu Shop ადმინი</h1>
+        <p class="subtitle">შეიყვანე მფლობელის ელფოსტა და პაროლი.</p>
+
+        <div class="error" id="errorBox" role="alert"></div>
+
+        <div class="field">
+            <label for="email">ელფოსტა</label>
+            <input type="email" id="email" name="email" required autocomplete="username" autofocus>
+        </div>
+
+        <div class="field">
+            <label for="password">პაროლი</label>
+            <input type="password" id="password" name="password" required autocomplete="current-password">
+        </div>
+
+        <label class="remember">
+            <input type="checkbox" id="remember" name="remember" value="1">
+            30 დღით დამიმახსოვრე ამ ბრაუზერში
+        </label>
+
+        <button type="submit" id="submitBtn">შესვლა</button>
+
+        <div class="footer">
+            <a href="/admin/forgot-password">დაგავიწყდა პაროლი?</a>
+        </div>
+    </form>
+
+    <script>
+        const form = document.getElementById('loginForm');
+        const errorBox = document.getElementById('errorBox');
+        const submitBtn = document.getElementById('submitBtn');
+
+        // If the URL already has ?error=..., surface it (the server redirects
+        // back here with ?error=bad on failed POST so we can show the right
+        // Georgian message without leaking which field was wrong).
+        const params = new URLSearchParams(window.location.search);
+        const err = params.get('error');
+        if (err === 'bad') {
+            errorBox.textContent = 'ელფოსტა ან პაროლი არასწორია.';
+            errorBox.classList.add('visible');
+        } else if (err === 'locked') {
+            errorBox.textContent = 'ძალიან ბევრი მცდელობა. გთხოვთ მოიცადოთ 15 წუთი.';
+            errorBox.classList.add('visible');
+        } else if (err === 'expired') {
+            errorBox.textContent = 'სესია ამოიწურა — გთხოვთ თავიდან შეხვიდე.';
+            errorBox.classList.add('visible');
+        }
+
+        form.addEventListener('submit', () => {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'მუშაობს…';
+        });
+    </script>
+</body>
+</html>

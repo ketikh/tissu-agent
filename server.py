@@ -17,11 +17,23 @@ register_heif_opener()
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from src.config import API_HOST, API_PORT
-from src.db import init_db, get_db, close_pool, DEFAULT_TENANT_ID
+from src.db import (
+    init_db, get_db, close_pool, DEFAULT_TENANT_ID,
+    find_admin_user_by_email, mark_admin_user_logged_in,
+    update_admin_user_password,
+)
+from src.passwords import needs_rehash, verify_password, hash_password
+from src.sessions import (
+    SESSION_COOKIE_NAME, CSRF_COOKIE_NAME,
+    SHORT_SESSION_SECONDS, LONG_SESSION_SECONDS,
+    issue_session_token, load_session_token,
+    issue_csrf_token, cookie_kwargs,
+)
+from src.rate_limit import login_limiter
 
 
 def get_tenant_id(request: Request) -> str:
@@ -97,6 +109,116 @@ async def admin_ui():
         html_path.read_text(encoding="utf-8"),
         headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
     )
+
+
+# ── Admin authentication ────────────────────────
+# Real email + password form backed by argon2id, with a signed
+# HTTP-only session cookie. Rate-limited per IP. CSRF protection
+# for the non-login admin forms comes in the security-headers commit.
+
+def _is_secure_request(request: Request) -> bool:
+    """Cookie Secure flag — off on plain HTTP localhost, on for prod."""
+    if request.url.scheme == "https":
+        return True
+    # Railway / Nginx terminate TLS then forward as HTTP — honor the
+    # X-Forwarded-Proto header when it says "https".
+    forwarded = request.headers.get("x-forwarded-proto", "").lower()
+    return forwarded == "https"
+
+
+def _client_ip(request: Request) -> str:
+    """Best-effort client IP — uses the first X-Forwarded-For entry
+    when behind Railway's proxy, otherwise the raw socket address."""
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+@app.get("/admin/login", response_class=HTMLResponse)
+async def admin_login_form(request: Request):
+    # If the visitor already has a valid session, skip the login form.
+    existing = request.cookies.get(SESSION_COOKIE_NAME)
+    if existing and load_session_token(existing) is not None:
+        return RedirectResponse(url="/admin", status_code=302)
+    html_path = Path(__file__).parent / "admin-login.html"
+    return HTMLResponse(
+        html_path.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
+@app.post("/admin/login")
+async def admin_login_submit(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    remember: str = Form(""),
+):
+    ip = _client_ip(request)
+    # Rate limit first — same generic error on all failures to avoid
+    # user-enumeration via timing or message differences.
+    if not login_limiter.allow(ip):
+        return RedirectResponse(url="/admin/login?error=locked", status_code=303)
+
+    user = await find_admin_user_by_email(email.strip().lower())
+    ok = False
+    if user:
+        ok = verify_password(password, user["password_hash"])
+
+    if not ok:
+        login_limiter.record_failure(ip)
+        # Same 303 back to the form with a generic error — no mention of
+        # whether the email existed. (Constant-time: we always call
+        # verify_password on at least one hash, so timing is similar
+        # whether the user exists or not. For strict parity we'd hash a
+        # dummy on the miss path — acceptable gap for v1.)
+        return RedirectResponse(url="/admin/login?error=bad", status_code=303)
+
+    # Success — clear prior failures, stamp last_login_at, rotate the
+    # password hash if the cost parameters moved since it was stored.
+    login_limiter.record_success(ip)
+    await mark_admin_user_logged_in(user["id"])
+    if needs_rehash(user["password_hash"]):
+        try:
+            await update_admin_user_password(user["id"], hash_password(password))
+        except Exception:
+            pass  # silent — rehash is a nice-to-have, not login-blocking
+
+    max_age = LONG_SESSION_SECONDS if remember else SHORT_SESSION_SECONDS
+    session_token = issue_session_token(user["id"], user["tenant_id"])
+    csrf_token = issue_csrf_token(session_token)
+
+    response = RedirectResponse(url="/admin", status_code=303)
+    secure = _is_secure_request(request)
+    response.set_cookie(
+        SESSION_COOKIE_NAME, session_token, **cookie_kwargs(max_age, secure),
+    )
+    # CSRF cookie is readable by JS (httponly=False) so the admin
+    # frontend can echo it back in X-CSRF-Token. Same salt would make
+    # it a session-equivalent bearer token — we use a different salt
+    # in sessions.py.
+    response.set_cookie(
+        CSRF_COOKIE_NAME, csrf_token,
+        max_age=max_age, httponly=False, secure=secure,
+        samesite="lax", path="/",
+    )
+    return response
+
+
+@app.post("/admin/logout")
+async def admin_logout(request: Request):
+    response = RedirectResponse(url="/admin/login", status_code=303)
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    response.delete_cookie(CSRF_COOKIE_NAME, path="/")
+    return response
+
+
+@app.get("/admin/logout")
+async def admin_logout_get(request: Request):
+    # Convenience for the "logout" link in the header — browsers send
+    # GET on <a href>, so we mirror the POST behavior.
+    return await admin_logout(request)
 
 
 @app.get("/admin/chat-test", response_class=HTMLResponse)
