@@ -137,6 +137,59 @@
         .page-title .crumb { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
         .topbar-actions { display: flex; align-items: center; gap: 8px; }
 
+        /* ── User pill + logout ──────────────────── */
+        .user-pill {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 10px 6px 12px;
+            background: var(--surface-2); border: 1px solid var(--border);
+            border-radius: 20px; font-size: 12px; color: var(--text-2);
+        }
+        .user-pill .who { font-weight: 500; color: var(--text); }
+        .user-pill .shop { color: var(--muted); }
+        .user-pill .super-badge {
+            background: var(--hi); color: #FFF; font-size: 10px;
+            padding: 1px 6px; border-radius: 10px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .logout-btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 28px; height: 28px; border-radius: 50%;
+            background: transparent; border: none; color: var(--muted);
+            cursor: pointer; transition: background .12s, color .12s;
+        }
+        .logout-btn:hover { background: var(--danger-soft); color: var(--danger); }
+
+        /* ── Modal dialog system ─────────────────── */
+        .app-modal-bg {
+            display: none; position: fixed; inset: 0;
+            background: rgba(23, 20, 14, 0.45); backdrop-filter: blur(2px);
+            z-index: 200; align-items: center; justify-content: center; padding: 24px;
+        }
+        .app-modal-bg.open { display: flex; animation: fadeIn .15s ease; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .app-modal {
+            background: var(--surface); border-radius: 14px;
+            padding: 28px 28px 22px; max-width: 420px; width: 100%;
+            box-shadow: 0 12px 48px rgba(23, 20, 14, 0.18);
+            animation: modalIn .18s ease;
+        }
+        @keyframes modalIn { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .app-modal h3 { margin: 0 0 8px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+        .app-modal p { margin: 0 0 20px; font-size: 14px; color: var(--text-2); line-height: 1.5; }
+        .app-modal.error h3 { color: var(--danger); }
+        .app-modal.success h3 { color: var(--success); }
+        .app-modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+        .app-modal-actions .btn {
+            padding: 8px 16px; font-size: 13px; border-radius: 7px;
+            border: 1px solid var(--border-strong); background: var(--surface);
+            color: var(--text); cursor: pointer; font-family: inherit; font-weight: 500;
+        }
+        .app-modal-actions .btn:hover { background: var(--surface-2); }
+        .app-modal-actions .btn-primary { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+        .app-modal-actions .btn-primary:hover { background: #000; }
+        .app-modal-actions .btn-danger { background: var(--danger); color: #FFF; border-color: var(--danger); }
+        .app-modal-actions .btn-danger:hover { background: #8B2A22; }
+
         /* ── Search inputs (inventory + orders) ──── */
         .inv-search-wrap { position: relative; display: flex; align-items: center; flex: 1; max-width: 300px; }
         .inv-search {
@@ -577,6 +630,18 @@
                     ახალი მოდელი
                 </button>
             </div>
+            <div id="user-menu" style="display:flex; align-items:center; gap:6px;">
+                <!-- filled in by renderUserMenu() after /api/whoami resolves -->
+            </div>
+        </div>
+
+        <!-- Reusable modal dialog. showAlert/showConfirm populate it. -->
+        <div class="app-modal-bg" id="appModal">
+            <div class="app-modal" id="appModalCard">
+                <h3 id="appModalTitle"></h3>
+                <p id="appModalBody"></p>
+                <div class="app-modal-actions" id="appModalActions"></div>
+            </div>
         </div>
 
         <div class="content">
@@ -779,6 +844,66 @@
 <script>
     const API = window.location.origin;
 
+    // ── Modal dialog helpers ────────────────────
+    // Replaces every window.alert / window.confirm in this file so
+    // the admin UI never uses the browser's ugly native dialogs.
+    // Both return Promises so call sites can `await showConfirm(...)`.
+    function _closeModal() {
+        document.getElementById('appModal').classList.remove('open');
+    }
+    function showAlert(message, opts) {
+        opts = opts || {};
+        const title = opts.title || 'შეტყობინება';
+        const variant = opts.variant || ''; // '' | 'error' | 'success'
+        const okLabel = opts.okLabel || 'კარგი';
+        return new Promise((resolve) => {
+            const card = document.getElementById('appModalCard');
+            card.className = 'app-modal' + (variant ? ' ' + variant : '');
+            document.getElementById('appModalTitle').textContent = title;
+            document.getElementById('appModalBody').textContent = message;
+            const actions = document.getElementById('appModalActions');
+            actions.innerHTML = '';
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-primary';
+            btn.textContent = okLabel;
+            btn.onclick = () => { _closeModal(); resolve(true); };
+            actions.appendChild(btn);
+            document.getElementById('appModal').classList.add('open');
+            setTimeout(() => btn.focus(), 50);
+        });
+    }
+    function showConfirm(message, opts) {
+        opts = opts || {};
+        const title = opts.title || 'დარწმუნებული ხარ?';
+        const variant = opts.variant || (opts.danger ? 'error' : '');
+        const okLabel = opts.okLabel || 'დიახ';
+        const cancelLabel = opts.cancelLabel || 'გაუქმება';
+        return new Promise((resolve) => {
+            const card = document.getElementById('appModalCard');
+            card.className = 'app-modal' + (variant ? ' ' + variant : '');
+            document.getElementById('appModalTitle').textContent = title;
+            document.getElementById('appModalBody').textContent = message;
+            const actions = document.getElementById('appModalActions');
+            actions.innerHTML = '';
+            const cancel = document.createElement('button');
+            cancel.className = 'btn';
+            cancel.textContent = cancelLabel;
+            cancel.onclick = () => { _closeModal(); resolve(false); };
+            const ok = document.createElement('button');
+            ok.className = 'btn ' + (opts.danger ? 'btn-danger' : 'btn-primary');
+            ok.textContent = okLabel;
+            ok.onclick = () => { _closeModal(); resolve(true); };
+            actions.appendChild(cancel);
+            actions.appendChild(ok);
+            document.getElementById('appModal').classList.add('open');
+            setTimeout(() => (opts.danger ? cancel : ok).focus(), 50);
+        });
+    }
+
+    function _esc(s) {
+        return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
     // Auth is now handled by the admin_session cookie (set by
     // /admin/login). The browser auto-sends it on every /api/* fetch
     // because it's a same-origin request. We keep a thin fetch wrapper
@@ -830,6 +955,45 @@
         }
         return resp;
     };
+
+    // ── User menu (topbar identity pill + logout) ────
+    // Defined here (after _origFetch) so it can call the unwrapped
+    // fetch directly and not get bounced by the 401 interceptor.
+    async function renderUserMenu() {
+        try {
+            const r = await _origFetch('/api/whoami', { credentials: 'same-origin' });
+            if (!r.ok) return;
+            const data = await r.json();
+            if (!data.admin_user) return;
+            const isSuper = data.admin_user.role === 'super';
+            const shop = (data.tenant || {}).shop_name || '';
+            document.getElementById('user-menu').innerHTML = `
+                <div class="user-pill">
+                    ${isSuper ? '<span class="super-badge">SUPER</span>' : ''}
+                    <div>
+                        <div class="who">${_esc(data.admin_user.email)}</div>
+                        ${shop ? `<div class="shop">${_esc(shop)}</div>` : ''}
+                    </div>
+                </div>
+                ${isSuper ? `<a href="/admin/super" class="btn btn-ghost" style="padding:6px 10px; font-size:12px;">Super-admin</a>` : ''}
+                <button class="logout-btn" onclick="logout()" title="გამოსვლა" aria-label="გამოსვლა">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                </button>
+            `;
+        } catch (_) { /* ignore — UI just won't show the pill */ }
+    }
+    async function logout() {
+        const ok = await showConfirm('ანგარიშიდან გასვლა ნამდვილად გინდა?', {
+            title: 'გასვლა', okLabel: 'გასვლა', danger: true,
+        });
+        if (!ok) return;
+        window.location.href = '/admin/logout';
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', renderUserMenu);
+    } else {
+        renderUserMenu();
+    }
 
     let filterModel = '';
     let filterSize = '';
@@ -1228,7 +1392,7 @@
     async function submitNewCategory() {
         const name = document.getElementById('cat-name').value.trim();
         const emoji = document.getElementById('cat-emoji').value.trim() || '📦';
-        if (!name) { alert('სახელი შეავსე'); return; }
+        if (!name) { await showAlert('სახელი შეავსე', { variant: 'error' }); return; }
         const fields = [...document.querySelectorAll('#cat-fields .fields-row')].map(r => {
             const [keyIn, labelIn] = r.querySelectorAll('input');
             return { key: keyIn.value.trim(), label: labelIn.value.trim() };
@@ -1241,7 +1405,7 @@
                 });
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({ detail: 'უცნობი შეცდომა' }));
-                    alert('შეცდომა: ' + (err.detail || ''));
+                    await showAlert('შეცდომა: ' + (err.detail || ''), { variant: 'error' });
                     return;
                 }
                 const prevSlug = editingCategorySlug;
@@ -1261,31 +1425,35 @@
                 });
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({ detail: 'უცნობი შეცდომა' }));
-                    alert('შეცდომა: ' + (err.detail || ''));
+                    await showAlert('შეცდომა: ' + (err.detail || ''), { variant: 'error' });
                     return;
                 }
                 closeAddCategoryModal();
                 await loadCategories();
                 switchCategory(slug, document.querySelector(`.cat-item[data-category="${slug}"]`));
             }
-        } catch (e) { alert('შეცდომა: ' + e.message); }
+        } catch (e) { await showAlert('შეცდომა: ' + e.message, { variant: 'error' }); }
     }
 
     async function deleteCurrentCategory() {
         if (!editingCategorySlug) return;
-        if (!confirm(`წაიშალოს კატეგორია "${editingCategorySlug}"? (თუ რომელიმე პროდუქტი ამ კატეგორიაშია, ჯერ უნდა გადაიტანო ან წაშალო.)`)) return;
+        const ok = await showConfirm(
+            `წაიშალოს კატეგორია "${editingCategorySlug}"? თუ რომელიმე პროდუქტი ამ კატეგორიაშია, ჯერ უნდა გადაიტანო ან წაშალო.`,
+            { title: 'კატეგორიის წაშლა', okLabel: 'წაშლა', danger: true },
+        );
+        if (!ok) return;
         try {
             const res = await fetch(API + '/api/categories/' + encodeURIComponent(editingCategorySlug), { method: 'DELETE' });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({ detail: 'უცნობი შეცდომა' }));
-                alert('შეცდომა: ' + (err.detail || ''));
+                await showAlert('შეცდომა: ' + (err.detail || ''), { variant: 'error' });
                 return;
             }
             closeAddCategoryModal();
             await loadCategories();
             // Fall back to bag if we deleted the active one.
             switchCategory('bag', document.querySelector('.cat-item[data-category="bag"]'));
-        } catch (e) { alert('შეცდომა: ' + e.message); }
+        } catch (e) { await showAlert('შეცდომა: ' + e.message, { variant: 'error' }); }
     }
 
     // ── Conversation viewer ─────────────────────
@@ -1700,7 +1868,7 @@
     }
 
     async function clearSlot(id, side) {
-        if (!confirm('წავშალოთ ეს ფოტო?')) return;
+        if (!(await showConfirm('წავშალოთ ეს ფოტო?', { title: 'ფოტოს წაშლა', okLabel: 'წაშლა', danger: true }))) return;
         await fetch(API+'/api/inventory/'+id+'/clear-image?side='+side, {method:'POST'});
         loadData();
     }
@@ -1746,7 +1914,7 @@
         loadData();
     }
     async function deleteAngle(photoId) {
-        if (!confirm('წავშალოთ ეს რაკურსი?')) return;
+        if (!(await showConfirm('წავშალოთ ეს რაკურსი?', { title: 'რაკურსის წაშლა', okLabel: 'წაშლა', danger: true }))) return;
         await fetch(API+'/api/inventory/angle/'+photoId, {method:'DELETE'});
         loadData();
     }
@@ -1771,7 +1939,7 @@
         loadData();
     }
     async function deleteOrder(id) {
-        if (!confirm('წაშალოთ ეს შეკვეთა?')) return;
+        if (!(await showConfirm('წაშალოთ ეს შეკვეთა?', { title: 'შეკვეთის წაშლა', okLabel: 'წაშლა', danger: true }))) return;
         await fetch(API+'/api/orders/'+id, {method:'DELETE'});
         loadData();
     }
@@ -1815,7 +1983,10 @@
         }
     }
     async function del(id) {
-        if (confirm('წავშალოთ?')) { await fetch(API+'/api/inventory/'+id,{method:'DELETE'}); loadData(); }
+        if (await showConfirm('წავშალოთ ეს პროდუქტი?', { title: 'პროდუქტის წაშლა', okLabel: 'წაშლა', danger: true })) {
+            await fetch(API+'/api/inventory/'+id,{method:'DELETE'});
+            loadData();
+        }
     }
 
     async function addNewProduct() {
@@ -1886,14 +2057,17 @@
 
     async function pairSelected() {
         const checked = [...document.querySelectorAll('.pair-check:checked')].map(cb => cb.value);
-        if (checked.length < 2) { alert('მინიმუმ 2 მოდელი მონიშნე'); return; }
+        if (checked.length < 2) {
+            await showAlert('მინიმუმ 2 მოდელი მონიშნე', { variant: 'error' });
+            return;
+        }
         for (let i = 1; i < checked.length; i++) {
             await fetch(API+'/api/pairs', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({code_a:checked[0],code_b:checked[i]})});
         }
         document.querySelectorAll('.pair-check').forEach(cb => { cb.checked = false; });
         updatePairCount();
         loadPairGroups();
-        alert('დაწყვილდა ✅');
+        await showAlert('დაწყვილდა ✅', { variant: 'success', title: 'მზადაა' });
     }
 
     async function loadPairGroups() {
@@ -1939,7 +2113,7 @@
     }
 
     async function deleteGroup(codes) {
-        if (!confirm('ეს ჯგუფი წაიშლება?')) return;
+        if (!(await showConfirm('ეს ჯგუფი წაიშლება?', { title: 'ჯგუფის წაშლა', okLabel: 'წაშლა', danger: true }))) return;
         const data = await fetch(API+'/api/pairs').then(r => r.json());
         for (const p of data.pairs) {
             if (codes.includes(p.code_a) && codes.includes(p.code_b)) {
@@ -1976,18 +2150,21 @@
     async function uploadExtraPhoto() {
         const code = document.getElementById('extra-code').value;
         const file = document.getElementById('extra-file').files[0];
-        if (!code || !file) { alert('აირჩიე კოდი და ფოტო'); return; }
+        if (!code || !file) {
+            await showAlert('აირჩიე კოდი და ფოტო', { variant: 'error' });
+            return;
+        }
         const fd = new FormData();
         fd.append('code', code);
         fd.append('image', file);
         await fetch(API+'/api/extra-photos', {method:'POST', body:fd});
         document.getElementById('extra-file').value = '';
         loadExtraPhotos();
-        alert('ფოტო ატვირთულია და AI ინდექსში დაემატა ✅');
+        await showAlert('ფოტო ატვირთულია და AI ინდექსში დაემატა ✅', { variant: 'success', title: 'მზადაა' });
     }
 
     async function deleteExtraPhoto(id) {
-        if (confirm('წავშალოთ ეს ფოტო?')) {
+        if (await showConfirm('წავშალოთ ეს ფოტო?', { title: 'ფოტოს წაშლა', okLabel: 'წაშლა', danger: true })) {
             await fetch(API+'/api/extra-photos/'+id, {method:'DELETE'});
             loadExtraPhotos();
         }

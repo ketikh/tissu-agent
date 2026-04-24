@@ -334,6 +334,38 @@ async def admin_reset_password_form(request: Request, token: str = ""):
     )
 
 
+@app.get("/api/whoami")
+async def api_whoami(request: Request):
+    """Return who is currently signed in so the admin UI can show
+    the user's email + shop name in the header. Session-cookie
+    callers get a full payload; X-API-Key callers get 'none' for
+    admin_user because the key doesn't identify a human."""
+    user_id = getattr(request.state, "admin_user_id", None)
+    if not user_id:
+        return {
+            "admin_user": None,
+            "tenant_id": getattr(request.state, "tenant_id", DEFAULT_TENANT_ID),
+            "auth": getattr(request.state, "auth_source", "api_key"),
+        }
+    user = await find_admin_user_by_id(int(user_id))
+    if not user:
+        return {"admin_user": None}
+    tenant = await get_tenant(user["tenant_id"])
+    return {
+        "admin_user": {
+            "id": user["id"],
+            "email": user["email"],
+            "role": user["role"],
+        },
+        "tenant": {
+            "tenant_id": user["tenant_id"],
+            "shop_name": (tenant or {}).get("shop_name") or user["tenant_id"],
+            "status": (tenant or {}).get("status") or "active",
+            "plan": (tenant or {}).get("plan") or "start",
+        },
+    }
+
+
 async def _require_super_admin(request: Request) -> dict:
     """Guard used by every /api/super/* endpoint. Loads the logged-in
     admin user, returns it if role='super', otherwise raises 403.
@@ -555,12 +587,31 @@ async def admin_activate_submit(
     new_hash = hash_password(password)
     await update_admin_user_password(user_id, new_hash)
     await invalidate_all_password_resets_for(user_id)
-    # Auto-login: issue a fresh session cookie so the newly activated
-    # user lands on /admin without a separate trip through /admin/login.
     user = await find_admin_user_by_id(user_id)
     if not user:
         return RedirectResponse(url="/admin/login?activated=1", status_code=303)
     await mark_admin_user_logged_in(user_id)
+
+    # If the visitor already has a valid admin session for some OTHER
+    # user (e.g. the super-admin testing an activation link in their
+    # own browser), don't clobber their cookie with the freshly
+    # activated account — that would silently log them out. Activate
+    # the password and bounce back to /admin/super with a success
+    # flag. A real first-time customer arrives without a session and
+    # hits the auto-login path below.
+    existing_cookie = request.cookies.get(SESSION_COOKIE_NAME, "")
+    if existing_cookie:
+        existing = load_session_token(
+            existing_cookie, max_age_seconds=LONG_SESSION_SECONDS,
+        )
+        if existing and existing.get("user_id") and existing["user_id"] != user_id:
+            return RedirectResponse(
+                url="/admin/super?activated=" + user["tenant_id"],
+                status_code=303,
+            )
+
+    # Auto-login: issue a fresh session cookie so the newly activated
+    # user lands on /admin without a separate trip through /admin/login.
     session_token = issue_session_token(user["id"], user["tenant_id"])
     csrf_token = issue_csrf_token(session_token)
     response = RedirectResponse(url="/admin", status_code=303)

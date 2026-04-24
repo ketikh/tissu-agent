@@ -65,9 +65,39 @@
             cursor:pointer; margin-left:8px; }
         .logout-link { color:#8B8478; font-size:13px; text-decoration:none; margin-left:16px; }
         .logout-link:hover { color:#17140E; }
+        /* ── App modal (replaces native alert/confirm) ── */
+        .app-modal-bg { display:none; position:fixed; inset:0; background:rgba(23,20,14,.45);
+            backdrop-filter:blur(2px); z-index:200; align-items:center; justify-content:center; padding:24px; }
+        .app-modal-bg.open { display:flex; animation:fadeIn .15s ease; }
+        @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
+        .app-modal { background:#FFF; border-radius:14px; padding:28px 28px 22px;
+            max-width:420px; width:100%; box-shadow:0 12px 48px rgba(23,20,14,.18);
+            animation:modalIn .18s ease; }
+        @keyframes modalIn { from { transform:translateY(8px); opacity:0 } to { transform:translateY(0); opacity:1 } }
+        .app-modal h3 { margin:0 0 8px; font-size:17px; font-weight:600; }
+        .app-modal p { margin:0 0 20px; font-size:14px; color:#4A443B; line-height:1.5; }
+        .app-modal.error h3 { color:#B04A42; }
+        .app-modal.success h3 { color:#2F7A5B; }
+        .app-modal-actions { display:flex; gap:8px; justify-content:flex-end; }
+        .app-modal-actions button { padding:8px 16px; font-size:13px; border-radius:7px;
+            border:1px solid #D8D2C7; background:#FFF; color:#17140E; cursor:pointer;
+            font-family:inherit; font-weight:500; }
+        .app-modal-actions button:hover { background:#FBFAF7; }
+        .app-modal-actions .btn-primary { background:#1F1B16; color:#FBFAF7; border-color:#1F1B16; }
+        .app-modal-actions .btn-primary:hover { background:#000; }
+        .app-modal-actions .btn-danger { background:#B04A42; color:#FFF; border-color:#B04A42; }
+        .app-modal-actions .btn-danger:hover { background:#8B2A22; }
     </style>
 </head>
 <body>
+    <!-- Reusable modal (populated by showAlert / showConfirm) -->
+    <div class="app-modal-bg" id="appModal">
+        <div class="app-modal" id="appModalCard">
+            <h3 id="appModalTitle"></h3>
+            <p id="appModalBody"></p>
+            <div class="app-modal-actions" id="appModalActions"></div>
+        </div>
+    </div>
     <div class="page">
         <div class="top">
             <div>
@@ -160,6 +190,56 @@
             const m = document.cookie.match(new RegExp('(?:^|; )' + n + '=([^;]*)'));
             return m ? decodeURIComponent(m[1]) : '';
         }
+
+        // Modal replacements for native alert/confirm.
+        function _closeAppModal() {
+            document.getElementById('appModal').classList.remove('open');
+        }
+        function showAlert(message, opts) {
+            opts = opts || {};
+            const title = opts.title || 'შეტყობინება';
+            const variant = opts.variant || '';
+            return new Promise((resolve) => {
+                const card = document.getElementById('appModalCard');
+                card.className = 'app-modal' + (variant ? ' ' + variant : '');
+                document.getElementById('appModalTitle').textContent = title;
+                document.getElementById('appModalBody').textContent = message;
+                const actions = document.getElementById('appModalActions');
+                actions.innerHTML = '';
+                const b = document.createElement('button');
+                b.className = 'btn-primary';
+                b.textContent = opts.okLabel || 'კარგი';
+                b.onclick = () => { _closeAppModal(); resolve(true); };
+                actions.appendChild(b);
+                document.getElementById('appModal').classList.add('open');
+                setTimeout(() => b.focus(), 50);
+            });
+        }
+        function showConfirm(message, opts) {
+            opts = opts || {};
+            const title = opts.title || 'დარწმუნებული ხარ?';
+            const variant = opts.danger ? 'error' : (opts.variant || '');
+            return new Promise((resolve) => {
+                const card = document.getElementById('appModalCard');
+                card.className = 'app-modal' + (variant ? ' ' + variant : '');
+                document.getElementById('appModalTitle').textContent = title;
+                document.getElementById('appModalBody').textContent = message;
+                const actions = document.getElementById('appModalActions');
+                actions.innerHTML = '';
+                const cancel = document.createElement('button');
+                cancel.textContent = opts.cancelLabel || 'გაუქმება';
+                cancel.onclick = () => { _closeAppModal(); resolve(false); };
+                const ok = document.createElement('button');
+                ok.className = opts.danger ? 'btn-danger' : 'btn-primary';
+                ok.textContent = opts.okLabel || 'დიახ';
+                ok.onclick = () => { _closeAppModal(); resolve(true); };
+                actions.appendChild(cancel);
+                actions.appendChild(ok);
+                document.getElementById('appModal').classList.add('open');
+                setTimeout(() => (opts.danger ? cancel : ok).focus(), 50);
+            });
+        }
+
         async function api(url, opts) {
             opts = opts || {};
             opts.credentials = 'same-origin';
@@ -171,9 +251,26 @@
             }
             const resp = await fetch(url, opts);
             if (resp.status === 401) { window.location.href = '/admin/login?error=expired'; return; }
-            if (resp.status === 403) { alert('არ გაქვს წვდომა ამ მოქმედებაზე.'); return; }
+            if (resp.status === 403) {
+                await showAlert('არ გაქვს წვდომა ამ მოქმედებაზე.', { variant: 'error' });
+                return;
+            }
             return resp;
         }
+
+        // Banner when the super-admin tested an activation link in
+        // their own browser and came back here with ?activated=<slug>.
+        (function showActivatedBanner() {
+            const p = new URLSearchParams(window.location.search);
+            const slug = p.get('activated');
+            if (!slug) return;
+            showAlert(
+                'კლიენტის პაროლი დადგინდა. ის ახლა უკვე შეუძლია შევიდეს admin-ში: ' + slug,
+                { title: '✅ გააქტიურებულია', variant: 'success' }
+            );
+            // Clean the URL so the banner doesn't reappear on reload.
+            window.history.replaceState({}, '', '/admin/super');
+        })();
 
         async function load() {
             const resp = await api('/api/super/tenants');
@@ -246,7 +343,11 @@
         });
 
         async function suspend(tenantId) {
-            if (!confirm('დარწმუნებული ხარ რომ კლიენტს გაყინავ? ის ვეღარ შევა ადმინში.')) return;
+            const ok = await showConfirm(
+                'დარწმუნებული ხარ რომ კლიენტს გაყინავ? ის ვეღარ შევა ადმინში.',
+                { title: 'ანგარიშის გაყინვა', okLabel: 'გაყინვა', danger: true },
+            );
+            if (!ok) return;
             const r = await api('/api/super/tenants/' + encodeURIComponent(tenantId) + '/suspend', { method:'POST' });
             if (r && r.ok) load();
         }
