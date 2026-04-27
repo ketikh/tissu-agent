@@ -467,6 +467,20 @@ async def init_db():
             "UPDATE tenants SET cloudinary_folder = tenant_id "
             "WHERE cloudinary_folder IS NULL"
         )
+        # Sync the bot/site enabled flags with feature_set for any
+        # legacy row that was created before the flag columns existed:
+        # feature_set was filled by DEFAULT 'bot' but bot_enabled was
+        # still DB DEFAULT false, so the entitlement check would lock
+        # them out of the bot they're paying for. Idempotent — once
+        # the flags match feature_set, the WHERE condition is false.
+        await conn.execute(
+            "UPDATE tenants SET bot_enabled = true "
+            "WHERE feature_set IN ('bot', 'combo') AND bot_enabled = false"
+        )
+        await conn.execute(
+            "UPDATE tenants SET site_enabled = true "
+            "WHERE feature_set IN ('site', 'combo') AND site_enabled = false"
+        )
         # Sync suspended_at with status — for any historical row whose
         # status was flipped to 'suspended' before the column existed.
         await conn.execute(
@@ -814,11 +828,16 @@ async def consume_password_reset(token_hash: str) -> int | None:
 
 async def list_tenants() -> list[dict]:
     """Return every tenant with its headline fields + admin_user count.
-    Used by the super-admin list page."""
+    Used by the super-admin list page. The legacy ``plan`` field is
+    aliased from the new ``pricing_tier`` column so any caller that
+    still reads ``plan`` keeps working."""
     pool = await get_pool()
     rows = await pool.fetch("""
         SELECT
-            t.tenant_id, t.shop_name, t.owner_email, t.status, t.plan,
+            t.tenant_id, t.shop_name, t.owner_email, t.status,
+            t.pricing_tier, t.pricing_tier AS plan,
+            t.feature_set, t.bot_enabled, t.site_enabled,
+            t.suspended_at, t.cloudinary_folder, t.storefront_subdomain,
             t.payment_due_date, t.notes, t.created_at, t.updated_at,
             t.fb_page_id IS NOT NULL AS has_fb,
             (SELECT COUNT(*) FROM admin_users WHERE tenant_id = t.tenant_id) AS admin_count,

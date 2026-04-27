@@ -364,6 +364,7 @@ async def api_whoami(request: Request):
     if not user:
         return {"admin_user": None}
     tenant = await get_tenant(user["tenant_id"])
+    t = tenant or {}
     return {
         "admin_user": {
             "id": user["id"],
@@ -372,9 +373,17 @@ async def api_whoami(request: Request):
         },
         "tenant": {
             "tenant_id": user["tenant_id"],
-            "shop_name": (tenant or {}).get("shop_name") or user["tenant_id"],
-            "status": (tenant or {}).get("status") or "active",
-            "plan": (tenant or {}).get("plan") or "start",
+            "shop_name": t.get("shop_name") or user["tenant_id"],
+            "status": t.get("status") or "active",
+            # New Phase 1 fields — frontend Phase 3 will use these to
+            # decide which admin tabs to render.
+            "feature_set": t.get("feature_set") or "bot",
+            "pricing_tier": t.get("pricing_tier") or "start",
+            "bot_enabled": bool(t.get("bot_enabled")),
+            "site_enabled": bool(t.get("site_enabled")),
+            # Backward-compat: keep the old "plan" key returning the
+            # pricing_tier value so any caller still reading it works.
+            "plan": t.get("pricing_tier") or "start",
         },
     }
 
