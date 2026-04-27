@@ -736,77 +736,89 @@ async def delete_tenant_cascade(tenant_id: str) -> dict:
     pool = await get_pool()
     receipt: dict[str, int] = {}
 
+    # The tables we always touch. Order doesn't matter inside the CTE
+    # because the data-modifying CTEs all see the same snapshot — but
+    # FK-dependent rows still need to be removed before their parents,
+    # so we split into two batches.
+    fk_dependent_sql = """
+        WITH d_msg AS (
+            DELETE FROM messages WHERE tenant_id = $1 RETURNING 1
+        ),
+        d_conv AS (
+            DELETE FROM conversations WHERE tenant_id = $1 RETURNING 1
+        ),
+        d_pwreset AS (
+            DELETE FROM admin_password_resets
+             WHERE admin_user_id IN (
+                 SELECT id FROM admin_users WHERE tenant_id = $1
+             )
+             RETURNING 1
+        ),
+        d_admin AS (
+            DELETE FROM admin_users WHERE tenant_id = $1 RETURNING 1
+        )
+        SELECT
+            (SELECT COUNT(*) FROM d_msg)     AS messages,
+            (SELECT COUNT(*) FROM d_conv)    AS conversations,
+            (SELECT COUNT(*) FROM d_pwreset) AS admin_password_resets,
+            (SELECT COUNT(*) FROM d_admin)   AS admin_users
+    """
+
+    flat_sql = """
+        WITH
+            d_inv  AS (DELETE FROM inventory             WHERE tenant_id = $1 RETURNING 1),
+            d_ord  AS (DELETE FROM orders                WHERE tenant_id = $1 RETURNING 1),
+            d_lead AS (DELETE FROM leads                 WHERE tenant_id = $1 RETURNING 1),
+            d_tic  AS (DELETE FROM tickets               WHERE tenant_id = $1 RETURNING 1),
+            d_cnt  AS (DELETE FROM content               WHERE tenant_id = $1 RETURNING 1),
+            d_kb   AS (DELETE FROM knowledge_base        WHERE tenant_id = $1 RETURNING 1),
+            d_cat  AS (DELETE FROM categories            WHERE tenant_id = $1 RETURNING 1),
+            d_pep  AS (DELETE FROM product_extra_photos  WHERE tenant_id = $1 RETURNING 1),
+            d_ct   AS (DELETE FROM confirm_tokens        WHERE tenant_id = $1 RETURNING 1),
+            d_keys AS (DELETE FROM api_keys              WHERE tenant_id = $1 RETURNING 1),
+            d_ten  AS (DELETE FROM tenants               WHERE tenant_id = $1 RETURNING 1)
+        SELECT
+            (SELECT COUNT(*) FROM d_inv)  AS inventory,
+            (SELECT COUNT(*) FROM d_ord)  AS orders,
+            (SELECT COUNT(*) FROM d_lead) AS leads,
+            (SELECT COUNT(*) FROM d_tic)  AS tickets,
+            (SELECT COUNT(*) FROM d_cnt)  AS content,
+            (SELECT COUNT(*) FROM d_kb)   AS knowledge_base,
+            (SELECT COUNT(*) FROM d_cat)  AS categories,
+            (SELECT COUNT(*) FROM d_pep)  AS product_extra_photos,
+            (SELECT COUNT(*) FROM d_ct)   AS confirm_tokens,
+            (SELECT COUNT(*) FROM d_keys) AS api_keys,
+            (SELECT COUNT(*) FROM d_ten)  AS tenants
+    """
+
     async with pool.acquire() as conn:
         async with conn.transaction():
-            # Stage 1 — children with FKs first.
-            #
-            # messages → conversations(id), admin_password_resets →
-            # admin_users(id). Walking the FK direction first keeps
-            # Postgres happy.
-            await conn.execute(
-                "DELETE FROM messages WHERE tenant_id = $1", tenant_id,
-            )
-            await conn.execute(
-                "DELETE FROM conversations WHERE tenant_id = $1", tenant_id,
-            )
-            await conn.execute(
-                "DELETE FROM admin_password_resets "
-                "WHERE admin_user_id IN ("
-                "  SELECT id FROM admin_users WHERE tenant_id = $1"
-                ")",
-                tenant_id,
-            )
-            await conn.execute(
-                "DELETE FROM admin_users WHERE tenant_id = $1", tenant_id,
-            )
+            row1 = await conn.fetchrow(fk_dependent_sql, tenant_id)
+            for k, v in dict(row1).items():
+                receipt[k] = int(v or 0)
 
-            # Stage 2 — flat tables that just carry tenant_id.
-            for table in (
-                "inventory", "orders", "leads", "tickets",
-                "content", "knowledge_base", "categories",
-                "product_extra_photos", "confirm_tokens",
-            ):
-                row = await conn.fetchval(
-                    f"WITH d AS (DELETE FROM {table} WHERE tenant_id = $1 RETURNING 1) "
-                    "SELECT COUNT(*) FROM d",
-                    tenant_id,
-                )
-                receipt[table] = int(row or 0)
+            row2 = await conn.fetchrow(flat_sql, tenant_id)
+            for k, v in dict(row2).items():
+                receipt[k] = int(v or 0)
 
-            # Stage 3 — lazy / optional tables. ALTER TABLE … ADD
-            # COLUMN IF NOT EXISTS in init_db handles the schema,
-            # but we still need the try/except in case the table
-            # itself doesn't exist on this install.
+            # Lazy / optional tables — these may not exist on every
+            # install, so each gets its own try/except. We still
+            # batch each one as a CTE so it costs one round-trip.
             for table in (
                 "product_pairs", "product_embeddings",
                 "product_fingerprints", "ai_photo_hints",
             ):
                 try:
-                    row = await conn.fetchval(
+                    n = await conn.fetchval(
                         f"WITH d AS (DELETE FROM {table} WHERE tenant_id = $1 RETURNING 1) "
                         "SELECT COUNT(*) FROM d",
                         tenant_id,
                     )
-                    receipt[table] = int(row or 0)
+                    receipt[table] = int(n or 0)
                 except asyncpg.exceptions.UndefinedTableError:
                     pass
                 except asyncpg.exceptions.UndefinedColumnError:
                     pass
-
-            # Stage 4 — finally, the api_keys + tenants row itself.
-            row = await conn.fetchval(
-                "WITH d AS (DELETE FROM api_keys WHERE tenant_id = $1 RETURNING 1) "
-                "SELECT COUNT(*) FROM d",
-                tenant_id,
-            )
-            receipt["api_keys"] = int(row or 0)
-
-            row = await conn.fetchval(
-                "WITH d AS (DELETE FROM tenants WHERE tenant_id = $1 RETURNING 1) "
-                "SELECT COUNT(*) FROM d",
-                tenant_id,
-            )
-            receipt["tenants"] = int(row or 0)
 
     return receipt
 
