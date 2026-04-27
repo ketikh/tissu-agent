@@ -31,6 +31,7 @@ from src.db import (
     list_tenants, get_tenant, create_tenant, update_tenant_status,
     create_admin_user_pending, create_activation_token,
     update_tenant_fb_credentials, delete_tenant_cascade,
+    update_tenant_features, list_pricing_plans, update_pricing_plan,
 )
 from src.secrets_vault import encrypt_secret, redacted
 from src.passwords import needs_rehash, verify_password, hash_password
@@ -413,10 +414,87 @@ async def admin_super_page(request: Request):
     )
 
 
+@app.get("/admin/super/pricing", response_class=HTMLResponse)
+async def admin_super_pricing_page(request: Request):
+    """Serve the pricing matrix HTML — the 9-cell grid where the
+    operator sets per-plan prices. The /api/super/pricing endpoint
+    behind it enforces the super-admin role."""
+    html_path = Path(__file__).parent / "admin-super-pricing.html"
+    return HTMLResponse(
+        html_path.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
 @app.get("/api/super/tenants")
 async def api_super_list_tenants(request: Request):
     await _require_super_admin(request)
     return {"tenants": await list_tenants()}
+
+
+@app.get("/api/super/pricing")
+async def api_super_list_pricing(request: Request):
+    """Return the 9-cell price matrix for the super-admin pricing page."""
+    await _require_super_admin(request)
+    return {"pricing_plans": await list_pricing_plans()}
+
+
+@app.put("/api/super/pricing/{feature_set}/{pricing_tier}")
+async def api_super_update_pricing(
+    feature_set: str, pricing_tier: str, request: Request,
+):
+    """Owner sets / clears the price for one cell of the matrix.
+    Pass null for any field to leave it empty."""
+    await _require_super_admin(request)
+    if feature_set not in ("bot", "site", "combo"):
+        raise HTTPException(400, "feature_set must be bot/site/combo")
+    if pricing_tier not in ("start", "grow", "pro"):
+        raise HTTPException(400, "pricing_tier must be start/grow/pro")
+    data = await request.json()
+
+    def _num(v):
+        if v is None or v == "":
+            return None
+        try:
+            n = float(v)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "price values must be numeric or null")
+        if n < 0:
+            raise HTTPException(400, "price must be >= 0")
+        return n
+
+    price_gel = _num(data.get("price_gel"))
+    setup_fee_gel = _num(data.get("setup_fee_gel"))
+    description = data.get("description")
+    if description is not None:
+        description = str(description).strip() or None
+
+    await update_pricing_plan(
+        feature_set, pricing_tier, price_gel, setup_fee_gel, description,
+    )
+    return {"ok": True}
+
+
+@app.put("/api/super/tenants/{tenant_id}/features")
+async def api_super_update_features(tenant_id: str, request: Request):
+    """Flip bot_enabled / site_enabled per-tenant (independent of
+    feature_set). Useful when a tenant's bot is broken and the
+    operator wants to disable just that without changing the plan."""
+    await _require_super_admin(request)
+    if tenant_id == DEFAULT_TENANT_ID:
+        raise HTTPException(400, "default tenant feature flags are fixed")
+    t = await get_tenant(tenant_id)
+    if not t:
+        raise HTTPException(404, "tenant not found")
+    data = await request.json()
+    bot = data.get("bot_enabled")
+    site = data.get("site_enabled")
+    await update_tenant_features(
+        tenant_id,
+        bot_enabled=bool(bot) if bot is not None else None,
+        site_enabled=bool(site) if site is not None else None,
+    )
+    return {"ok": True}
 
 
 @app.post("/api/super/tenants")
@@ -424,16 +502,29 @@ async def api_super_create_tenant(request: Request):
     """Create a new tenant + their first admin_user + a 7-day
     activation link. Returns the activation URL — this is the *only*
     time the super-admin gets to see it, so the UI copies it into a
-    one-off card for the operator to send to the customer."""
+    one-off card for the operator to send to the customer.
+
+    Two plan axes:
+      feature_set  ∈ {bot, site, combo}  — what the tenant gets
+      pricing_tier ∈ {start, grow, pro}  — the price band
+
+    For backward compat, callers passing the old ``plan`` field with a
+    pricing_tier value are still accepted (defaults feature_set='bot').
+    """
     await _require_super_admin(request)
     data = await request.json()
     shop_name = (data.get("shop_name") or "").strip()
     owner_email = (data.get("owner_email") or "").strip().lower()
-    plan = (data.get("plan") or "start").strip().lower()
+    feature_set = (data.get("feature_set") or "bot").strip().lower()
+    pricing_tier = (
+        data.get("pricing_tier") or data.get("plan") or "start"
+    ).strip().lower()
     if not shop_name or not owner_email:
         raise HTTPException(400, "shop_name + owner_email required")
-    if plan not in ("start", "grow", "pro"):
-        raise HTTPException(400, "plan must be start/grow/pro")
+    if feature_set not in ("bot", "site", "combo"):
+        raise HTTPException(400, "feature_set must be bot/site/combo")
+    if pricing_tier not in ("start", "grow", "pro"):
+        raise HTTPException(400, "pricing_tier must be start/grow/pro")
     if "@" not in owner_email or len(owner_email) > 120:
         raise HTTPException(400, "invalid email")
 
@@ -447,7 +538,11 @@ async def api_super_create_tenant(request: Request):
     tenant_id = f"{slug_base}_{secrets.token_hex(3)}"
 
     try:
-        await create_tenant(tenant_id, shop_name, owner_email, plan=plan, status="trial")
+        await create_tenant(
+            tenant_id, shop_name, owner_email,
+            pricing_tier=pricing_tier, feature_set=feature_set,
+            status="trial",
+        )
     except asyncpg.exceptions.UniqueViolationError:
         raise HTTPException(409, "tenant_id clash, please retry")
 

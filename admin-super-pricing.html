@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tissu Platform — ფასები</title>
+    <link rel="preconnect" href="https://rsms.me/">
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+    <style>
+        * { box-sizing: border-box; }
+        html, body { margin:0; padding:0;
+            font-family:"Inter var","Inter",system-ui,sans-serif;
+            background:#F8F7F4; color:#17140E; min-height:100vh; }
+        .page { max-width:1100px; margin:0 auto; padding:40px 24px; }
+        .top { display:flex; align-items:center; justify-content:space-between; margin-bottom:28px; }
+        h1 { margin:0; font-size:26px; font-weight:600; letter-spacing:-0.01em; }
+        .sub { color:#8B8478; font-size:14px; margin-top:4px; }
+        .nav-link { color:#8B8478; text-decoration:none; font-size:13px; margin-left:16px; }
+        .nav-link:hover { color:#17140E; }
+        .grid {
+            display:grid;
+            grid-template-columns: 140px repeat(3, 1fr);
+            gap:1px;
+            background:#ECE7DF;
+            border:1px solid #ECE7DF;
+            border-radius:12px;
+            overflow:hidden;
+        }
+        .cell { background:#FFF; padding:16px; }
+        .cell.head { background:#FBFAF7; font-weight:600; font-size:12px;
+            color:#8B8478; text-transform:uppercase; letter-spacing:0.05em;
+            text-align:center; padding-top:14px; padding-bottom:14px; }
+        .cell.row-label { background:#FBFAF7; font-weight:600; font-size:14px;
+            display:flex; flex-direction:column; justify-content:center; }
+        .cell.row-label .emoji { font-size:24px; margin-bottom:4px; }
+        .cell.row-label .name { font-size:13px; color:#4A443B; }
+        .price-input-row { display:flex; align-items:center; gap:6px; margin-bottom:8px; }
+        .price-input-row label { font-size:11px; color:#8B8478; min-width:60px; }
+        .price-input-row input { flex:1; padding:6px 8px; border:1px solid #D8D2C7;
+            border-radius:6px; font-size:14px; font-family:inherit; background:#FBFAF7;
+            color:#17140E; }
+        .price-input-row input:focus { outline:none; border-color:#1F1B16; background:#FFF; }
+        .price-input-row .lari { color:#8B8478; font-size:12px; }
+        .desc-input { width:100%; padding:6px 8px; border:1px solid #D8D2C7;
+            border-radius:6px; font-size:12px; font-family:inherit; background:#FBFAF7;
+            color:#4A443B; min-height:44px; resize:vertical; margin-top:8px; }
+        .save-btn {
+            margin-top:8px; width:100%;
+            padding:6px 10px; background:#1F1B16; color:#FBFAF7;
+            border:none; border-radius:6px; font-size:12px; font-weight:500;
+            cursor:pointer; transition:background .12s;
+        }
+        .save-btn:hover { background:#000; }
+        .save-btn.saved { background:#2F7A5B; }
+        .save-btn:disabled { opacity:.55; cursor:not-allowed; }
+        .hint { background:#FFF4E0; color:#7A5A1F; padding:14px 18px;
+            border-radius:10px; font-size:13px; margin-bottom:20px; line-height:1.5; }
+
+        /* Modal copy from admin-super.html */
+        .app-modal-bg { display:none; position:fixed; inset:0; background:rgba(23,20,14,.45);
+            backdrop-filter:blur(2px); z-index:200; align-items:center; justify-content:center; padding:24px; }
+        .app-modal-bg.open { display:flex; }
+        .app-modal { background:#FFF; border-radius:14px; padding:28px;
+            max-width:420px; width:100%; box-shadow:0 12px 48px rgba(23,20,14,.18); }
+        .app-modal h3 { margin:0 0 8px; font-size:17px; font-weight:600; }
+        .app-modal p { margin:0 0 20px; font-size:14px; color:#4A443B; line-height:1.5; }
+        .app-modal.error h3 { color:#B04A42; }
+        .app-modal.success h3 { color:#2F7A5B; }
+        .app-modal-actions { display:flex; gap:8px; justify-content:flex-end; }
+        .app-modal-actions button { padding:8px 16px; font-size:13px; border-radius:7px;
+            border:1px solid #D8D2C7; background:#FFF; color:#17140E; cursor:pointer;
+            font-family:inherit; font-weight:500; }
+        .app-modal-actions .btn-primary { background:#1F1B16; color:#FBFAF7; border-color:#1F1B16; }
+    </style>
+</head>
+<body>
+    <div class="app-modal-bg" id="appModal">
+        <div class="app-modal" id="appModalCard">
+            <h3 id="appModalTitle"></h3>
+            <p id="appModalBody"></p>
+            <div class="app-modal-actions" id="appModalActions"></div>
+        </div>
+    </div>
+
+    <div class="page">
+        <div class="top">
+            <div>
+                <h1>💰 ფასები</h1>
+                <div class="sub">9 უჯრედი — feature_set × pricing_tier. ფასი ლარშია, ერთი თვის გადასახადი.</div>
+            </div>
+            <div>
+                <a class="nav-link" href="/admin/super">← კლიენტები</a>
+                <a class="nav-link" href="/admin">ადმინზე</a>
+                <a class="nav-link" href="/admin/logout">გამოსვლა</a>
+            </div>
+        </div>
+
+        <div class="hint">
+            ეს გვერდი მხოლოდ შენ ხედავ. ცარიელი უჯრედები „ჯერ არ არის გადაწყვეტილი"-ს ნიშნავს —
+            შეგიძლია ნელ-ნელა შეავსო. „setup" — ერთჯერადი დასაყენებელი ფასი (კლიენტის ჩართვისას ერთხელ);
+            „თვიური" — ყოველთვიური გამოწერა.
+        </div>
+
+        <div class="grid" id="priceGrid">
+            <!-- 4×4 grid: header row + 3 feature rows. JS fills in. -->
+        </div>
+    </div>
+
+    <script>
+        function _cookie(n) {
+            const m = document.cookie.match(new RegExp('(?:^|; )' + n + '=([^;]*)'));
+            return m ? decodeURIComponent(m[1]) : '';
+        }
+        function _closeAppModal() { document.getElementById('appModal').classList.remove('open'); }
+        function showAlert(message, opts) {
+            opts = opts || {};
+            return new Promise((resolve) => {
+                const card = document.getElementById('appModalCard');
+                card.className = 'app-modal' + (opts.variant ? ' ' + opts.variant : '');
+                document.getElementById('appModalTitle').textContent = opts.title || 'შეტყობინება';
+                document.getElementById('appModalBody').textContent = message;
+                const actions = document.getElementById('appModalActions');
+                actions.innerHTML = '';
+                const b = document.createElement('button');
+                b.className = 'btn-primary';
+                b.textContent = opts.okLabel || 'კარგი';
+                b.onclick = () => { _closeAppModal(); resolve(true); };
+                actions.appendChild(b);
+                document.getElementById('appModal').classList.add('open');
+                setTimeout(() => b.focus(), 50);
+            });
+        }
+        async function api(url, opts) {
+            opts = opts || {};
+            opts.credentials = 'same-origin';
+            if (['POST','PUT','DELETE'].includes((opts.method||'GET').toUpperCase())) {
+                opts.headers = Object.assign({}, opts.headers || {}, {
+                    'X-CSRF-Token': _cookie('admin_csrf'),
+                    'Content-Type': 'application/json',
+                });
+            }
+            const r = await fetch(url, opts);
+            if (r.status === 401) { window.location.href = '/admin/login?error=expired'; return; }
+            if (r.status === 403) { await showAlert('არ გაქვს წვდომა.', { variant: 'error' }); return; }
+            return r;
+        }
+        function esc(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+        const FEATURES = [
+            { key: 'bot',   emoji: '🤖',   name: 'მხოლოდ ბოტი' },
+            { key: 'site',  emoji: '🌐',   name: 'მხოლოდ საიტი' },
+            { key: 'combo', emoji: '🤖🌐', name: 'ბოტი + საიტი' },
+        ];
+        const TIERS = ['start', 'grow', 'pro'];
+
+        function priceCellHtml(plan) {
+            const fs = plan.feature_set, t = plan.pricing_tier;
+            return `
+                <div class="cell" data-fs="${fs}" data-t="${t}">
+                    <div class="price-input-row">
+                        <label>setup:</label>
+                        <input type="number" step="0.01" min="0" id="setup_${fs}_${t}"
+                               value="${plan.setup_fee_gel != null ? plan.setup_fee_gel : ''}"
+                               placeholder="—">
+                        <span class="lari">₾</span>
+                    </div>
+                    <div class="price-input-row">
+                        <label>თვიური:</label>
+                        <input type="number" step="0.01" min="0" id="price_${fs}_${t}"
+                               value="${plan.price_gel != null ? plan.price_gel : ''}"
+                               placeholder="—">
+                        <span class="lari">₾</span>
+                    </div>
+                    <textarea class="desc-input" id="desc_${fs}_${t}"
+                              placeholder="რა შედის (არასავალდებულო)">${esc(plan.description || '')}</textarea>
+                    <button class="save-btn" id="save_${fs}_${t}" onclick="savePrice('${fs}','${t}')">შენახვა</button>
+                </div>
+            `;
+        }
+
+        async function load() {
+            const r = await api('/api/super/pricing');
+            if (!r) return;
+            const data = await r.json();
+            const byKey = {};
+            data.pricing_plans.forEach(p => { byKey[`${p.feature_set}|${p.pricing_tier}`] = p; });
+
+            const grid = document.getElementById('priceGrid');
+            const cells = [];
+            // Header row
+            cells.push('<div class="cell head"></div>');
+            TIERS.forEach(t => cells.push(`<div class="cell head">${esc(t)}</div>`));
+            // Three feature rows
+            FEATURES.forEach(f => {
+                cells.push(`<div class="cell row-label">
+                    <span class="emoji">${f.emoji}</span>
+                    <span class="name">${esc(f.name)}</span>
+                </div>`);
+                TIERS.forEach(t => {
+                    const plan = byKey[`${f.key}|${t}`] || { feature_set: f.key, pricing_tier: t };
+                    cells.push(priceCellHtml(plan));
+                });
+            });
+            grid.innerHTML = cells.join('');
+        }
+
+        async function savePrice(fs, t) {
+            const btn = document.getElementById(`save_${fs}_${t}`);
+            btn.disabled = true;
+            btn.textContent = 'მუშაობს…';
+            const body = {
+                price_gel: document.getElementById(`price_${fs}_${t}`).value || null,
+                setup_fee_gel: document.getElementById(`setup_${fs}_${t}`).value || null,
+                description: document.getElementById(`desc_${fs}_${t}`).value.trim() || null,
+            };
+            const r = await api(`/api/super/pricing/${fs}/${t}`, {
+                method: 'PUT', body: JSON.stringify(body),
+            });
+            if (r && r.ok) {
+                btn.classList.add('saved');
+                btn.textContent = '✓ შენახულია';
+                setTimeout(() => {
+                    btn.classList.remove('saved');
+                    btn.textContent = 'შენახვა';
+                    btn.disabled = false;
+                }, 1500);
+            } else {
+                const data = r ? await r.json().catch(() => ({})) : {};
+                await showAlert('შეცდომა: ' + (data.detail || 'უცნობი'), { variant: 'error' });
+                btn.disabled = false;
+                btn.textContent = 'შენახვა';
+            }
+        }
+
+        load();
+    </script>
+</body>
+</html>

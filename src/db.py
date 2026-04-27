@@ -372,10 +372,54 @@ async def init_db():
         await conn.execute(
             "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS owner_whatsapp TEXT"
         )
+
+        # ── Phase 1: SaaS feature flags + plan separation ──────
+        # The owner sells the platform on two orthogonal axes:
+        #   feature_set  ∈ {bot, site, combo}  — what the tenant gets
+        #   pricing_tier ∈ {start, grow, pro}  — the price band
+        # bot_enabled / site_enabled are stored explicitly so a future
+        # admin can flip one off without changing the headline plan.
+        # suspended_at parallels status='suspended' for callers that
+        # want a timestamp instead of an enum.
+        await conn.execute(
+            "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS feature_set TEXT NOT NULL DEFAULT 'bot'"
+        )
+        # Rename existing 'plan' → 'pricing_tier' (metadata-only on Postgres,
+        # safe re-run because we catch the "column doesn't exist" error
+        # the second time around).
+        try:
+            await conn.execute(
+                "ALTER TABLE tenants RENAME COLUMN plan TO pricing_tier"
+            )
+        except asyncpg.exceptions.UndefinedColumnError:
+            pass  # already renamed on a prior boot
+        except asyncpg.exceptions.DuplicateColumnError:
+            pass  # both columns exist somehow — leave alone
+        await conn.execute(
+            "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS bot_enabled BOOLEAN NOT NULL DEFAULT false"
+        )
+        await conn.execute(
+            "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS site_enabled BOOLEAN NOT NULL DEFAULT false"
+        )
+        await conn.execute(
+            "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS suspended_at TEXT"
+        )
+        await conn.execute(
+            "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS cloudinary_folder TEXT"
+        )
+        await conn.execute(
+            "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS storefront_subdomain TEXT"
+        )
+
         # Quick fb_page_id -> tenant lookup for the webhook dispatcher.
         await conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_fb_page "
             "ON tenants (fb_page_id) WHERE fb_page_id IS NOT NULL"
+        )
+        # Same for storefront_subdomain — Phase 7 will route by Host header.
+        await conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_subdomain "
+            "ON tenants (storefront_subdomain) WHERE storefront_subdomain IS NOT NULL"
         )
         # Seed the existing default tenant row for Tissu so the shop
         # shows up in the super-admin list with a known-good status.
@@ -383,14 +427,109 @@ async def init_db():
         now_iso = datetime.now(timezone.utc).isoformat()
         await conn.execute(
             """INSERT INTO tenants
-               (tenant_id, shop_name, owner_email, status, plan,
+               (tenant_id, shop_name, owner_email, status, pricing_tier,
+                feature_set, bot_enabled, site_enabled, cloudinary_folder,
                 payment_due_date, created_at, updated_at)
-               VALUES ($1, $2, $3, 'active', 'pro', NULL, $4, $4)
+               VALUES ($1, $2, $3, 'active', 'pro', 'combo',
+                       true, true, $4, NULL, $5, $5)
                ON CONFLICT (tenant_id) DO NOTHING""",
             DEFAULT_TENANT_ID, "Tissu Shop",
             os.environ.get("ADMIN_OWNER_EMAIL", "").strip().lower() or "owner@tissu.shop",
+            DEFAULT_TENANT_ID,  # cloudinary_folder
             now_iso,
         )
+
+        # ── Phase 1 backfill ───────────────────────────────────
+        # Existing rows from previous migrations are missing the new
+        # flags. Each UPDATE is guarded by WHERE so it only touches
+        # rows that haven't been backfilled yet — safe to re-run.
+        # Default tenant: owner platform = combo + cloudinary folder.
+        await conn.execute(
+            "UPDATE tenants SET feature_set = 'combo', "
+            "                   bot_enabled = true, "
+            "                   site_enabled = true, "
+            "                   cloudinary_folder = $1 "
+            "WHERE tenant_id = $1 "
+            "  AND (feature_set != 'combo' OR cloudinary_folder IS NULL)",
+            DEFAULT_TENANT_ID,
+        )
+        # Other tenants (created before Phase 1): they pay for the bot
+        # today, so feature_set='bot' + bot_enabled=true. cloudinary_
+        # folder defaults to their own tenant_id so uploads stay
+        # isolated when Phase 4 wires Cloudinary per-tenant.
+        await conn.execute(
+            "UPDATE tenants SET feature_set = 'bot', bot_enabled = true "
+            "WHERE tenant_id != $1 "
+            "  AND feature_set NOT IN ('bot', 'site', 'combo')",
+            DEFAULT_TENANT_ID,
+        )
+        await conn.execute(
+            "UPDATE tenants SET cloudinary_folder = tenant_id "
+            "WHERE cloudinary_folder IS NULL"
+        )
+        # Sync suspended_at with status — for any historical row whose
+        # status was flipped to 'suspended' before the column existed.
+        await conn.execute(
+            "UPDATE tenants SET suspended_at = updated_at "
+            "WHERE status = 'suspended' AND suspended_at IS NULL"
+        )
+
+        # ── Phase 1: pricing_plans table ───────────────────────
+        # Owner-editable price matrix. 9 cells (3 feature_sets × 3
+        # pricing_tiers), all NULL until owner fills them in via the
+        # super-admin "💰 ფასები" page. Lari (GEL) only for now —
+        # add a currency column when we onboard a non-Georgian shop.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS pricing_plans (
+                id SERIAL PRIMARY KEY,
+                feature_set TEXT NOT NULL,
+                pricing_tier TEXT NOT NULL,
+                price_gel NUMERIC(10, 2),
+                setup_fee_gel NUMERIC(10, 2),
+                description TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE (feature_set, pricing_tier)
+            )
+        """)
+        for fset in ("bot", "site", "combo"):
+            for tier in ("start", "grow", "pro"):
+                await conn.execute(
+                    """INSERT INTO pricing_plans
+                       (feature_set, pricing_tier, created_at, updated_at)
+                       VALUES ($1, $2, $3, $3)
+                       ON CONFLICT (feature_set, pricing_tier) DO NOTHING""",
+                    fset, tier, now_iso,
+                )
+
+        # ── Phase 1: foreign keys from tenant-scoped tables ─────
+        # Promote tenant_id from "free-form TEXT" to a real FK pointing
+        # at tenants(tenant_id). Catches orphan rows (any tenant_id not
+        # in tenants) at boot — if your migration ever fails here,
+        # something seeded a tenant_id without a matching tenants row,
+        # and the cascade-delete would have left things in a bad state.
+        for table in TENANT_SCOPED_TABLES:
+            constraint_name = f"fk_{table}_tenant"
+            try:
+                await conn.execute(
+                    f"ALTER TABLE {table} "
+                    f"ADD CONSTRAINT {constraint_name} "
+                    f"FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id) "
+                    f"ON DELETE NO ACTION"
+                )
+            except asyncpg.exceptions.DuplicateObjectError:
+                pass  # constraint already in place
+            except asyncpg.exceptions.UndefinedTableError:
+                pass  # lazy table not created yet
+            except asyncpg.exceptions.UndefinedColumnError:
+                pass  # tenant_id column not yet added (lazy table)
+            except asyncpg.exceptions.ForeignKeyViolationError as e:
+                print(
+                    f"[migration] WARNING: orphan tenant_id rows in {table}; "
+                    f"FK skipped — clean up before relying on referential "
+                    f"integrity. Detail: {e}",
+                    flush=True,
+                )
 
         # ── Admin users (owner / staff login) ──────────────────
         # Replaces the browser prompt() hack — /admin/login now takes a
@@ -852,20 +991,68 @@ async def create_tenant(
     tenant_id: str,
     shop_name: str,
     owner_email: str,
-    plan: str = "start",
+    pricing_tier: str = "start",
+    feature_set: str = "bot",
     status: str = "trial",
 ) -> None:
-    """Insert a new tenant row. Raises asyncpg.UniqueViolationError if
-    tenant_id clashes (super-admin UI regenerates on 409)."""
+    """Insert a new tenant row. The two plan axes are independent:
+    feature_set picks bot/site/combo, pricing_tier picks the price
+    band. bot_enabled and site_enabled are derived from feature_set
+    here so callers don't have to keep them in sync — they can still
+    be flipped per-tenant later via update_tenant_features().
+    cloudinary_folder defaults to the tenant_id so the Phase 4 CMS
+    can write `tissu/<tenant_id>/...` without collision.
+    """
+    if feature_set not in ("bot", "site", "combo"):
+        raise ValueError(f"feature_set must be bot/site/combo (got {feature_set!r})")
+    if pricing_tier not in ("start", "grow", "pro"):
+        raise ValueError(f"pricing_tier must be start/grow/pro (got {pricing_tier!r})")
+    bot_enabled = feature_set in ("bot", "combo")
+    site_enabled = feature_set in ("site", "combo")
     pool = await get_pool()
     now = datetime.now(timezone.utc).isoformat()
     await pool.execute(
         """INSERT INTO tenants
-           (tenant_id, shop_name, owner_email, status, plan,
+           (tenant_id, shop_name, owner_email, status, pricing_tier,
+            feature_set, bot_enabled, site_enabled, cloudinary_folder,
             created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $6)""",
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $1, $9, $9)""",
         tenant_id, shop_name, owner_email.strip().lower(),
-        status, plan, now,
+        status, pricing_tier, feature_set, bot_enabled, site_enabled, now,
+    )
+
+
+async def update_tenant_features(
+    tenant_id: str,
+    bot_enabled: bool | None = None,
+    site_enabled: bool | None = None,
+) -> None:
+    """Flip individual feature flags without changing the headline
+    feature_set. Useful for "this tenant's bot has temporary issues,
+    turn it off but keep the subscription". Pass None to leave a
+    flag alone."""
+    pool = await get_pool()
+    now = datetime.now(timezone.utc).isoformat()
+    if bot_enabled is None and site_enabled is None:
+        return
+    sets = []
+    params: list = []
+    idx = 1
+    if bot_enabled is not None:
+        sets.append(f"bot_enabled = ${idx}")
+        params.append(bool(bot_enabled))
+        idx += 1
+    if site_enabled is not None:
+        sets.append(f"site_enabled = ${idx}")
+        params.append(bool(site_enabled))
+        idx += 1
+    sets.append(f"updated_at = ${idx}")
+    params.append(now)
+    idx += 1
+    params.append(tenant_id)
+    await pool.execute(
+        f"UPDATE tenants SET {', '.join(sets)} WHERE tenant_id = ${idx}",
+        *params,
     )
 
 
@@ -874,21 +1061,92 @@ async def update_tenant_status(
     status: str,
     payment_due_date: str | None = None,
 ) -> None:
-    """Flip a tenant's status (trial / active / suspended) and, when
-    moving to 'active', extend the paid-through date another 30 days."""
+    """Flip a tenant's status (trial / active / suspended) and keep
+    suspended_at synced. ``payment_due_date`` is only set when an
+    explicit value is passed (mark-paid extends 30 days); other
+    transitions leave it alone."""
     pool = await get_pool()
     now = datetime.now(timezone.utc).isoformat()
+    suspended_at = now if status == "suspended" else None
     if payment_due_date is None:
         await pool.execute(
-            "UPDATE tenants SET status = $1, updated_at = $2 WHERE tenant_id = $3",
-            status, now, tenant_id,
+            "UPDATE tenants SET status = $1, suspended_at = $2, "
+            "                   updated_at = $3 "
+            "WHERE tenant_id = $4",
+            status, suspended_at, now, tenant_id,
         )
     else:
         await pool.execute(
-            "UPDATE tenants SET status = $1, payment_due_date = $2, "
-            "updated_at = $3 WHERE tenant_id = $4",
-            status, payment_due_date, now, tenant_id,
+            "UPDATE tenants SET status = $1, suspended_at = $2, "
+            "                   payment_due_date = $3, updated_at = $4 "
+            "WHERE tenant_id = $5",
+            status, suspended_at, payment_due_date, now, tenant_id,
         )
+
+
+async def is_bot_enabled(tenant_id: str) -> bool:
+    """True iff the tenant currently has bot access. Used by
+    request-time entitlement checks (Phase 3)."""
+    pool = await get_pool()
+    row = await pool.fetchval(
+        "SELECT bot_enabled FROM tenants WHERE tenant_id = $1", tenant_id,
+    )
+    return bool(row) if row is not None else False
+
+
+async def is_site_enabled(tenant_id: str) -> bool:
+    """True iff the tenant currently has website CMS access."""
+    pool = await get_pool()
+    row = await pool.fetchval(
+        "SELECT site_enabled FROM tenants WHERE tenant_id = $1", tenant_id,
+    )
+    return bool(row) if row is not None else False
+
+
+async def list_pricing_plans() -> list[dict]:
+    """Return all 9 pricing rows for the super-admin pricing page."""
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT id, feature_set, pricing_tier, price_gel, "
+        "       setup_fee_gel, description, updated_at "
+        "FROM pricing_plans "
+        "ORDER BY feature_set, "
+        "         CASE pricing_tier "
+        "              WHEN 'start' THEN 0 "
+        "              WHEN 'grow'  THEN 1 "
+        "              WHEN 'pro'   THEN 2 "
+        "              ELSE 9 END"
+    )
+    out = []
+    for r in rows:
+        d = dict(r)
+        # NUMERIC columns come back as Decimal — JSON-encodable as str.
+        for k in ("price_gel", "setup_fee_gel"):
+            v = d.get(k)
+            if v is not None:
+                d[k] = float(v)
+        out.append(d)
+    return out
+
+
+async def update_pricing_plan(
+    feature_set: str,
+    pricing_tier: str,
+    price_gel: float | None,
+    setup_fee_gel: float | None,
+    description: str | None,
+) -> None:
+    """Owner edits a cell in the pricing matrix. Each call updates
+    one (feature_set, pricing_tier) row — pass None to clear a value."""
+    pool = await get_pool()
+    now = datetime.now(timezone.utc).isoformat()
+    await pool.execute(
+        "UPDATE pricing_plans SET "
+        "  price_gel = $1, setup_fee_gel = $2, description = $3, updated_at = $4 "
+        "WHERE feature_set = $5 AND pricing_tier = $6",
+        price_gel, setup_fee_gel, description, now,
+        feature_set, pricing_tier,
+    )
 
 
 async def create_admin_user_pending(

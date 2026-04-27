@@ -173,16 +173,20 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         # health checks and the storefront (customers of the shop
         # shouldn't see the frontend break when the shop falls behind
         # on payment — that's a matter between operator and shop).
+        # Status code is 403 Forbidden per the Phase 1 contract — 402
+        # was a nicer fit semantically but Frontend Claude's
+        # entitlements middleware spec says 403, so we converge.
         if tenant_id != DEFAULT_TENANT_ID and not path.startswith("/api/storefront/"):
             try:
                 t = await get_tenant(tenant_id)
             except Exception:
                 t = None
-            if t and t.get("status") == "suspended":
+            if t and (t.get("status") == "suspended"
+                      or t.get("suspended_at") is not None):
                 return JSONResponse(
                     {"error": "account_suspended",
                      "message": "Tenant account is suspended. Contact the platform operator."},
-                    status_code=402,  # 402 Payment Required — fits the semantics
+                    status_code=403,
                 )
 
         request.state.tenant_id = tenant_id

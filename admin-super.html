@@ -106,6 +106,7 @@
             </div>
             <div>
                 <button class="btn" onclick="openCreateModal()">+ ახალი კლიენტი</button>
+                <a class="logout-link" href="/admin/super/pricing">💰 ფასები</a>
                 <a class="logout-link" href="/admin">← ადმინზე</a>
                 <a class="logout-link" href="/admin/logout">გამოსვლა</a>
             </div>
@@ -117,7 +118,7 @@
                     <th>მაღაზია</th>
                     <th>ელფოსტა</th>
                     <th>სტატუსი</th>
-                    <th>ტარიფი</th>
+                    <th>გეგმა</th>
                     <th>გადახდის ვადა</th>
                     <th>პროდუქტი / ორდ.</th>
                     <th>FB</th>
@@ -170,12 +171,21 @@
                 <input type="email" id="owner_email" name="owner_email" required placeholder="ketino@gmail.com">
             </div>
             <div class="field">
-                <label for="plan">ტარიფი</label>
-                <select id="plan" name="plan">
-                    <option value="start">Start — 30₾/თვე</option>
-                    <option value="grow">Grow — 60₾/თვე</option>
-                    <option value="pro">Pro — 120₾/თვე</option>
+                <label for="feature_set">რას აძლევ კლიენტს</label>
+                <select id="feature_set" name="feature_set">
+                    <option value="bot">🤖 ბოტი (Messenger / IG)</option>
+                    <option value="site">🌐 საიტი (CMS)</option>
+                    <option value="combo">🤖🌐 ბოტი + საიტი</option>
                 </select>
+            </div>
+            <div class="field">
+                <label for="pricing_tier">ფასობრივი დონე</label>
+                <select id="pricing_tier" name="pricing_tier">
+                    <option value="start">Start</option>
+                    <option value="grow">Grow</option>
+                    <option value="pro">Pro</option>
+                </select>
+                <div class="muted" style="font-size:11px;margin-top:4px">ფასები — ცალკე გვერდზე გადაამოწმე</div>
             </div>
             <div class="modal-actions">
                 <button type="button" class="btn btn-secondary" onclick="closeCreateModal()">გაუქმება</button>
@@ -289,7 +299,15 @@
                     </td>
                     <td>${esc(t.owner_email)}</td>
                     <td><span class="badge badge-${t.status}">${esc(t.status)}</span></td>
-                    <td>${esc(t.plan)}</td>
+                    <td>
+                        <div style="display:flex;gap:4px;align-items:center;font-size:12px">
+                            <span title="${esc(t.feature_set || 'bot')}">${
+                                t.feature_set === 'combo' ? '🤖🌐' :
+                                t.feature_set === 'site' ? '🌐' : '🤖'
+                            }</span>
+                            <span style="color:#8B8478">${esc(t.pricing_tier || t.plan || 'start')}</span>
+                        </div>
+                    </td>
                     <td>${t.payment_due_date ? esc(t.payment_due_date.slice(0,10)) : '<span class="muted">—</span>'}</td>
                     <td>${t.product_count} / ${t.order_count}</td>
                     <td>${t.has_fb ? '✅' : '<span class="muted">—</span>'}</td>
@@ -340,7 +358,8 @@
             const body = {
                 shop_name: document.getElementById('shop_name').value.trim(),
                 owner_email: document.getElementById('owner_email').value.trim(),
-                plan: document.getElementById('plan').value,
+                feature_set: document.getElementById('feature_set').value,
+                pricing_tier: document.getElementById('pricing_tier').value,
             };
             try {
                 const resp = await api('/api/super/tenants', { method:'POST', body: JSON.stringify(body) });
