@@ -301,6 +301,7 @@
                             ? '<button class="btn-activate" onclick="markPaid(\''+t.tenant_id+'\')">გააქტიურე</button>'
                             : ''}
                         <button onclick="openFbModal('${t.tenant_id}')">FB…</button>
+                        <button class="btn-suspend" onclick="deleteTenant('${t.tenant_id}', '${esc(t.shop_name).replace(/'/g, '&#39;')}')">წაშლა</button>
                     </td>
                 </tr>
             `).join('');
@@ -395,6 +396,90 @@
             if (!ok) return;
             const r = await api('/api/super/tenants/' + encodeURIComponent(tenantId) + '/suspend', { method:'POST' });
             if (r && r.ok) load();
+        }
+
+        async function deleteTenant(tenantId, shopName) {
+            // Two-step confirm because this is irreversible. First a
+            // plain confirm, then a "type the shop name to confirm"
+            // gate so a stray click can't wipe a customer's data.
+            const ok = await showConfirm(
+                'სამუდამოდ წაიშლება "' + shopName + '" და ყველა მისი მონაცემი — '
+                + 'პროდუქტი, შეკვეთა, ჩატი, ფოტო, ანგარიში. ეს მოქმედება შეუქცევადია.',
+                { title: 'კლიენტის წაშლა', okLabel: 'გაგრძელება', danger: true },
+            );
+            if (!ok) return;
+            const typed = await showPrompt(
+                'დადასტურებისთვის აკრიფე მაღაზიის სახელი ზუსტად ისე, როგორც აქ ჩანს:\n\n' + shopName,
+                { title: 'ბოლო დადასტურება', okLabel: 'წაშლა', danger: true },
+            );
+            if (typed === null) return;
+            if (typed.trim() !== shopName.trim()) {
+                await showAlert(
+                    'სახელი არ ემთხვევა — წაშლა გაუქმდა.',
+                    { variant: 'error' },
+                );
+                return;
+            }
+            const r = await api(
+                '/api/super/tenants/' + encodeURIComponent(tenantId),
+                { method: 'DELETE' },
+            );
+            if (!r) return;
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) {
+                await showAlert(
+                    'წაშლა ვერ მოხერხდა: ' + (data.detail || r.status),
+                    { variant: 'error' },
+                );
+                return;
+            }
+            await showAlert(
+                '"' + shopName + '" წაშლილია.',
+                { title: '✅ წაშლილია', variant: 'success' },
+            );
+            load();
+        }
+
+        // showPrompt — text-input variant of the confirm modal.
+        // Returns the entered string, or null if cancelled.
+        function showPrompt(message, opts) {
+            opts = opts || {};
+            const title = opts.title || 'შეიყვანე';
+            const variant = opts.danger ? 'error' : (opts.variant || '');
+            return new Promise((resolve) => {
+                const card = document.getElementById('appModalCard');
+                card.className = 'app-modal' + (variant ? ' ' + variant : '');
+                document.getElementById('appModalTitle').textContent = title;
+                const body = document.getElementById('appModalBody');
+                body.innerHTML = '';
+                const msg = document.createElement('div');
+                msg.style.whiteSpace = 'pre-line';
+                msg.style.marginBottom = '12px';
+                msg.textContent = message;
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.style.cssText =
+                    'width:100%;padding:9px 11px;border:1px solid #D8D2C7;'
+                    + 'border-radius:7px;font-size:14px;font-family:inherit;background:#FBFAF7;';
+                body.appendChild(msg);
+                body.appendChild(input);
+                const actions = document.getElementById('appModalActions');
+                actions.innerHTML = '';
+                const cancel = document.createElement('button');
+                cancel.textContent = opts.cancelLabel || 'გაუქმება';
+                cancel.onclick = () => { _closeAppModal(); resolve(null); };
+                const ok = document.createElement('button');
+                ok.className = opts.danger ? 'btn-danger' : 'btn-primary';
+                ok.textContent = opts.okLabel || 'OK';
+                ok.onclick = () => { _closeAppModal(); resolve(input.value); };
+                actions.appendChild(cancel);
+                actions.appendChild(ok);
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') { _closeAppModal(); resolve(input.value); }
+                });
+                document.getElementById('appModal').classList.add('open');
+                setTimeout(() => input.focus(), 50);
+            });
         }
         async function markPaid(tenantId) {
             const r = await api('/api/super/tenants/' + encodeURIComponent(tenantId) + '/mark-paid', { method:'POST' });

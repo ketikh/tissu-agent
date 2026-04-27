@@ -711,6 +711,106 @@ async def get_tenant_by_fb_page_id(page_id: str) -> dict | None:
     return dict(row) if row else None
 
 
+async def delete_tenant_cascade(tenant_id: str) -> dict:
+    """Wipe an entire tenant and every row tied to it.
+
+    The platform operator calls this from /admin/super when a customer
+    churns. Refuses to nuke the default tenant — that's where the
+    super-admin's own account lives, and it carries the bootstrap
+    api_keys row.
+
+    Runs inside a transaction so a partial failure rolls back. The
+    "lazy" tables (product_pairs, ai_photo_hints, product_embeddings,
+    product_fingerprints) are wrapped in try/except because they may
+    not exist on every install.
+
+    Returns a dict of {table: rows_deleted} so the UI can show a
+    receipt — useful when the operator wants to verify the cleanup
+    landed.
+    """
+    if tenant_id == DEFAULT_TENANT_ID:
+        raise ValueError("cannot delete the default tenant")
+    if not tenant_id:
+        raise ValueError("tenant_id required")
+
+    pool = await get_pool()
+    receipt: dict[str, int] = {}
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            # Stage 1 — children with FKs first.
+            #
+            # messages → conversations(id), admin_password_resets →
+            # admin_users(id). Walking the FK direction first keeps
+            # Postgres happy.
+            await conn.execute(
+                "DELETE FROM messages WHERE tenant_id = $1", tenant_id,
+            )
+            await conn.execute(
+                "DELETE FROM conversations WHERE tenant_id = $1", tenant_id,
+            )
+            await conn.execute(
+                "DELETE FROM admin_password_resets "
+                "WHERE admin_user_id IN ("
+                "  SELECT id FROM admin_users WHERE tenant_id = $1"
+                ")",
+                tenant_id,
+            )
+            await conn.execute(
+                "DELETE FROM admin_users WHERE tenant_id = $1", tenant_id,
+            )
+
+            # Stage 2 — flat tables that just carry tenant_id.
+            for table in (
+                "inventory", "orders", "leads", "tickets",
+                "content", "knowledge_base", "categories",
+                "product_extra_photos", "confirm_tokens",
+            ):
+                row = await conn.fetchval(
+                    f"WITH d AS (DELETE FROM {table} WHERE tenant_id = $1 RETURNING 1) "
+                    "SELECT COUNT(*) FROM d",
+                    tenant_id,
+                )
+                receipt[table] = int(row or 0)
+
+            # Stage 3 — lazy / optional tables. ALTER TABLE … ADD
+            # COLUMN IF NOT EXISTS in init_db handles the schema,
+            # but we still need the try/except in case the table
+            # itself doesn't exist on this install.
+            for table in (
+                "product_pairs", "product_embeddings",
+                "product_fingerprints", "ai_photo_hints",
+            ):
+                try:
+                    row = await conn.fetchval(
+                        f"WITH d AS (DELETE FROM {table} WHERE tenant_id = $1 RETURNING 1) "
+                        "SELECT COUNT(*) FROM d",
+                        tenant_id,
+                    )
+                    receipt[table] = int(row or 0)
+                except asyncpg.exceptions.UndefinedTableError:
+                    pass
+                except asyncpg.exceptions.UndefinedColumnError:
+                    pass
+
+            # Stage 4 — finally, the api_keys + tenants row itself.
+            row = await conn.fetchval(
+                "WITH d AS (DELETE FROM api_keys WHERE tenant_id = $1 RETURNING 1) "
+                "SELECT COUNT(*) FROM d",
+                tenant_id,
+            )
+            receipt["api_keys"] = int(row or 0)
+
+            row = await conn.fetchval(
+                "WITH d AS (DELETE FROM tenants WHERE tenant_id = $1 RETURNING 1) "
+                "SELECT COUNT(*) FROM d",
+                tenant_id,
+            )
+            receipt["tenants"] = int(row or 0)
+
+    return receipt
+
+
 async def update_tenant_fb_credentials(
     tenant_id: str,
     fb_page_id: str,

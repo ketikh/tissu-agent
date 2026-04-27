@@ -30,7 +30,7 @@ from src.db import (
     invalidate_all_password_resets_for,
     list_tenants, get_tenant, create_tenant, update_tenant_status,
     create_admin_user_pending, create_activation_token,
-    update_tenant_fb_credentials,
+    update_tenant_fb_credentials, delete_tenant_cascade,
 )
 from src.secrets_vault import encrypt_secret, redacted
 from src.passwords import needs_rehash, verify_password, hash_password
@@ -519,6 +519,24 @@ async def api_super_set_fb_credentials(tenant_id: str, request: Request):
         "fb_page_id": fb_page_id,
         "fb_page_token_preview": redacted(fb_page_token, keep=6),
     }
+
+
+@app.delete("/api/super/tenants/{tenant_id}")
+async def api_super_delete_tenant(tenant_id: str, request: Request):
+    """Permanently wipe a tenant + all their data. Super-admin only,
+    irreversible. The default tenant is hard-blocked because it
+    carries the operator's own super account."""
+    await _require_super_admin(request)
+    if tenant_id == DEFAULT_TENANT_ID:
+        raise HTTPException(400, "cannot delete the default tenant")
+    t = await get_tenant(tenant_id)
+    if not t:
+        raise HTTPException(404, "tenant not found")
+    try:
+        receipt = await delete_tenant_cascade(tenant_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "tenant_id": tenant_id, "deleted": receipt}
 
 
 @app.post("/api/super/tenants/{tenant_id}/mark-paid")
