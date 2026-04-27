@@ -27,6 +27,10 @@ CSRF_COOKIE_NAME = "admin_csrf"
 # that picks between the two.
 SHORT_SESSION_SECONDS = 24 * 60 * 60        # 24h
 LONG_SESSION_SECONDS = 30 * 24 * 60 * 60    # 30d
+# Impersonation sessions are deliberately short so a super-admin who
+# walks away from their machine doesn't leave a customer's account
+# wide-open on the same browser.
+IMPERSONATION_SECONDS = 60 * 60             # 1h
 
 # Two different salts per use — prevents a bug where the session
 # token is replayed as a CSRF token (or vice-versa).
@@ -64,9 +68,22 @@ def _serializer(salt: str) -> URLSafeTimedSerializer:
 
 # ── Session tokens ────────────────────────────────────────────
 
-def issue_session_token(user_id: int, tenant_id: str) -> str:
-    """Return a signed cookie value carrying the user id + tenant id."""
-    payload = {"user_id": int(user_id), "tenant_id": str(tenant_id)}
+def issue_session_token(
+    user_id: int,
+    tenant_id: str,
+    impersonator_id: int | None = None,
+) -> str:
+    """Return a signed cookie value carrying the user id + tenant id.
+
+    When ``impersonator_id`` is set, the session represents a
+    super-admin acting AS that user (Phase 2 "login as customer"
+    flow). The auth middleware reads this to know it's an
+    impersonation session, the admin UI shows a banner, and
+    destructive actions can be blocked.
+    """
+    payload: dict = {"user_id": int(user_id), "tenant_id": str(tenant_id)}
+    if impersonator_id is not None:
+        payload["impersonator_id"] = int(impersonator_id)
     return _serializer(_SESSION_SALT).dumps(payload)
 
 

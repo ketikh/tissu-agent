@@ -516,6 +516,31 @@ async def init_db():
                     fset, tier, now_iso,
                 )
 
+        # ── Phase 2: super-admin audit log ─────────────────────
+        # Every "super only" mutation gets a row here so the operator
+        # has a paper trail of who created/suspended/impersonated/
+        # rotated keys for which tenant. Cannot be edited from the UI;
+        # it's append-only by design.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS super_admin_actions (
+                id BIGSERIAL PRIMARY KEY,
+                super_admin_id INTEGER REFERENCES admin_users(id),
+                action TEXT NOT NULL,
+                target_tenant_id TEXT,
+                payload_json JSONB,
+                ip TEXT,
+                at TEXT NOT NULL
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_super_actions_at "
+            "ON super_admin_actions (at DESC)"
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_super_actions_target "
+            "ON super_admin_actions (target_tenant_id)"
+        )
+
         # ── Phase 1: foreign keys from tenant-scoped tables ─────
         # Promote tenant_id from "free-form TEXT" to a real FK pointing
         # at tenants(tenant_id). Catches orphan rows (any tenant_id not
@@ -1120,6 +1145,83 @@ async def is_site_enabled(tenant_id: str) -> bool:
         "SELECT site_enabled FROM tenants WHERE tenant_id = $1", tenant_id,
     )
     return bool(row) if row is not None else False
+
+
+async def log_super_action(
+    super_admin_id: int | None,
+    action: str,
+    target_tenant_id: str | None = None,
+    payload: dict | None = None,
+    ip: str | None = None,
+) -> None:
+    """Append a row to ``super_admin_actions`` for the audit log.
+    NEVER pass raw secrets in ``payload`` — token previews / hashes
+    only. The caller is responsible for redacting before calling this.
+    """
+    pool = await get_pool()
+    now = datetime.now(timezone.utc).isoformat()
+    await pool.execute(
+        "INSERT INTO super_admin_actions "
+        "(super_admin_id, action, target_tenant_id, payload_json, ip, at) "
+        "VALUES ($1, $2, $3, $4::jsonb, $5, $6)",
+        super_admin_id, action, target_tenant_id,
+        json.dumps(payload) if payload else None,
+        ip, now,
+    )
+
+
+async def list_super_actions(limit: int = 100) -> list[dict]:
+    """Return the most recent audit rows for the /admin/super/audit
+    page. Joins on admin_users + tenants so the UI doesn't need a
+    second round-trip per row."""
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT a.id, a.action, a.target_tenant_id, a.payload_json, "
+        "       a.ip, a.at, "
+        "       u.email AS super_admin_email, "
+        "       t.shop_name AS target_shop_name "
+        "FROM super_admin_actions a "
+        "LEFT JOIN admin_users u ON u.id = a.super_admin_id "
+        "LEFT JOIN tenants t ON t.tenant_id = a.target_tenant_id "
+        "ORDER BY a.at DESC "
+        "LIMIT $1",
+        limit,
+    )
+    out = []
+    for r in rows:
+        d = dict(r)
+        # asyncpg returns JSONB as a Python dict already (or str depending
+        # on version) — normalize to dict.
+        pj = d.get("payload_json")
+        if isinstance(pj, str):
+            try:
+                d["payload_json"] = json.loads(pj)
+            except Exception:
+                d["payload_json"] = None
+        out.append(d)
+    return out
+
+
+async def regenerate_tenant_api_key(tenant_id: str) -> str:
+    """Delete the tenant's existing api_keys row(s) and seed a fresh
+    one. Returns the new raw key (only chance the caller has to read
+    it — we never store the raw, just record the row in api_keys)."""
+    import secrets as _secrets
+    new_key = f"tissu_admin_{_secrets.token_urlsafe(24)}"
+    pool = await get_pool()
+    now = datetime.now(timezone.utc).isoformat()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "DELETE FROM api_keys WHERE tenant_id = $1 AND scope = 'admin'",
+                tenant_id,
+            )
+            await conn.execute(
+                "INSERT INTO api_keys (key, tenant_id, label, scope, created_at) "
+                "VALUES ($1, $2, $3, 'admin', $4)",
+                new_key, tenant_id, "rotated-admin", now,
+            )
+    return new_key
 
 
 async def list_pricing_plans() -> list[dict]:

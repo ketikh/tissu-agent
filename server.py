@@ -32,7 +32,9 @@ from src.db import (
     create_admin_user_pending, create_activation_token,
     update_tenant_fb_credentials, delete_tenant_cascade,
     update_tenant_features, list_pricing_plans, update_pricing_plan,
+    log_super_action, list_super_actions, regenerate_tenant_api_key,
 )
+from src.sessions import IMPERSONATION_SECONDS
 from src.secrets_vault import encrypt_secret, redacted
 from src.passwords import needs_rehash, verify_password, hash_password
 from src.sessions import (
@@ -365,6 +367,15 @@ async def api_whoami(request: Request):
         return {"admin_user": None}
     tenant = await get_tenant(user["tenant_id"])
     t = tenant or {}
+    impersonator_id = getattr(request.state, "impersonator_id", None)
+    impersonator_email = None
+    if impersonator_id:
+        try:
+            imp = await find_admin_user_by_id(int(impersonator_id))
+            if imp:
+                impersonator_email = imp["email"]
+        except Exception:
+            pass
     return {
         "admin_user": {
             "id": user["id"],
@@ -385,6 +396,15 @@ async def api_whoami(request: Request):
             # pricing_tier value so any caller still reading it works.
             "plan": t.get("pricing_tier") or "start",
         },
+        # Phase 2: Surface impersonation so admin.html can render a
+        # "you are acting as <X>" banner with a stop button.
+        "impersonation": (
+            {
+                "active": True,
+                "impersonator_email": impersonator_email,
+            }
+            if impersonator_id else {"active": False}
+        ),
     }
 
 
@@ -564,6 +584,16 @@ async def api_super_create_tenant(request: Request):
     public = os.getenv("PUBLIC_URL", "http://localhost:8000").rstrip("/")
     activation_url = f"{public}/admin/activate?token={raw}"
 
+    super_user = await _require_super_admin(request)  # idempotent, returns user
+    await log_super_action(
+        super_user["id"], "create_tenant", target_tenant_id=tenant_id,
+        payload={
+            "shop_name": shop_name, "owner_email": owner_email,
+            "feature_set": feature_set, "pricing_tier": pricing_tier,
+        },
+        ip=_client_ip(request),
+    )
+
     return {
         "tenant_id": tenant_id,
         "activation_url": activation_url,
@@ -573,7 +603,7 @@ async def api_super_create_tenant(request: Request):
 
 @app.post("/api/super/tenants/{tenant_id}/suspend")
 async def api_super_suspend(tenant_id: str, request: Request):
-    await _require_super_admin(request)
+    super_user = await _require_super_admin(request)
     # Don't let the super-admin accidentally lock themselves out of
     # the default tenant (that's where their own account lives).
     if tenant_id == DEFAULT_TENANT_ID:
@@ -582,6 +612,11 @@ async def api_super_suspend(tenant_id: str, request: Request):
     if not t:
         raise HTTPException(404, "tenant not found")
     await update_tenant_status(tenant_id, "suspended")
+    await log_super_action(
+        super_user["id"], "suspend", target_tenant_id=tenant_id,
+        payload={"shop_name": t.get("shop_name")},
+        ip=_client_ip(request),
+    )
     return {"ok": True}
 
 
@@ -630,7 +665,7 @@ async def api_super_delete_tenant(tenant_id: str, request: Request):
     """Permanently wipe a tenant + all their data. Super-admin only,
     irreversible. The default tenant is hard-blocked because it
     carries the operator's own super account."""
-    await _require_super_admin(request)
+    super_user = await _require_super_admin(request)
     if tenant_id == DEFAULT_TENANT_ID:
         raise HTTPException(400, "cannot delete the default tenant")
     t = await get_tenant(tenant_id)
@@ -640,6 +675,11 @@ async def api_super_delete_tenant(tenant_id: str, request: Request):
         receipt = await delete_tenant_cascade(tenant_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    await log_super_action(
+        super_user["id"], "delete_tenant", target_tenant_id=tenant_id,
+        payload={"shop_name": t.get("shop_name"), "deleted": receipt},
+        ip=_client_ip(request),
+    )
     return {"ok": True, "tenant_id": tenant_id, "deleted": receipt}
 
 
@@ -648,7 +688,7 @@ async def api_super_mark_paid(tenant_id: str, request: Request):
     """Extend the paid-through date by 30 days and flip the status
     back to 'active'. This is the button the super-admin presses
     when a bank transfer lands."""
-    await _require_super_admin(request)
+    super_user = await _require_super_admin(request)
     from datetime import timedelta
     t = await get_tenant(tenant_id)
     if not t:
@@ -664,7 +704,125 @@ async def api_super_mark_paid(tenant_id: str, request: Request):
             base = now
     new_due = (base + timedelta(days=30)).isoformat()
     await update_tenant_status(tenant_id, "active", payment_due_date=new_due)
+    await log_super_action(
+        super_user["id"], "mark_paid", target_tenant_id=tenant_id,
+        payload={"shop_name": t.get("shop_name"), "new_due": new_due},
+        ip=_client_ip(request),
+    )
     return {"ok": True, "payment_due_date": new_due}
+
+
+# ── Phase 2: regenerate API key + impersonate ──────────────
+
+@app.post("/api/super/tenants/{tenant_id}/regenerate-key")
+async def api_super_regenerate_key(tenant_id: str, request: Request):
+    """Issue a fresh admin API key for the tenant and invalidate the
+    old one. The new key is returned ONCE — the operator must copy
+    it out of the response and hand it to the customer; we never
+    store the raw key, only the api_keys row."""
+    super_user = await _require_super_admin(request)
+    if tenant_id == DEFAULT_TENANT_ID:
+        raise HTTPException(400, "cannot rotate the default tenant key here")
+    t = await get_tenant(tenant_id)
+    if not t:
+        raise HTTPException(404, "tenant not found")
+    new_key = await regenerate_tenant_api_key(tenant_id)
+    await log_super_action(
+        super_user["id"], "regenerate_key", target_tenant_id=tenant_id,
+        payload={
+            "shop_name": t.get("shop_name"),
+            "key_preview": new_key[:14] + "…",
+        },
+        ip=_client_ip(request),
+    )
+    return {
+        "ok": True, "tenant_id": tenant_id, "new_key": new_key,
+        "note": "Copy this now — the raw key is shown only once.",
+    }
+
+
+@app.post("/api/super/tenants/{tenant_id}/login-as")
+async def api_super_login_as(tenant_id: str, request: Request):
+    """Issue a 1-hour impersonation cookie for the super-admin so
+    they can step into the tenant's admin and reproduce a bug. The
+    session carries impersonator_id so /api/whoami exposes it,
+    admin.html shows a banner, and the auth middleware can block
+    destructive actions while impersonating."""
+    super_user = await _require_super_admin(request)
+    if tenant_id == DEFAULT_TENANT_ID:
+        raise HTTPException(400, "no need to impersonate the default tenant")
+    t = await get_tenant(tenant_id)
+    if not t:
+        raise HTTPException(404, "tenant not found")
+    # Pick the tenant's "owner" admin_user — that's whose seat the
+    # super-admin will occupy. If the tenant has no owner yet (very
+    # fresh, not activated), we still issue a token but with a
+    # placeholder user_id of -1 so the session doesn't impersonate
+    # nothing.
+    pool = await get_db()
+    owner = await pool.fetchrow(
+        "SELECT id FROM admin_users WHERE tenant_id = $1 AND role = 'owner' "
+        "ORDER BY created_at LIMIT 1",
+        tenant_id,
+    )
+    if not owner:
+        raise HTTPException(404, "tenant has no owner yet — activate first")
+
+    session_token = issue_session_token(
+        owner["id"], tenant_id, impersonator_id=super_user["id"],
+    )
+    csrf_token = issue_csrf_token(session_token)
+
+    response = RedirectResponse(url="/admin", status_code=303)
+    secure = _is_secure_request(request)
+    response.set_cookie(
+        SESSION_COOKIE_NAME, session_token,
+        **cookie_kwargs(IMPERSONATION_SECONDS, secure),
+    )
+    response.set_cookie(
+        CSRF_COOKIE_NAME, csrf_token,
+        max_age=IMPERSONATION_SECONDS, httponly=False, secure=secure,
+        samesite="lax", path="/",
+    )
+    await log_super_action(
+        super_user["id"], "login_as", target_tenant_id=tenant_id,
+        payload={
+            "shop_name": t.get("shop_name"),
+            "as_user_id": owner["id"],
+        },
+        ip=_client_ip(request),
+    )
+    return response
+
+
+@app.post("/admin/stop-impersonation")
+async def admin_stop_impersonation(request: Request):
+    """Tear down an impersonation cookie and bounce the super-admin
+    back to /admin/super. They'll have to re-login to get their
+    real super session back — that's intentional, the safest
+    fallback when they've stepped into someone else's seat."""
+    response = RedirectResponse(url="/admin/login?impersonation=ended", status_code=303)
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    response.delete_cookie(CSRF_COOKIE_NAME, path="/")
+    return response
+
+
+@app.get("/api/super/audit")
+async def api_super_audit(request: Request, limit: int = 100):
+    """Paginated tail of the super_admin_actions log. Defaults to
+    100 most recent rows; the UI shows a single page."""
+    await _require_super_admin(request)
+    limit = max(1, min(int(limit or 100), 500))
+    return {"actions": await list_super_actions(limit=limit)}
+
+
+@app.get("/admin/super/audit", response_class=HTMLResponse)
+async def admin_super_audit_page(request: Request):
+    html_path = Path(__file__).parent / "admin-super-audit.html"
+    return HTMLResponse(
+        html_path.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
 
 
 # ── Activation (set your password on first login) ──────────

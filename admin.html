@@ -967,15 +967,41 @@
             if (!data.admin_user) return;
             const isSuper = data.admin_user.role === 'super';
             const shop = (data.tenant || {}).shop_name || '';
+            const imp = (data.impersonation || {}).active;
+            // Phase 2: top-of-page red banner whenever the current
+            // session is an impersonation. Inserted as a fixed bar so
+            // it can't get scrolled past.
+            if (imp) {
+                let bar = document.getElementById('impersonation-bar');
+                if (!bar) {
+                    bar = document.createElement('div');
+                    bar.id = 'impersonation-bar';
+                    bar.style.cssText =
+                        'position:fixed;top:0;left:0;right:0;z-index:9999;'
+                        + 'background:#B04A42;color:#FFF;padding:10px 20px;'
+                        + 'display:flex;align-items:center;justify-content:space-between;'
+                        + 'font-size:13px;font-weight:500;box-shadow:0 2px 8px rgba(0,0,0,.15);';
+                    document.body.appendChild(bar);
+                    document.body.style.paddingTop = '40px';
+                }
+                bar.innerHTML = `
+                    <div>⚠️ შენ შესული ხარ როგორც <b>${_esc(shop)}</b> — ${_esc(data.admin_user.email)}
+                        ${data.impersonation.impersonator_email
+                            ? `· გადახდა <b>${_esc(data.impersonation.impersonator_email)}</b>-მა`
+                            : ''}</div>
+                    <button onclick="stopImpersonation()" style="background:#FFF;color:#B04A42;border:none;padding:6px 14px;border-radius:6px;font-weight:600;cursor:pointer;font-size:12px">გაჩერება</button>
+                `;
+            }
             document.getElementById('user-menu').innerHTML = `
                 <div class="user-pill">
                     ${isSuper ? '<span class="super-badge">SUPER</span>' : ''}
+                    ${imp ? '<span class="super-badge" style="background:#B04A42">IMPERSONATING</span>' : ''}
                     <div>
                         <div class="who">${_esc(data.admin_user.email)}</div>
                         ${shop ? `<div class="shop">${_esc(shop)}</div>` : ''}
                     </div>
                 </div>
-                ${isSuper ? `<a href="/admin/super" class="btn btn-ghost" style="padding:6px 10px; font-size:12px;">Super-admin</a>` : ''}
+                ${isSuper && !imp ? `<a href="/admin/super" class="btn btn-ghost" style="padding:6px 10px; font-size:12px;">Super-admin</a>` : ''}
                 <button class="logout-btn" onclick="logout()" title="გამოსვლა" aria-label="გამოსვლა">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                 </button>
@@ -988,6 +1014,12 @@
         });
         if (!ok) return;
         window.location.href = '/admin/logout';
+    }
+    async function stopImpersonation() {
+        // POST via fetch (carries the CSRF header) so the request
+        // can't be triggered by a stray cross-tab form submit.
+        await window.fetch('/admin/stop-impersonation', { method: 'POST', credentials: 'same-origin' });
+        window.location.href = '/admin/login?impersonation=ended';
     }
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', renderUserMenu);

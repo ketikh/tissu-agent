@@ -43,6 +43,7 @@ UNSAFE_METHODS: frozenset[str] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 CSRF_EXEMPT_ADMIN_POSTS: frozenset[str] = frozenset({
     "/admin/login",
     "/admin/logout",
+    "/admin/stop-impersonation",
     "/admin/forgot-password",
     "/admin/reset-password",
     "/admin/activate",
@@ -157,6 +158,12 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
                     scope = "admin"
                     auth_source = "session"
                     request.state.admin_user_id = session["user_id"]
+                    # Impersonation flag — the super-admin "login as"
+                    # flow puts impersonator_id into the cookie. Kept
+                    # on request.state so handlers (and the
+                    # impersonation guard below) can react.
+                    if "impersonator_id" in session:
+                        request.state.impersonator_id = session["impersonator_id"]
 
         if tenant_id is None:
             return JSONResponse({"error": "unauthorized"}, status_code=401)
@@ -263,6 +270,8 @@ class AdminSessionMiddleware(BaseHTTPMiddleware):
                         return _redirect_to("/admin/suspended")
                 request.state.admin_user_id = session["user_id"]
                 request.state.tenant_id = tenant_id
+                if "impersonator_id" in session:
+                    request.state.impersonator_id = session["impersonator_id"]
                 return await call_next(request)
 
         # No / expired / tampered cookie → send them to the login form.
