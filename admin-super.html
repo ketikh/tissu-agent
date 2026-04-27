@@ -311,35 +311,80 @@
         function openCreateModal() {
             document.getElementById('createModal').classList.add('open');
             document.getElementById('createResult').innerHTML = '';
+            // Restore the submit/cancel pair in case a previous "მზადაა"
+            // close hid them.
+            document.querySelector('.modal-actions').style.display = '';
         }
         function closeCreateModal() {
             document.getElementById('createModal').classList.remove('open');
             document.getElementById('createForm').reset();
+            document.getElementById('createResult').innerHTML = '';
+            document.querySelector('.modal-actions').style.display = '';
         }
 
+        let _creating = false;
         document.getElementById('createForm').addEventListener('submit', async (e) => {
             e.preventDefault();
+            // Guard against double-submit. Disabling the button isn't
+            // enough on its own — a determined user can spam Enter.
+            // The flag enforces single-flight, the disabled UI just
+            // makes it visible.
+            if (_creating) return;
+            _creating = true;
+            const submitBtn = document.querySelector('#createForm button[type="submit"]');
+            const origLabel = submitBtn.textContent;
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'მუშაობს…';
+
             const body = {
                 shop_name: document.getElementById('shop_name').value.trim(),
                 owner_email: document.getElementById('owner_email').value.trim(),
                 plan: document.getElementById('plan').value,
             };
-            const resp = await api('/api/super/tenants', { method:'POST', body: JSON.stringify(body) });
-            if (!resp) return;
-            const data = await resp.json();
-            if (!resp.ok) {
-                document.getElementById('createResult').innerHTML =
-                    '<div style="margin-top:16px; color:#7F2A24;">შეცდომა: ' + esc(data.detail || 'ცნობილი არაა') + '</div>';
-                return;
+            try {
+                const resp = await api('/api/super/tenants', { method:'POST', body: JSON.stringify(body) });
+                if (!resp) return;
+                const data = await resp.json();
+                if (!resp.ok) {
+                    document.getElementById('createResult').innerHTML =
+                        '<div style="margin-top:16px; color:#7F2A24;">შეცდომა: ' + esc(data.detail || 'ცნობილი არაა') + '</div>';
+                    return;
+                }
+                // On success, render the activation link card AND swap
+                // the submit/cancel buttons for a single "მზადაა"
+                // close button so the operator knows the flow is done.
+                document.getElementById('createResult').innerHTML = `
+                    <div style="margin-top:20px; padding:14px; background:#E0F0E8; border-radius:8px; color:#1F4A38; font-size:13px;">
+                        ✅ კლიენტი შექმნილია. გაუგზავნე ეს ბმული — მოქმედია 7 დღე:
+                    </div>
+                    <div class="activation-card" id="actLink">${esc(data.activation_url)}</div>
+                    <div style="display:flex; gap:8px; margin-top:8px; align-items:center;">
+                        <button type="button" class="copy-btn" id="copyBtn">დაკოპირება</button>
+                        <button type="button" class="btn btn-primary" style="margin-left:auto" onclick="closeCreateModal()">მზადაა</button>
+                    </div>
+                `;
+                document.getElementById('copyBtn').onclick = async () => {
+                    try {
+                        await navigator.clipboard.writeText(data.activation_url);
+                        document.getElementById('copyBtn').textContent = '✓ დაკოპირდა';
+                    } catch (_) {
+                        // Clipboard API blocked (rare on http) — fall back
+                        // to selecting the text so user can ⌘C manually.
+                        const r = document.createRange();
+                        r.selectNode(document.getElementById('actLink'));
+                        window.getSelection().removeAllRanges();
+                        window.getSelection().addRange(r);
+                    }
+                };
+                // Hide the original submit/cancel pair — the new
+                // "მზადაა" button replaces them.
+                document.querySelector('.modal-actions').style.display = 'none';
+                load();
+            } finally {
+                _creating = false;
+                submitBtn.disabled = false;
+                submitBtn.textContent = origLabel;
             }
-            document.getElementById('createResult').innerHTML = `
-                <div style="margin-top:20px; padding:14px; background:#E0F0E8; border-radius:8px; color:#1F4A38; font-size:13px;">
-                    ✅ კლიენტი შექმნილია. გაუგზავნე ეს ბმული — მოქმედია 7 დღე:
-                </div>
-                <div class="activation-card" id="actLink">${esc(data.activation_url)}</div>
-                <button class="copy-btn" onclick="navigator.clipboard.writeText('${data.activation_url}'); this.textContent='✓ დაკოპირდა'">დაკოპირება</button>
-            `;
-            load();
         });
 
         async function suspend(tenantId) {

@@ -24,6 +24,7 @@ from src.config import API_HOST, API_PORT
 from src.db import (
     init_db, get_db, close_pool, DEFAULT_TENANT_ID,
     find_admin_user_by_email, find_admin_user_by_id,
+    find_admin_users_by_email_global,
     mark_admin_user_logged_in, update_admin_user_password,
     create_password_reset, consume_password_reset,
     invalidate_all_password_resets_for,
@@ -180,10 +181,17 @@ async def admin_login_submit(
     if not login_limiter.allow(ip):
         return RedirectResponse(url="/admin/login?error=locked", status_code=303)
 
-    user = await find_admin_user_by_email(email.strip().lower())
+    # Search across every tenant — the login form is single-email, no
+    # tenant selector. Iterate all matches and verify the password
+    # against each so a customer in a non-default tenant can sign in.
+    candidates = await find_admin_users_by_email_global(email.strip().lower())
+    user = None
     ok = False
-    if user:
-        ok = verify_password(password, user["password_hash"])
+    for candidate in candidates:
+        if verify_password(password, candidate["password_hash"]):
+            user = candidate
+            ok = True
+            break
 
     if not ok:
         login_limiter.record_failure(ip)
@@ -267,11 +275,15 @@ async def admin_forgot_password_submit(
     password_reset_limiter.record_failure(ip)  # count every request, not just successes
 
     email_norm = email.strip().lower()
-    user = await find_admin_user_by_email(email_norm)
-    if user:
+    # Search globally — same reasoning as the login form: there's no
+    # tenant selector, so a customer in any tenant has to be able to
+    # reset by email alone. If multiple users share an email across
+    # tenants we send a reset link for each (rare edge case).
+    candidates = await find_admin_users_by_email_global(email_norm)
+    public = os.getenv("PUBLIC_URL", "http://localhost:8000").rstrip("/")
+    for user in candidates:
         raw, token_hash = generate_reset_token()
         await create_password_reset(user["id"], token_hash, ttl_seconds=30 * 60)
-        public = os.getenv("PUBLIC_URL", "http://localhost:8000").rstrip("/")
         link = f"{public}/admin/reset-password?token={raw}"
         # Email hook. If no SMTP is wired up, print to the log so the
         # operator can grab the link from the deploy console.

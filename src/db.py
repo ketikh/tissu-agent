@@ -552,8 +552,11 @@ async def get_conversation_messages(conversation_id: str) -> list[dict]:
 async def find_admin_user_by_email(
     email: str, tenant_id: str = DEFAULT_TENANT_ID,
 ) -> dict | None:
-    """Return the admin_users row matching ``email`` (case-insensitive)
-    for the given tenant, or None. Used on the login path."""
+    """Return the admin_users row matching ``email`` for a SPECIFIC
+    tenant. Used by code paths that already know which tenant they
+    care about (e.g. seeding the default-tenant owner on first boot).
+    For the login flow, prefer ``find_admin_users_by_email_global`` —
+    callers there don't know the tenant up front."""
     if not email:
         return None
     pool = await get_pool()
@@ -564,6 +567,27 @@ async def find_admin_user_by_email(
         tenant_id, email,
     )
     return dict(row) if row else None
+
+
+async def find_admin_users_by_email_global(email: str) -> list[dict]:
+    """Find every admin_user with this email across all tenants.
+
+    The login form has a single email field — we don't ask the
+    customer which shop they belong to. So we search globally and
+    let the login handler verify the password against each match
+    (in practice there's only one row per email; the loop just
+    handles the edge case where two tenants share an owner email).
+    """
+    if not email:
+        return []
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT id, tenant_id, email, password_hash, role, "
+        "created_at, last_login_at FROM admin_users "
+        "WHERE LOWER(email) = LOWER($1) ORDER BY created_at",
+        email,
+    )
+    return [dict(r) for r in rows]
 
 
 async def find_admin_user_by_id(user_id: int) -> dict | None:
