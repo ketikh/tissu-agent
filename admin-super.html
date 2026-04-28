@@ -299,7 +299,12 @@
                         <div class="muted">${esc(t.tenant_id)}</div>
                     </td>
                     <td>${esc(t.owner_email)}</td>
-                    <td><span class="badge badge-${t.status}">${esc(t.status)}</span></td>
+                    <td>
+                        <span class="badge badge-${t.status}">${esc(t.status)}</span>
+                        ${t.status === 'trial' && t.trial_ends_at
+                            ? `<div class="muted" style="font-size:11px;margin-top:2px">${trialCountdown(t.trial_ends_at)}</div>`
+                            : ''}
+                    </td>
                     <td>
                         <div style="display:flex;gap:4px;align-items:center;font-size:12px">
                             <span title="${esc(t.feature_set || 'bot')}">${
@@ -319,7 +324,6 @@
                         ${t.status === 'trial'
                             ? '<button class="btn-activate" onclick="markPaid(\''+t.tenant_id+'\')">გააქტიურე</button>'
                             : ''}
-                        <button onclick="loginAs('${t.tenant_id}', '${esc(t.shop_name).replace(/'/g, '&#39;')}')">შესვლა</button>
                         <button onclick="regenerateKey('${t.tenant_id}', '${esc(t.shop_name).replace(/'/g, '&#39;')}')">🔑 ახალი key</button>
                         <button onclick="openFbModal('${t.tenant_id}')">FB…</button>
                         <button class="btn-suspend" onclick="deleteTenant('${t.tenant_id}', '${esc(t.shop_name).replace(/'/g, '&#39;')}')">წაშლა</button>
@@ -329,6 +333,17 @@
         }
 
         function esc(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+        function trialCountdown(iso) {
+            if (!iso) return '';
+            const end = new Date(iso);
+            const now = new Date();
+            const ms = end - now;
+            if (ms < 0) return 'ვადა გავიდა — ავტო-შეჩერდება';
+            const days = Math.floor(ms / (1000*60*60*24));
+            const hours = Math.floor((ms % (1000*60*60*24)) / (1000*60*60));
+            if (days > 0) return `${days} დღე დარჩა`;
+            return `${hours} საათი დარჩა`;
+        }
 
         function openCreateModal() {
             document.getElementById('createModal').classList.add('open');
@@ -418,29 +433,6 @@
             if (!ok) return;
             const r = await api('/api/super/tenants/' + encodeURIComponent(tenantId) + '/suspend', { method:'POST' });
             if (r && r.ok) load();
-        }
-
-        async function loginAs(tenantId, shopName) {
-            const ok = await showConfirm(
-                'შეხვალ "' + shopName + '"-ის ანგარიშზე როგორც super-admin. ' +
-                'სესია 1 საათი მოქმედი. ყოველ მოქმედებას აუდიტში ჩავწერთ. ' +
-                'შენი მიმდინარე super სესია შეიცვლება — გამოსვლის შემდეგ თავიდან უნდა შეხვიდე.',
-                { title: 'შესვლა როგორც კლიენტი', okLabel: 'შესვლა' },
-            );
-            if (!ok) return;
-            // Server returns a 303 redirect with cookies set — follow it.
-            const f = document.createElement('form');
-            f.method = 'POST';
-            f.action = '/api/super/tenants/' + encodeURIComponent(tenantId) + '/login-as';
-            // CSRF via hidden field swapped for header-style? POST forms
-            // hit the JSON middleware which expects X-CSRF-Token. Use
-            // fetch instead of HTML form submit.
-            const r = await api(f.action, { method: 'POST' });
-            if (!r) return;
-            // Browser auto-followed the redirect via api() ? No — fetch
-            // follows by default. The cookies are set on the response,
-            // even if the redirect's target is /admin. Just navigate.
-            window.location.href = '/admin';
         }
 
         async function regenerateKey(tenantId, shopName) {

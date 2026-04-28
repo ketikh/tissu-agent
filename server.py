@@ -741,70 +741,17 @@ async def api_super_regenerate_key(tenant_id: str, request: Request):
     }
 
 
-@app.post("/api/super/tenants/{tenant_id}/login-as")
-async def api_super_login_as(tenant_id: str, request: Request):
-    """Issue a 1-hour impersonation cookie for the super-admin so
-    they can step into the tenant's admin and reproduce a bug. The
-    session carries impersonator_id so /api/whoami exposes it,
-    admin.html shows a banner, and the auth middleware can block
-    destructive actions while impersonating."""
-    super_user = await _require_super_admin(request)
-    if tenant_id == DEFAULT_TENANT_ID:
-        raise HTTPException(400, "no need to impersonate the default tenant")
-    t = await get_tenant(tenant_id)
-    if not t:
-        raise HTTPException(404, "tenant not found")
-    # Pick the tenant's "owner" admin_user — that's whose seat the
-    # super-admin will occupy. If the tenant has no owner yet (very
-    # fresh, not activated), we still issue a token but with a
-    # placeholder user_id of -1 so the session doesn't impersonate
-    # nothing.
-    pool = await get_db()
-    owner = await pool.fetchrow(
-        "SELECT id FROM admin_users WHERE tenant_id = $1 AND role = 'owner' "
-        "ORDER BY created_at LIMIT 1",
-        tenant_id,
-    )
-    if not owner:
-        raise HTTPException(404, "tenant has no owner yet — activate first")
-
-    session_token = issue_session_token(
-        owner["id"], tenant_id, impersonator_id=super_user["id"],
-    )
-    csrf_token = issue_csrf_token(session_token)
-
-    response = RedirectResponse(url="/admin", status_code=303)
-    secure = _is_secure_request(request)
-    response.set_cookie(
-        SESSION_COOKIE_NAME, session_token,
-        **cookie_kwargs(IMPERSONATION_SECONDS, secure),
-    )
-    response.set_cookie(
-        CSRF_COOKIE_NAME, csrf_token,
-        max_age=IMPERSONATION_SECONDS, httponly=False, secure=secure,
-        samesite="lax", path="/",
-    )
-    await log_super_action(
-        super_user["id"], "login_as", target_tenant_id=tenant_id,
-        payload={
-            "shop_name": t.get("shop_name"),
-            "as_user_id": owner["id"],
-        },
-        ip=_client_ip(request),
-    )
-    return response
-
-
-@app.post("/admin/stop-impersonation")
-async def admin_stop_impersonation(request: Request):
-    """Tear down an impersonation cookie and bounce the super-admin
-    back to /admin/super. They'll have to re-login to get their
-    real super session back — that's intentional, the safest
-    fallback when they've stepped into someone else's seat."""
-    response = RedirectResponse(url="/admin/login?impersonation=ended", status_code=303)
-    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
-    response.delete_cookie(CSRF_COOKIE_NAME, path="/")
-    return response
+# NOTE: the previous "login as" / impersonation flow lived here. It
+# was removed because giving the platform operator silent access to a
+# tenant's admin is a privacy red flag — even with audit logs, the
+# customer never knew when their account was being viewed. The
+# customer-facing replacement (forgot password + per-tenant settings
+# page where they manage their own password and active sessions)
+# lives in /admin/forgot-password and /admin/settings.
+#
+# The old /admin/stop-impersonation route is also gone for the same
+# reason. Existing audit rows from the impersonation era stay in
+# super_admin_actions for the historical record.
 
 
 @app.get("/api/super/audit")

@@ -23,7 +23,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from src.db import DEFAULT_TENANT_ID, resolve_api_key, get_tenant
+from src.db import DEFAULT_TENANT_ID, resolve_api_key, get_tenant, update_tenant_status
 from src.sessions import (
     SESSION_COOKIE_NAME, CSRF_COOKIE_NAME,
     SHORT_SESSION_SECONDS, LONG_SESSION_SECONDS,
@@ -180,21 +180,35 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         # health checks and the storefront (customers of the shop
         # shouldn't see the frontend break when the shop falls behind
         # on payment — that's a matter between operator and shop).
-        # Status code is 403 Forbidden per the Phase 1 contract — 402
-        # was a nicer fit semantically but Frontend Claude's
-        # entitlements middleware spec says 403, so we converge.
+        # Status code is 403 Forbidden per the Phase 1 contract.
+        # Phase 2: also auto-suspend any trial whose trial_ends_at
+        # has passed — that's the "10-day free trial" cutoff.
         if tenant_id != DEFAULT_TENANT_ID and not path.startswith("/api/storefront/"):
             try:
                 t = await get_tenant(tenant_id)
             except Exception:
                 t = None
-            if t and (t.get("status") == "suspended"
-                      or t.get("suspended_at") is not None):
-                return JSONResponse(
-                    {"error": "account_suspended",
-                     "message": "Tenant account is suspended. Contact the platform operator."},
-                    status_code=403,
-                )
+            if t:
+                # Trial expiry → flip to suspended on first request
+                # past the deadline. Idempotent: once status is
+                # already 'suspended', the next branch handles it.
+                if (t.get("status") == "trial"
+                        and t.get("trial_ends_at")
+                        and not t.get("suspended_at")):
+                    if _trial_expired(t["trial_ends_at"]):
+                        try:
+                            await update_tenant_status(tenant_id, "suspended")
+                        except Exception:
+                            pass
+                        # Refresh local view so the lock-out below fires.
+                        t = {**t, "status": "suspended"}
+                if (t.get("status") == "suspended"
+                        or t.get("suspended_at") is not None):
+                    return JSONResponse(
+                        {"error": "account_suspended",
+                         "message": "Tenant account is suspended. Contact the platform operator."},
+                        status_code=403,
+                    )
 
         request.state.tenant_id = tenant_id
         request.state.api_key_scope = scope
@@ -260,14 +274,26 @@ class AdminSessionMiddleware(BaseHTTPMiddleware):
                 tenant_id = session.get("tenant_id") or DEFAULT_TENANT_ID
                 # Suspended tenants get bounced to the frozen page.
                 # Default tenant stays open even if somehow flipped to
-                # suspended (the super-admin lives there).
+                # suspended (the super-admin lives there). Phase 2:
+                # also auto-suspend any trial whose 10-day window has
+                # closed before letting them load /admin.
                 if tenant_id != DEFAULT_TENANT_ID and path != "/admin/suspended":
                     try:
                         t = await get_tenant(tenant_id)
                     except Exception:
                         t = None
-                    if t and t.get("status") == "suspended":
-                        return _redirect_to("/admin/suspended")
+                    if t:
+                        if (t.get("status") == "trial"
+                                and t.get("trial_ends_at")
+                                and not t.get("suspended_at")
+                                and _trial_expired(t["trial_ends_at"])):
+                            try:
+                                await update_tenant_status(tenant_id, "suspended")
+                            except Exception:
+                                pass
+                            return _redirect_to("/admin/suspended")
+                        if t.get("status") == "suspended":
+                            return _redirect_to("/admin/suspended")
                 request.state.admin_user_id = session["user_id"]
                 request.state.tenant_id = tenant_id
                 if "impersonator_id" in session:
@@ -280,6 +306,21 @@ class AdminSessionMiddleware(BaseHTTPMiddleware):
             content=None,
             headers={"location": "/admin/login?error=expired"},
         ) if False else _redirect_to_login()
+
+
+def _trial_expired(trial_ends_at: str) -> bool:
+    """Return True iff the ISO timestamp ``trial_ends_at`` is in the
+    past. Defensive on parse errors — a garbled timestamp counts as
+    "not expired" so a single bad row can't lock everyone out."""
+    if not trial_ends_at:
+        return False
+    try:
+        from datetime import datetime as _dt
+        deadline = _dt.fromisoformat(trial_ends_at)
+        now = _dt.now(deadline.tzinfo)
+        return now > deadline
+    except Exception:
+        return False
 
 
 def _redirect_to_login():

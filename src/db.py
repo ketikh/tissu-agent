@@ -14,6 +14,11 @@ from src.config import DATABASE_URL
 # operator seeds a row into api_keys.
 DEFAULT_TENANT_ID = "default"
 
+# How long a fresh tenant stays in 'trial' before the platform
+# auto-suspends them. Operator can mark-paid at any point during
+# the trial to flip status='active' immediately.
+TRIAL_DURATION_DAYS = 10
+
 TENANT_SCOPED_TABLES = (
     "conversations",
     "messages",
@@ -410,6 +415,13 @@ async def init_db():
         await conn.execute(
             "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS storefront_subdomain TEXT"
         )
+        # When this trial expires, the auth middleware auto-suspends
+        # the tenant. NULL means "no trial deadline" — used for
+        # 'active' tenants whose subscription is paid through
+        # payment_due_date instead.
+        await conn.execute(
+            "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_ends_at TEXT"
+        )
 
         # Quick fb_page_id -> tenant lookup for the webhook dispatcher.
         await conn.execute(
@@ -486,6 +498,19 @@ async def init_db():
         await conn.execute(
             "UPDATE tenants SET suspended_at = updated_at "
             "WHERE status = 'suspended' AND suspended_at IS NULL"
+        )
+        # Backfill trial_ends_at: for any tenant currently in 'trial'
+        # without a trial_ends_at, set it to created_at + TRIAL_DURATION
+        # so the new auto-suspend logic has a deadline to enforce.
+        await conn.execute(
+            "UPDATE tenants SET trial_ends_at = "
+            "  TO_CHAR(("
+            "    (created_at::timestamptz) + (INTERVAL '1 day' * $1)"
+            "  ) AT TIME ZONE 'UTC', "
+            "  'YYYY-MM-DD\"T\"HH24:MI:SS.US+00:00') "
+            "WHERE status = 'trial' AND trial_ends_at IS NULL "
+            "AND tenant_id != $2",
+            TRIAL_DURATION_DAYS, DEFAULT_TENANT_ID,
         )
 
         # ── Phase 1: pricing_plans table ───────────────────────
@@ -862,7 +887,8 @@ async def list_tenants() -> list[dict]:
             t.tenant_id, t.shop_name, t.owner_email, t.status,
             t.pricing_tier, t.pricing_tier AS plan,
             t.feature_set, t.bot_enabled, t.site_enabled,
-            t.suspended_at, t.cloudinary_folder, t.storefront_subdomain,
+            t.suspended_at, t.trial_ends_at,
+            t.cloudinary_folder, t.storefront_subdomain,
             t.payment_due_date, t.notes, t.created_at, t.updated_at,
             t.fb_page_id IS NOT NULL AS has_fb,
             (SELECT COUNT(*) FROM admin_users WHERE tenant_id = t.tenant_id) AS admin_count,
@@ -1046,7 +1072,12 @@ async def create_tenant(
     be flipped per-tenant later via update_tenant_features().
     cloudinary_folder defaults to the tenant_id so the Phase 4 CMS
     can write `tissu/<tenant_id>/...` without collision.
+
+    A new tenant starts on a TRIAL_DURATION_DAYS-long trial — after
+    that the auth middleware auto-suspends them until the operator
+    presses "გადახდა მიიღე" (mark-paid).
     """
+    from datetime import timedelta as _td
     if feature_set not in ("bot", "site", "combo"):
         raise ValueError(f"feature_set must be bot/site/combo (got {feature_set!r})")
     if pricing_tier not in ("start", "grow", "pro"):
@@ -1054,15 +1085,21 @@ async def create_tenant(
     bot_enabled = feature_set in ("bot", "combo")
     site_enabled = feature_set in ("site", "combo")
     pool = await get_pool()
-    now = datetime.now(timezone.utc).isoformat()
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
+    trial_ends = (
+        (now_dt + _td(days=TRIAL_DURATION_DAYS)).isoformat()
+        if status == "trial" else None
+    )
     await pool.execute(
         """INSERT INTO tenants
            (tenant_id, shop_name, owner_email, status, pricing_tier,
             feature_set, bot_enabled, site_enabled, cloudinary_folder,
-            created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $1, $9, $9)""",
+            trial_ends_at, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $1, $9, $10, $10)""",
         tenant_id, shop_name, owner_email.strip().lower(),
-        status, pricing_tier, feature_set, bot_enabled, site_enabled, now,
+        status, pricing_tier, feature_set, bot_enabled, site_enabled,
+        trial_ends, now,
     )
 
 
@@ -1106,12 +1143,33 @@ async def update_tenant_status(
     payment_due_date: str | None = None,
 ) -> None:
     """Flip a tenant's status (trial / active / suspended) and keep
-    suspended_at synced. ``payment_due_date`` is only set when an
-    explicit value is passed (mark-paid extends 30 days); other
-    transitions leave it alone."""
+    suspended_at synced. Going to 'active' also clears
+    ``trial_ends_at`` — once paid, the trial deadline is irrelevant
+    and we don't want it to come back to bite us if the tenant later
+    flips back to 'trial' for any reason."""
     pool = await get_pool()
     now = datetime.now(timezone.utc).isoformat()
     suspended_at = now if status == "suspended" else None
+    if status == "active":
+        if payment_due_date is None:
+            await pool.execute(
+                "UPDATE tenants SET status = $1, suspended_at = NULL, "
+                "                   trial_ends_at = NULL, updated_at = $2 "
+                "WHERE tenant_id = $3",
+                status, now, tenant_id,
+            )
+        else:
+            await pool.execute(
+                "UPDATE tenants SET status = $1, suspended_at = NULL, "
+                "                   trial_ends_at = NULL, "
+                "                   payment_due_date = $2, updated_at = $3 "
+                "WHERE tenant_id = $4",
+                status, payment_due_date, now, tenant_id,
+            )
+        return
+    # Non-active transitions keep trial_ends_at untouched (suspending
+    # a trial tenant before the deadline shouldn't lose the
+    # deadline; resuming with mark-paid is the only way out).
     if payment_due_date is None:
         await pool.execute(
             "UPDATE tenants SET status = $1, suspended_at = $2, "
