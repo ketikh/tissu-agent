@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tissu Shop — Admin</title>
+    <title>Admin — …</title>
     <link rel="preconnect" href="https://rsms.me/">
     <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
     <style>
@@ -551,9 +551,9 @@
 <div class="shell">
     <aside class="sidebar">
         <div class="brand">
-            <div class="brand-mark">T</div>
+            <div class="brand-mark" id="brand-mark">·</div>
             <div>
-                <div class="brand-name">Tissu Shop</div>
+                <div class="brand-name" id="brand-name">…</div>
                 <div class="brand-sub">admin</div>
             </div>
         </div>
@@ -968,6 +968,17 @@
             const isSuper = data.admin_user.role === 'super';
             const shop = (data.tenant || {}).shop_name || '';
             const imp = (data.impersonation || {}).active;
+            // Phase 2 fix: brand the sidebar + page title with the
+            // current tenant's shop name. admin.html used to hardcode
+            // "Tissu Shop" everywhere, which was misleading after
+            // multi-tenant landed — a customer logged in as their
+            // own shop would still see "Tissu Shop" in the sidebar
+            // and think their data was wrong.
+            const brandName = document.getElementById('brand-name');
+            const brandMark = document.getElementById('brand-mark');
+            if (brandName && shop) brandName.textContent = shop;
+            if (brandMark && shop) brandMark.textContent = (shop[0] || '?').toUpperCase();
+            document.title = `Admin — ${shop || 'Shop'}`;
             // Phase 2: top-of-page red banner whenever the current
             // session is an impersonation. Inserted as a fixed bar so
             // it can't get scrolled past.
@@ -985,9 +996,9 @@
                     document.body.style.paddingTop = '40px';
                 }
                 bar.innerHTML = `
-                    <div>⚠️ შენ შესული ხარ როგორც <b>${_esc(shop)}</b> — ${_esc(data.admin_user.email)}
+                    <div>⚠️ შესული ხარ როგორც <b>${_esc(shop)}</b> (${_esc(data.admin_user.email)})
                         ${data.impersonation.impersonator_email
-                            ? `· გადახდა <b>${_esc(data.impersonation.impersonator_email)}</b>-მა`
+                            ? ` · super: <b>${_esc(data.impersonation.impersonator_email)}</b>`
                             : ''}</div>
                     <button onclick="stopImpersonation()" style="background:#FFF;color:#B04A42;border:none;padding:6px 14px;border-radius:6px;font-weight:600;cursor:pointer;font-size:12px">გაჩერება</button>
                 `;
