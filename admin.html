@@ -595,6 +595,10 @@
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-5"/></svg>
                 ინსაიტები
             </button>
+            <button class="nav-item" data-tab="bot" onclick="showTab('bot', this)">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M12 2a4 4 0 0 1 4 4v5H8V6a4 4 0 0 1 4-4z"/><circle cx="9" cy="17" r="1" fill="currentColor"/><circle cx="15" cy="17" r="1" fill="currentColor"/></svg>
+                ბოტი
+            </button>
         </nav>
 
         <div class="cat-group">
@@ -794,6 +798,71 @@
                         <thead><tr><th>კატეგორია</th><th style="width:80px">კითხვები</th><th style="width:90px">კლიენტები</th><th>მაგალითი</th><th style="width:150px">ბოლოს</th></tr></thead>
                         <tbody id="requests-table"></tbody>
                     </table>
+                </div>
+            </div>
+
+            <div id="tab-bot" class="section">
+                <div class="card" style="max-width:760px">
+                    <h2>ბოტის კონფიგურაცია</h2>
+                    <p class="hint">აქ ცვლი ბოტის ქცევას, პასუხებს და ბიზნეს-ინფორმაციას. ყველა ცვლილება მაშინვე შედის ძალაში.</p>
+                    <div id="bot-cfg-status" style="display:none;margin-bottom:12px;padding:10px 14px;border-radius:8px;font-size:13px"></div>
+
+                    <label>კომპანიის სახელი</label>
+                    <input type="text" id="bc-company_name" placeholder="Tissu Shop">
+
+                    <label style="margin-top:12px">მისალმება (პირველი პასუხი)</label>
+                    <textarea id="bc-bot_greeting" rows="2" style="resize:vertical"></textarea>
+
+                    <label style="margin-top:12px">ტონი / სტილი</label>
+                    <select id="bc-tone">
+                        <option value="friendly">friendly — მეგობრული, ✨ emoji</option>
+                        <option value="formal">formal — ოფიციალური</option>
+                        <option value="casual">casual — კეთილი და მოდუნებული</option>
+                    </select>
+
+                    <label style="margin-top:12px">Emoji ჩართული?</label>
+                    <select id="bc-emoji_enabled">
+                        <option value="true">კი</option>
+                        <option value="false">არა</option>
+                    </select>
+
+                    <label style="margin-top:16px">პროდუქტების კატალოგი (ბოტი ამ ტექსტს ეყრდნობა)</label>
+                    <textarea id="bc-product_catalog" rows="5" style="resize:vertical"></textarea>
+
+                    <label style="margin-top:12px">ზომების სახელმძღვანელო</label>
+                    <textarea id="bc-size_guide" rows="3" style="resize:vertical"></textarea>
+
+                    <label style="margin-top:12px">მიტანის ინფო</label>
+                    <textarea id="bc-delivery_info" rows="3" style="resize:vertical"></textarea>
+
+                    <label style="margin-top:16px">ბანკის ანგარიშები (JSON — მაგ: <code>[{"bank":"TBC","iban":"GE58...","name":"Tissu"}]</code>)</label>
+                    <textarea id="bc-payment_accounts" rows="4" style="resize:vertical;font-family:monospace;font-size:12px"></textarea>
+
+                    <label style="margin-top:12px">ვალუტის სიმბოლო</label>
+                    <input type="text" id="bc-currency_symbol" placeholder="₾" style="max-width:80px">
+
+                    <label style="margin-top:16px">Off-topic პასუხი</label>
+                    <input type="text" id="bc-off_topic_reply" placeholder="მხოლოდ ჩვენი პროდუქტების შესახებ...">
+
+                    <label style="margin-top:12px">კონფიდენციალური ინფოს პასუხი</label>
+                    <input type="text" id="bc-confidential_reply" placeholder="ეს კონფიდენციალური ინფორმაციაა ✨">
+
+                    <label style="margin-top:12px">მარაგში არ არის — პასუხი</label>
+                    <input type="text" id="bc-unavailable_reply" placeholder="სამწუხაროდ ეს მოდელი არ გვაქვს ✨">
+
+                    <label style="margin-top:12px">Custom order / ინდ. შეკვეთის პასუხი</label>
+                    <input type="text" id="bc-custom_order_reply" placeholder="ამ ეტაპზე ინდ. შეკვეთა არ ვიღებთ ✨">
+
+                    <label style="margin-top:12px">კორპორატიული შეკვეთის ინფო</label>
+                    <textarea id="bc-corporate_info" rows="2" style="resize:vertical"></textarea>
+
+                    <label style="margin-top:16px">დამატებითი ინსტრუქციები ბოტისთვის</label>
+                    <textarea id="bc-custom_instructions" rows="4" style="resize:vertical" placeholder="მაგ: გამარჯობა ყოველთვის ქართულად, არ ახსენო კონკურენტები..."></textarea>
+
+                    <div style="margin-top:20px;display:flex;gap:10px">
+                        <button class="btn btn-primary" onclick="saveBotConfig()">შენახვა</button>
+                        <button class="btn btn-ghost" onclick="loadBotConfig()">გაუქმება / თავიდან ჩატვირთვა</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2229,6 +2298,81 @@
         showTab(startTab, document.querySelector(`.nav-item[data-tab="${startTab}"]`));
     });
     window.addEventListener('keydown', e => { if (e.key === 'Escape') closeAddCategoryModal(); });
+
+    // ---- Bot Config ----
+    const BC_FIELDS = [
+        'company_name','bot_greeting','tone','emoji_enabled',
+        'product_catalog','size_guide','delivery_info',
+        'payment_accounts','currency_symbol',
+        'off_topic_reply','confidential_reply','unavailable_reply',
+        'custom_order_reply','corporate_info','custom_instructions',
+    ];
+
+    function botCfgStatus(msg, ok) {
+        const el = document.getElementById('bot-cfg-status');
+        el.textContent = msg;
+        el.style.display = 'block';
+        el.style.background = ok ? 'var(--hi-soft)' : '#fef2f2';
+        el.style.color = ok ? 'var(--hi-ink)' : '#b91c1c';
+        if (ok) setTimeout(() => { el.style.display = 'none'; }, 3000);
+    }
+
+    async function loadBotConfig() {
+        try {
+            const r = await fetch('/api/admin/bot-config', { credentials: 'include' });
+            if (!r.ok) { botCfgStatus('ჩატვირთვა ვერ მოხდა: ' + r.status, false); return; }
+            const cfg = await r.json();
+            BC_FIELDS.forEach(f => {
+                const el = document.getElementById('bc-' + f);
+                if (!el) return;
+                let val = cfg[f] ?? '';
+                if (f === 'payment_accounts') {
+                    val = typeof val === 'string' ? val : JSON.stringify(val, null, 2);
+                } else if (f === 'emoji_enabled') {
+                    val = val === true || val === 'true' ? 'true' : 'false';
+                }
+                el.value = String(val);
+            });
+        } catch(e) {
+            botCfgStatus('შეცდომა: ' + e.message, false);
+        }
+    }
+
+    async function saveBotConfig() {
+        const data = {};
+        for (const f of BC_FIELDS) {
+            const el = document.getElementById('bc-' + f);
+            if (!el) continue;
+            let val = el.value.trim();
+            if (f === 'payment_accounts') {
+                try { val = JSON.parse(val); } catch(e) {
+                    botCfgStatus('payment_accounts — JSON არ არის სწორი', false); return;
+                }
+            } else if (f === 'emoji_enabled') {
+                val = val === 'true';
+            }
+            if (val !== '' && val !== null) data[f] = val;
+        }
+        try {
+            const csrfCookie = document.cookie.split(';').map(c=>c.trim()).find(c=>c.startsWith('csrf_token='));
+            const csrf = csrfCookie ? csrfCookie.split('=')[1] : '';
+            const r = await fetch('/api/admin/bot-config', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+                credentials: 'include',
+                body: JSON.stringify(data),
+            });
+            const j = await r.json();
+            if (r.ok && j.ok) botCfgStatus('შენახულია ✓', true);
+            else botCfgStatus('შეცდომა: ' + (j.detail || r.status), false);
+        } catch(e) {
+            botCfgStatus('შეცდომა: ' + e.message, false);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelector('.nav-item[data-tab="bot"]')?.addEventListener('click', loadBotConfig);
+    });
 </script>
 </body>
 </html>

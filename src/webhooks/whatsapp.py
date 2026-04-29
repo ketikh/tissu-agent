@@ -108,23 +108,39 @@ async def _send_to_customer(sender_id: str, text: str) -> None:
         )
 
 
-async def _handle_confirmation(conv_id: str) -> str:
+async def _get_conv_tenant_id(conv_id: str) -> str:
+    """Look up the tenant_id for a conversation, defaulting to DEFAULT_TENANT_ID."""
+    from src.db import DEFAULT_TENANT_ID as _DEFAULT
+    if not conv_id:
+        return _DEFAULT
+    try:
+        pool = await get_db()
+        row = await pool.fetchrow("SELECT tenant_id FROM conversations WHERE id = $1", conv_id)
+        return (row["tenant_id"] if row and row["tenant_id"] else _DEFAULT)
+    except Exception:
+        return _DEFAULT
+
+
+async def _handle_confirmation(conv_id: str, tenant_id: str | None = None) -> str:
     """Owner confirmed payment — ask customer for address."""
-    # Clean up uploaded receipt photos
+    if tenant_id is None:
+        tenant_id = await _get_conv_tenant_id(conv_id)
     uploads_dir = Path(__file__).parent.parent.parent / "static" / "uploads"
     if uploads_dir.exists():
         for f in uploads_dir.iterdir():
             if f.suffix in ('.jpg', '.jpeg', '.png'):
                 f.unlink(missing_ok=True)
 
-    agent = get_support_sales_agent()
+    agent = await get_support_sales_agent(tenant_id)
     result = await run_agent(agent, "[მფლობელმა დაადასტურა გადახდა. მოითხოვე მისამართი და ტელეფონი.]", conv_id)
     return result["reply"].strip() or "გადახდა დადასტურებულია! ✨ მისამართი და ტელეფონის ნომერი მოგვწერეთ."
 
 
-async def _handle_denial(conv_id: str) -> str:
+async def _handle_denial(conv_id: str, tenant_id: str | None = None) -> str:
     """Owner denied payment — tell customer payment wasn't confirmed."""
-    agent = get_support_sales_agent()
+    if tenant_id is None:
+        tenant_id = await _get_conv_tenant_id(conv_id)
+    agent = await get_support_sales_agent(tenant_id)
     result = await run_agent(agent, "[მფლობელმა გადახდა ვერ დაადასტურა. თავაზიანად უთხარი რომ გადახდა ვერ დადასტურდა და გთხოვთ გადაამოწმოთ ან ხელახლა გამოაგზავნოთ ქვითარი.]", conv_id)
     return result["reply"].strip() or "გადახდა ვერ დადასტურდა 😔 გთხოვთ გადაამოწმოთ და ქვითარი ხელახლა გამოგვიგზავნეთ ✨"
 
@@ -171,6 +187,7 @@ async def wa_webhook_receive(request: Request):
                 if not conv_id:
                     continue
 
+                tenant_id = await _get_conv_tenant_id(conv_id)
                 sender_id = _extract_sender_id(conv_id)
                 if not FB_PAGE_TOKEN or not sender_id:
                     continue
@@ -189,7 +206,7 @@ async def wa_webhook_receive(request: Request):
 
                 elif "არ გვაქვს" in text_lower or "არა" == text_lower.strip():
                     # Owner says product not available
-                    agent = get_support_sales_agent()
+                    agent = await get_support_sales_agent(tenant_id)
                     result = await run_agent(agent, "[მფლობელის ინსტრუქცია: ეს მოდელი არ გვაქვს, შესთავაზე სხვა]", conv_id)
                     reply = result["reply"].strip() or "სამწუხაროდ ეს მოდელი ამჟამად არ გვაქვს. სხვა ლამაზი მოდელები გაჩვენოთ? ✨"
                     await _send_to_customer(sender_id, reply)
@@ -206,7 +223,7 @@ async def wa_webhook_receive(request: Request):
                     if row:
                         product = dict(row)
                         # Tell agent the owner found the product
-                        agent = get_support_sales_agent()
+                        agent = await get_support_sales_agent(tenant_id)
                         result = await run_agent(
                             agent,
                             f"[მფლობელის ინსტრუქცია: კლიენტის ფოტოს {code} ემთხვევა. აჩვენე ეს პროდუქტი და ეკითხე მოეწონა თუ არა]",
@@ -247,7 +264,7 @@ async def wa_webhook_receive(request: Request):
 
                 elif text_lower in ("მე ვპასუხობ", "ჩემია", "მე", "stop", "სტოპ"):
                     # Owner takes over — tell bot to shut up, notify owner
-                    agent = get_support_sales_agent()
+                    agent = await get_support_sales_agent(tenant_id)
                     await run_agent(agent, "[SYSTEM: owner_is_chatting]", conv_id)
                     from src.notifications import send_whatsapp_text
                     await send_whatsapp_text("✅ ბოტი გაჩერდა, შენ აგრძელებ. 'უპასუხე:' ტექსტით მიწერე კლიენტს.")
@@ -258,14 +275,14 @@ async def wa_webhook_receive(request: Request):
 
                 elif text_lower in ("ბოტი", "bot", "გააგრძელე"):
                     # Resume bot — clear owner_is_chatting state
-                    agent = get_support_sales_agent()
+                    agent = await get_support_sales_agent(tenant_id)
                     await run_agent(agent, "[SYSTEM: owner_stopped_chatting — ბოტი ისევ აგრძელებს]", conv_id)
                     from src.notifications import send_whatsapp_text
                     await send_whatsapp_text("🤖 ბოტი ისევ ჩაირთო.")
 
                 else:
                     # Other text — forward as instruction to bot
-                    agent = get_support_sales_agent()
+                    agent = await get_support_sales_agent(tenant_id)
                     result = await run_agent(agent, f"[მფლობელის ინსტრუქცია: {text}]", conv_id)
                     reply = result["reply"].strip()
                     if reply:
@@ -305,7 +322,7 @@ async def photo_confirm(token: str):
     if not conversation_id:
         return HTMLResponse(_EXPIRED_HTML, status_code=410)
     sender_id = _extract_sender_id(conversation_id)
-    agent = get_support_sales_agent()
+    agent = await get_support_sales_agent(tenant_id)
     result = await run_agent(
         agent,
         "[მფლობელმა დაადასტურა — მარაგშია. უთხარი 'გვაქვს მარაგში ✨ გავაფორმოთ შეკვეთა?' — როცა დაეთანხმება, ეკითხე 'თიბისი თუ საქართველოს ბანკი?' სტილს ᲐᲠ ეკითხო, ფოტოებს ᲐᲠ გაუგზავნო, check_inventory ᲐᲠ გამოიძახო.]",
@@ -323,7 +340,7 @@ async def photo_deny(token: str):
     if not conversation_id:
         return HTMLResponse(_EXPIRED_HTML, status_code=410)
     sender_id = _extract_sender_id(conversation_id)
-    agent = get_support_sales_agent()
+    agent = await get_support_sales_agent(tenant_id)
     result = await run_agent(
         agent,
         "[მფლობელმა უარყო — კლიენტის ფოტოზე მოდელი არ არის მარაგში. უთხარი 'სამწუხაროდ ეს მოდელი ამჟამად აღარ გვაქვს ✨ სხვა ლამაზი მოდელები გაჩვენოთ?']",

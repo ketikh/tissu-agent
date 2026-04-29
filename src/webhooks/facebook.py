@@ -833,7 +833,7 @@ async def _process_message(
 
         # ── Run agent ──
         print(f"[MSG] Calling agent...", flush=True)
-        agent = get_support_sales_agent()
+        agent = await get_support_sales_agent(tenant_id)
         try:
             result = await run_agent(agent, text, conversation_id)
         except Exception as e:

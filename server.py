@@ -34,6 +34,7 @@ from src.db import (
     update_tenant_features, list_pricing_plans, update_pricing_plan,
     log_super_action, list_super_actions, regenerate_tenant_api_key,
     bump_admin_session_epoch, get_admin_session_epoch,
+    get_bot_config, upsert_bot_config,
 )
 from src.sessions import IMPERSONATION_SECONDS
 from src.secrets_vault import encrypt_secret, redacted
@@ -986,6 +987,40 @@ async def admin_logout_all_devices(request: Request):
     return response
 
 
+@app.get("/api/admin/bot-config")
+async def admin_get_bot_config(request: Request):
+    """Return the current tenant's bot configuration."""
+    tenant_id = get_tenant_id(request)
+    cfg = await get_bot_config(tenant_id)
+    if cfg is None:
+        raise HTTPException(status_code=404, detail="bot config not found")
+    return cfg
+
+
+@app.put("/api/admin/bot-config")
+async def admin_put_bot_config(request: Request):
+    """Save (partial update) the current tenant's bot configuration."""
+    tenant_id = get_tenant_id(request)
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON")
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="body must be an object")
+    allowed_fields = {
+        "company_name", "bot_greeting", "product_catalog", "size_guide",
+        "delivery_info", "payment_accounts", "currency_symbol",
+        "off_topic_reply", "confidential_reply", "unavailable_reply",
+        "custom_order_reply", "corporate_info", "tone",
+        "emoji_enabled", "custom_instructions",
+    }
+    filtered = {k: v for k, v in data.items() if k in allowed_fields}
+    if not filtered:
+        raise HTTPException(status_code=400, detail="no valid fields provided")
+    await upsert_bot_config(tenant_id, filtered)
+    return {"ok": True}
+
+
 @app.get("/admin/chat-test", response_class=HTMLResponse)
 async def admin_chat_test():
     """Text-only bot prompt tester. Handy for iterating on the system
@@ -1099,7 +1134,7 @@ async def chat_support(req: ChatRequest):
         if context_parts:
             enriched_message = f"[Context: {'; '.join(context_parts)}]\n\n{req.message}"
 
-    agent = get_support_sales_agent()
+    agent = await get_support_sales_agent(tenant_id)
     result = await run_agent(agent, enriched_message, req.conversation_id)
     try:
         return ChatResponse(**result)
@@ -1131,7 +1166,7 @@ async def channel_webhook(channel: str, request: Request):
             context_parts.append(f"Product interest: {ctx.product_interest}")
         enriched_message = f"[Context: {'; '.join(context_parts)}]\n\n{chat_request.message}"
 
-    agent = get_support_sales_agent()
+    agent = await get_support_sales_agent(tenant_id)
     result = await run_agent(agent, enriched_message, chat_request.conversation_id)
     return {"agent_response": result, "channel": channel}
 

@@ -645,6 +645,86 @@ async def init_db():
             "ON admin_password_resets (admin_user_id)"
         )
 
+        # ── Bot persona config (white-label) ───────────────────
+        # Each tenant configures their bot identity here.
+        # The system prompt is built dynamically from these fields
+        # so a different company can rebrand the bot without touching code.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS bot_configs (
+                tenant_id TEXT PRIMARY KEY REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+                company_name TEXT NOT NULL DEFAULT '',
+                bot_greeting TEXT NOT NULL DEFAULT '',
+                product_catalog TEXT NOT NULL DEFAULT '',
+                size_guide TEXT NOT NULL DEFAULT '',
+                delivery_info TEXT NOT NULL DEFAULT '',
+                payment_accounts JSONB NOT NULL DEFAULT '[]',
+                currency_symbol TEXT NOT NULL DEFAULT '₾',
+                off_topic_reply TEXT NOT NULL DEFAULT '',
+                confidential_reply TEXT NOT NULL DEFAULT '',
+                unavailable_reply TEXT NOT NULL DEFAULT '',
+                custom_order_reply TEXT NOT NULL DEFAULT '',
+                corporate_info TEXT NOT NULL DEFAULT '',
+                tone TEXT NOT NULL DEFAULT 'friendly',
+                emoji_enabled BOOLEAN NOT NULL DEFAULT true,
+                custom_instructions TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT ''
+            )
+        """)
+
+        # Seed default Tissu config if not present.
+        # These values mirror what was previously hardcoded in the system prompt.
+        existing_cfg = await conn.fetchval(
+            "SELECT tenant_id FROM bot_configs WHERE tenant_id = $1",
+            DEFAULT_TENANT_ID,
+        )
+        if not existing_cfg:
+            import json as _json
+            tissu_accounts = _json.dumps([
+                {"bank_name": "თიბისი", "account_number": "GE58TB7085345064300066"},
+                {"bank_name": "საქართველოს ბანკი", "account_number": "GE65BG0000000358364200"},
+            ])
+            now_iso = datetime.now(timezone.utc).isoformat()
+            await conn.execute(
+                """INSERT INTO bot_configs
+                   (tenant_id, company_name, bot_greeting, product_catalog,
+                    size_guide, delivery_info, payment_accounts, currency_symbol,
+                    off_topic_reply, confidential_reply, unavailable_reply,
+                    custom_order_reply, corporate_info, tone, emoji_enabled,
+                    custom_instructions, updated_at)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)""",
+                DEFAULT_TENANT_ID,
+                "Tissu Shop",
+                "გამარჯობა ✨ Tissu Shop-ის ასისტენტი ვარ. რით შემიძლია დაგეხმაროთ?",
+                (
+                    "ლეპტოპის ქეისები — ტილოსგან, წყალგაუმტარი, ორმხრივად გამოყენებადი "
+                    "(ერთი მხარე ერთფეროვანი, მეორე ჭრელი)\n"
+                    "ორი ზომა: პატარა (33x25სმ) — 69₾ | დიდი (37x27სმ) — 74₾\n"
+                    "ორი სტილი: ფხრიწიანი | თასმიანი (strap)\n"
+                    "ელვა შესაკრავიანი მოდელები ᲐᲠ გვაქვს! მხოლოდ ფხრიწიანი და თასმიანი.\n"
+                    "კოდები: FP=ფხრიწიანი პატარა, TP=თასმიანი პატარა, "
+                    "FD=ფხრიწიანი დიდი, TD=თასმიანი დიდი\n"
+                    "ქართულადაც: ტდ1=TD1, ფპ5=FP5"
+                ),
+                (
+                    "MacBook 13\", 13.3\", 13.6\", 14\" → პატარა ზომა (33x25სმ) მოერგება\n"
+                    "MacBook 15\", 15.6\", 16\" → დიდი ზომა (37x27სმ) მოერგება\n"
+                    "სხვა ბრენდი → ზომები გადაამოწმოთ სანტიმეტრებში"
+                ),
+                "6₾ თბილისში. ღამის 12-მდე შეკვეთა → მეორე დღეს (კვირის გარდა). რეგიონებში — ფასი ინდივიდუალური.",
+                tissu_accounts,
+                "₾",
+                "მხოლოდ Tissu Shop-ის შესახებ გვაქვს ინფორმაცია ✨",
+                "ეს კონფიდენციალური ინფორმაციაა ✨",
+                "სამწუხაროდ ამჟამად არ გვაქვს ✨ ლეპტოპის ქეისები გვაქვს მხოლოდ.",
+                "მხოლოდ მზა მოდელებს ვყიდით ✨ ჩვენი დიზაინებია. ქასთომ დიზაინების პრინტს არ ვაკეთებთ.",
+                "კორპორატიული შეკვეთები შეგვიძლია (10+ ცალი) ✨ დეტალებისთვის მოგვწერეთ.",
+                "friendly",
+                True,
+                "",
+                now_iso,
+            )
+            print(f"[bot-config-seed] seeded default Tissu bot config", flush=True)
+
         # Seed an owner account from the env vars if both are set AND
         # no account exists for that tenant yet. This mirrors the
         # bootstrap-admin pattern for api_keys — first-boot convenience
@@ -1411,3 +1491,91 @@ async def ensure_conversation(
         "VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING",
         conversation_id, agent_type, tenant_id, now, now,
     )
+
+
+async def get_bot_config(tenant_id: str) -> dict | None:
+    """Return the bot_configs row for ``tenant_id``, or None if not found."""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT * FROM bot_configs WHERE tenant_id = $1", tenant_id,
+    )
+    if not row:
+        return None
+    result = dict(row)
+    import json as _json
+    if isinstance(result.get("payment_accounts"), str):
+        try:
+            result["payment_accounts"] = _json.loads(result["payment_accounts"])
+        except Exception:
+            result["payment_accounts"] = []
+    return result
+
+
+async def upsert_bot_config(tenant_id: str, data: dict) -> None:
+    """Insert or update the bot_configs row for ``tenant_id``.
+    Only keys present in ``data`` are updated — missing keys keep
+    their current DB value (partial update semantics)."""
+    pool = await get_pool()
+    import json as _json
+    now = datetime.now(timezone.utc).isoformat()
+
+    existing = await pool.fetchval(
+        "SELECT tenant_id FROM bot_configs WHERE tenant_id = $1", tenant_id,
+    )
+    payment_accounts = data.get("payment_accounts")
+    if payment_accounts is not None and not isinstance(payment_accounts, str):
+        payment_accounts = _json.dumps(payment_accounts)
+
+    if not existing:
+        await pool.execute(
+            """INSERT INTO bot_configs
+               (tenant_id, company_name, bot_greeting, product_catalog,
+                size_guide, delivery_info, payment_accounts, currency_symbol,
+                off_topic_reply, confidential_reply, unavailable_reply,
+                custom_order_reply, corporate_info, tone, emoji_enabled,
+                custom_instructions, updated_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)""",
+            tenant_id,
+            data.get("company_name", ""),
+            data.get("bot_greeting", ""),
+            data.get("product_catalog", ""),
+            data.get("size_guide", ""),
+            data.get("delivery_info", ""),
+            payment_accounts or "[]",
+            data.get("currency_symbol", "₾"),
+            data.get("off_topic_reply", ""),
+            data.get("confidential_reply", ""),
+            data.get("unavailable_reply", ""),
+            data.get("custom_order_reply", ""),
+            data.get("corporate_info", ""),
+            data.get("tone", "friendly"),
+            bool(data.get("emoji_enabled", True)),
+            data.get("custom_instructions", ""),
+            now,
+        )
+    else:
+        fields = []
+        params: list = []
+        idx = 1
+        for col in (
+            "company_name", "bot_greeting", "product_catalog", "size_guide",
+            "delivery_info", "currency_symbol", "off_topic_reply",
+            "confidential_reply", "unavailable_reply", "custom_order_reply",
+            "corporate_info", "tone", "emoji_enabled", "custom_instructions",
+        ):
+            if col in data:
+                fields.append(f"{col} = ${idx}")
+                params.append(data[col])
+                idx += 1
+        if payment_accounts is not None:
+            fields.append(f"payment_accounts = ${idx}")
+            params.append(payment_accounts)
+            idx += 1
+        fields.append(f"updated_at = ${idx}")
+        params.append(now)
+        idx += 1
+        params.append(tenant_id)
+        await pool.execute(
+            f"UPDATE bot_configs SET {', '.join(fields)} WHERE tenant_id = ${idx}",
+            *params,
+        )
