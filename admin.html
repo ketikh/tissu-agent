@@ -802,66 +802,235 @@
             </div>
 
             <div id="tab-bot" class="section">
-                <div class="card" style="max-width:760px">
-                    <h2>ბოტის კონფიგურაცია</h2>
-                    <p class="hint">აქ ცვლი ბოტის ქცევას, პასუხებს და ბიზნეს-ინფორმაციას. ყველა ცვლილება მაშინვე შედის ძალაში.</p>
-                    <div id="bot-cfg-status" style="display:none;margin-bottom:12px;padding:10px 14px;border-radius:8px;font-size:13px"></div>
+                <style>
+                    .bc-page { max-width: 740px; }
+                    .bc-header { margin-bottom: 24px; }
+                    .bc-header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 4px; }
+                    .bc-header p { color: var(--muted); font-size: 13px; }
+                    .bc-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 14px; overflow: hidden; box-shadow: var(--shadow-xs); }
+                    .bc-section-head { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+                    .bc-section-icon { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+                    .bc-section-icon svg { width: 15px; height: 15px; color: var(--text-2); }
+                    .bc-section-title { font-size: 13px; font-weight: 600; }
+                    .bc-section-sub { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+                    .bc-section-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+                    .bc-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+                    .bc-field { display: flex; flex-direction: column; gap: 5px; }
+                    .bc-field label { font-size: 12px; font-weight: 600; color: var(--text-2); letter-spacing: 0.01em; }
+                    .bc-field .bc-desc { font-size: 11.5px; color: var(--muted); margin-top: -2px; }
+                    .bc-field input, .bc-field select, .bc-field textarea {
+                        border: 1px solid var(--border); border-radius: var(--radius-sm);
+                        padding: 8px 10px; font-size: 13px; background: var(--bg);
+                        transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
+                        width: 100%;
+                    }
+                    .bc-field input:focus, .bc-field select:focus, .bc-field textarea:focus {
+                        outline: none; border-color: var(--hi); box-shadow: 0 0 0 3px rgba(200,117,81,0.12);
+                    }
+                    .bc-field textarea { resize: vertical; line-height: 1.5; min-height: 72px; }
+                    .bc-bank-row { display: flex; flex-direction: column; gap: 8px; }
+                    .bc-bank-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; position: relative; }
+                    .bc-bank-card .bc-bank-remove { position: absolute; top: 8px; right: 8px; background: none; border: none; cursor: pointer; color: var(--muted); padding: 2px; border-radius: 4px; }
+                    .bc-bank-card .bc-bank-remove:hover { color: var(--danger); background: var(--danger-soft); }
+                    .bc-bank-add { display: flex; align-items: center; gap: 6px; border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); padding: 8px 12px; background: none; cursor: pointer; font-size: 12.5px; color: var(--muted); transition: all .15s; }
+                    .bc-bank-add:hover { border-color: var(--hi); color: var(--hi-ink); background: var(--hi-soft); }
+                    .bc-status { display: none; border-radius: var(--radius-sm); padding: 10px 14px; font-size: 13px; font-weight: 500; }
+                    .bc-status.ok { background: var(--success-soft); color: var(--success); display: flex; align-items: center; gap: 7px; }
+                    .bc-status.err { background: var(--danger-soft); color: var(--danger); display: flex; align-items: center; gap: 7px; }
+                    .bc-actions { display: flex; align-items: center; gap: 10px; padding: 18px 0 4px; }
+                    .bc-actions .bc-save-btn { padding: 9px 22px; font-size: 13.5px; font-weight: 600; }
+                    @media (max-width: 600px) { .bc-row { grid-template-columns: 1fr; } .bc-bank-card { grid-template-columns: 1fr; } }
+                </style>
 
-                    <label>კომპანიის სახელი</label>
-                    <input type="text" id="bc-company_name" placeholder="Tissu Shop">
+                <div class="bc-page">
+                    <div class="bc-header">
+                        <h1>ბოტის მორგება</h1>
+                        <p>შეცვალე ბოტის სახელი, პასუხები, ფასები და ბანკის ანგარიშები. ცვლილება მაშინვე ამოქმედდება.</p>
+                    </div>
 
-                    <label style="margin-top:12px">მისალმება (პირველი პასუხი)</label>
-                    <textarea id="bc-bot_greeting" rows="2" style="resize:vertical"></textarea>
+                    <div id="bot-cfg-status" class="bc-status"></div>
 
-                    <label style="margin-top:12px">ტონი / სტილი</label>
-                    <select id="bc-tone">
-                        <option value="friendly">friendly — მეგობრული, ✨ emoji</option>
-                        <option value="formal">formal — ოფიციალური</option>
-                        <option value="casual">casual — კეთილი და მოდუნებული</option>
-                    </select>
+                    <!-- 1. კომპანია -->
+                    <div class="bc-section">
+                        <div class="bc-section-head">
+                            <div class="bc-section-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+                            </div>
+                            <div>
+                                <div class="bc-section-title">კომპანია</div>
+                                <div class="bc-section-sub">ვინ ხარ და როგორი ტონით საუბრობს ბოტი</div>
+                            </div>
+                        </div>
+                        <div class="bc-section-body">
+                            <div class="bc-row">
+                                <div class="bc-field">
+                                    <label>კომპანიის სახელი</label>
+                                    <div class="bc-desc">ეს სახელი ბოტმა "საკუთარ თავად" იცის</div>
+                                    <input type="text" id="bc-company_name" placeholder="Tissu Shop">
+                                </div>
+                                <div class="bc-field">
+                                    <label>ვალუტა</label>
+                                    <div class="bc-desc">სიმბოლო ფასების გვერდით</div>
+                                    <input type="text" id="bc-currency_symbol" placeholder="₾">
+                                </div>
+                            </div>
+                            <div class="bc-row">
+                                <div class="bc-field">
+                                    <label>საუბრის სტილი</label>
+                                    <div class="bc-desc">ბოტი ამ ტონით მიმართავს კლიენტს</div>
+                                    <select id="bc-tone">
+                                        <option value="friendly">მეგობრული — ✨ emoji, თბილი</option>
+                                        <option value="casual">კეთილი და მოდუნებული</option>
+                                        <option value="formal">ოფიციალური — ჩვეულებრივი</option>
+                                    </select>
+                                </div>
+                                <div class="bc-field">
+                                    <label>Emoji გამოიყენება?</label>
+                                    <div class="bc-desc">✨ ემოჯი პასუხებში</div>
+                                    <select id="bc-emoji_enabled">
+                                        <option value="true">კი, გამოიყენება</option>
+                                        <option value="false">არა</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="bc-field">
+                                <label>მისალმება</label>
+                                <div class="bc-desc">ბოტის პირველი პასუხი, კლიენტი პირველად რომ მოწერს</div>
+                                <textarea id="bc-bot_greeting" rows="2" placeholder="გამარჯობა ✨ Tissu Shop-ის ასისტენტი ვარ. რით შემიძლია დაგეხმაროთ?"></textarea>
+                            </div>
+                        </div>
+                    </div>
 
-                    <label style="margin-top:12px">Emoji ჩართული?</label>
-                    <select id="bc-emoji_enabled">
-                        <option value="true">კი</option>
-                        <option value="false">არა</option>
-                    </select>
+                    <!-- 2. პროდუქტები -->
+                    <div class="bc-section">
+                        <div class="bc-section-head">
+                            <div class="bc-section-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                            </div>
+                            <div>
+                                <div class="bc-section-title">პროდუქტები და ზომები</div>
+                                <div class="bc-section-sub">ბოტი ამ ინფორმაციაზე დაყრდნობით ეხმარება კლიენტს</div>
+                            </div>
+                        </div>
+                        <div class="bc-section-body">
+                            <div class="bc-field">
+                                <label>პროდუქტების კატალოგი</label>
+                                <div class="bc-desc">ჩამოთვალე პროდუქტები, მოდელები, ფასები — ბოტი ამ ტექსტს ეყრდნობა</div>
+                                <textarea id="bc-product_catalog" rows="5" placeholder="მაგ:&#10;- პატარა ქეისი (33x25 სმ) — 69₾&#10;- დიდი ქეისი (37x27 სმ) — 74₾&#10;მოდელები: ფხრიწიანი (FP/FD) და თასმიანი (TP/TD)"></textarea>
+                            </div>
+                            <div class="bc-field">
+                                <label>ზომების სახელმძღვანელო</label>
+                                <div class="bc-desc">ბოტი კლიენტს ამ წესით ეხმარება სწორი ზომის არჩევაში</div>
+                                <textarea id="bc-size_guide" rows="3" placeholder="მაგ:&#10;13 ინჩი ან ნაკლები → პატარა&#10;14 ინჩი ან მეტი → დიდი"></textarea>
+                            </div>
+                        </div>
+                    </div>
 
-                    <label style="margin-top:16px">პროდუქტების კატალოგი (ბოტი ამ ტექსტს ეყრდნობა)</label>
-                    <textarea id="bc-product_catalog" rows="5" style="resize:vertical"></textarea>
+                    <!-- 3. მიტანა -->
+                    <div class="bc-section">
+                        <div class="bc-section-head">
+                            <div class="bc-section-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+                            </div>
+                            <div>
+                                <div class="bc-section-title">მიტანა</div>
+                                <div class="bc-section-sub">კურიერის ფასი, ვადები, რეგიონები</div>
+                            </div>
+                        </div>
+                        <div class="bc-section-body">
+                            <div class="bc-field">
+                                <label>მიტანის ინფორმაცია</label>
+                                <div class="bc-desc">ბოტი ზუსტად ამ ტექსტს ეტყვის კლიენტს კურიერის შესახებ</div>
+                                <textarea id="bc-delivery_info" rows="3" placeholder="მაგ:&#10;თბილისი — 6₾&#10;ღამის 12-მდე შეკვეთა → მეორე დღეს მიიღებ (კვირის გარდა)&#10;რეგიონები — ფასი ეკითხება მფლობელს"></textarea>
+                            </div>
+                        </div>
+                    </div>
 
-                    <label style="margin-top:12px">ზომების სახელმძღვანელო</label>
-                    <textarea id="bc-size_guide" rows="3" style="resize:vertical"></textarea>
+                    <!-- 4. გადახდა -->
+                    <div class="bc-section">
+                        <div class="bc-section-head">
+                            <div class="bc-section-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                            </div>
+                            <div>
+                                <div class="bc-section-title">ბანკის ანგარიშები</div>
+                                <div class="bc-section-sub">ბოტი ამ ანგარიშებს ეტყვის კლიენტს გადარიცხვისთვის</div>
+                            </div>
+                        </div>
+                        <div class="bc-section-body">
+                            <div id="bc-bank-list" class="bc-bank-row"></div>
+                            <button class="bc-bank-add" type="button" onclick="bcAddBank()">
+                                <svg style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                ახალი ბანკის დამატება
+                            </button>
+                            <input type="hidden" id="bc-payment_accounts" value="[]">
+                        </div>
+                    </div>
 
-                    <label style="margin-top:12px">მიტანის ინფო</label>
-                    <textarea id="bc-delivery_info" rows="3" style="resize:vertical"></textarea>
+                    <!-- 5. ბოტის პასუხები -->
+                    <div class="bc-section">
+                        <div class="bc-section-head">
+                            <div class="bc-section-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                            </div>
+                            <div>
+                                <div class="bc-section-title">ბოტის პასუხები</div>
+                                <div class="bc-section-sub">რას ეტყვის ბოტი სხვადასხვა სიტუაციაში</div>
+                            </div>
+                        </div>
+                        <div class="bc-section-body">
+                            <div class="bc-field">
+                                <label>სხვა თემაზე კითხვა</label>
+                                <div class="bc-desc">კლიენტი Tissu-სთან შეუსაბამო თემაზე რომ ეკითხება</div>
+                                <input type="text" id="bc-off_topic_reply" placeholder="მხოლოდ Tissu-ს შესახებ შეგვიძლია მოგაწოდოთ ინფორმაცია ✨">
+                            </div>
+                            <div class="bc-field">
+                                <label>კონფიდენციალური ინფო</label>
+                                <div class="bc-desc">კლიენტი მარაგის, შემოსავლის, ადმინის შესახებ ეკითხება</div>
+                                <input type="text" id="bc-confidential_reply" placeholder="ეს კონფიდენციალური ინფორმაციაა ✨">
+                            </div>
+                            <div class="bc-field">
+                                <label>მარაგში არ არის</label>
+                                <div class="bc-desc">კლიენტი ითხოვს კოდს ან მოდელს რომელიც ამჟამად არ გვაქვს</div>
+                                <input type="text" id="bc-unavailable_reply" placeholder="სამწუხაროდ ეს მოდელი ამჟამად არ გვაქვს ✨">
+                            </div>
+                            <div class="bc-field">
+                                <label>ინდივიდუალური შეკვეთა</label>
+                                <div class="bc-desc">კლიენტი custom/სპეციალური შეკვეთას ითხოვს</div>
+                                <input type="text" id="bc-custom_order_reply" placeholder="ამ ეტაპზე ინდ. შეკვეთებს არ ვიღებთ ✨">
+                            </div>
+                            <div class="bc-field">
+                                <label>კორპორატიული შეკვეთა (10+ ცალი)</label>
+                                <div class="bc-desc">ბოტი ამ ტექსტს ეტყვის კომპანიებს, ორგანიზაციებს</div>
+                                <textarea id="bc-corporate_info" rows="2" placeholder="10+ ცალზე კორპორატიული შეკვეთა შესაძლებელია. დაგვიკავშირდით დეტალებისთვის ✨"></textarea>
+                            </div>
+                        </div>
+                    </div>
 
-                    <label style="margin-top:16px">ბანკის ანგარიშები (JSON — მაგ: <code>[{"bank":"TBC","iban":"GE58...","name":"Tissu"}]</code>)</label>
-                    <textarea id="bc-payment_accounts" rows="4" style="resize:vertical;font-family:monospace;font-size:12px"></textarea>
+                    <!-- 6. დამატებითი ინსტრუქციები -->
+                    <div class="bc-section">
+                        <div class="bc-section-head">
+                            <div class="bc-section-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                            </div>
+                            <div>
+                                <div class="bc-section-title">დამატებითი ინსტრუქციები</div>
+                                <div class="bc-section-sub">სხვა წესები ბოტისთვის — არჩევითია</div>
+                            </div>
+                        </div>
+                        <div class="bc-section-body">
+                            <div class="bc-field">
+                                <label>სპეციალური წესები</label>
+                                <div class="bc-desc">ნებისმიერი დამატებითი ინსტრუქცია ბოტისთვის — ერთი წესი ერთ სტრიქონზე</div>
+                                <textarea id="bc-custom_instructions" rows="4" placeholder="მაგ:&#10;ყოველთვის ქართულად გიპასუხებ&#10;კონკურენტების სახელი არ ახსენო&#10;კლიენტს ყოველთვის ბოლოს ჰკითხე — სხვა კითხვა ხომ არ გაქვს?"></textarea>
+                            </div>
+                        </div>
+                    </div>
 
-                    <label style="margin-top:12px">ვალუტის სიმბოლო</label>
-                    <input type="text" id="bc-currency_symbol" placeholder="₾" style="max-width:80px">
-
-                    <label style="margin-top:16px">Off-topic პასუხი</label>
-                    <input type="text" id="bc-off_topic_reply" placeholder="მხოლოდ ჩვენი პროდუქტების შესახებ...">
-
-                    <label style="margin-top:12px">კონფიდენციალური ინფოს პასუხი</label>
-                    <input type="text" id="bc-confidential_reply" placeholder="ეს კონფიდენციალური ინფორმაციაა ✨">
-
-                    <label style="margin-top:12px">მარაგში არ არის — პასუხი</label>
-                    <input type="text" id="bc-unavailable_reply" placeholder="სამწუხაროდ ეს მოდელი არ გვაქვს ✨">
-
-                    <label style="margin-top:12px">Custom order / ინდ. შეკვეთის პასუხი</label>
-                    <input type="text" id="bc-custom_order_reply" placeholder="ამ ეტაპზე ინდ. შეკვეთა არ ვიღებთ ✨">
-
-                    <label style="margin-top:12px">კორპორატიული შეკვეთის ინფო</label>
-                    <textarea id="bc-corporate_info" rows="2" style="resize:vertical"></textarea>
-
-                    <label style="margin-top:16px">დამატებითი ინსტრუქციები ბოტისთვის</label>
-                    <textarea id="bc-custom_instructions" rows="4" style="resize:vertical" placeholder="მაგ: გამარჯობა ყოველთვის ქართულად, არ ახსენო კონკურენტები..."></textarea>
-
-                    <div style="margin-top:20px;display:flex;gap:10px">
-                        <button class="btn btn-primary" onclick="saveBotConfig()">შენახვა</button>
-                        <button class="btn btn-ghost" onclick="loadBotConfig()">გაუქმება / თავიდან ჩატვირთვა</button>
+                    <div class="bc-actions">
+                        <button class="btn btn-primary bc-save-btn" onclick="saveBotConfig()">შენახვა</button>
+                        <button class="btn btn-ghost" onclick="loadBotConfig()">გაუქმება</button>
+                        <span id="bot-cfg-inline-status" style="font-size:12.5px;color:var(--muted);margin-left:4px"></span>
                     </div>
                 </div>
             </div>
@@ -2300,59 +2469,105 @@
     window.addEventListener('keydown', e => { if (e.key === 'Escape') closeAddCategoryModal(); });
 
     // ---- Bot Config ----
-    const BC_FIELDS = [
+    const BC_TEXT_FIELDS = [
         'company_name','bot_greeting','tone','emoji_enabled',
         'product_catalog','size_guide','delivery_info',
-        'payment_accounts','currency_symbol',
-        'off_topic_reply','confidential_reply','unavailable_reply',
-        'custom_order_reply','corporate_info','custom_instructions',
+        'currency_symbol','off_topic_reply','confidential_reply',
+        'unavailable_reply','custom_order_reply','corporate_info','custom_instructions',
     ];
 
     function botCfgStatus(msg, ok) {
         const el = document.getElementById('bot-cfg-status');
-        el.textContent = msg;
-        el.style.display = 'block';
-        el.style.background = ok ? 'var(--hi-soft)' : '#fef2f2';
-        el.style.color = ok ? 'var(--hi-ink)' : '#b91c1c';
-        if (ok) setTimeout(() => { el.style.display = 'none'; }, 3000);
+        const inl = document.getElementById('bot-cfg-inline-status');
+        el.className = 'bc-status ' + (ok ? 'ok' : 'err');
+        el.innerHTML = (ok
+            ? '<svg style="width:15px;height:15px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
+            : '<svg style="width:15px;height:15px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>')
+            + msg;
+        if (inl) inl.textContent = '';
+        if (ok) { setTimeout(() => { el.className = 'bc-status'; el.innerHTML = ''; }, 3500); }
+    }
+
+    // ---- Bank card UI ----
+    let _bcBanks = [];
+
+    function bcRenderBanks() {
+        const list = document.getElementById('bc-bank-list');
+        if (!list) return;
+        list.innerHTML = '';
+        _bcBanks.forEach((b, i) => {
+            const card = document.createElement('div');
+            card.className = 'bc-bank-card';
+            card.innerHTML = `
+                <button class="bc-bank-remove" type="button" onclick="bcRemoveBank(${i})" title="წაშლა">
+                    <svg style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+                <div class="bc-field" style="grid-column:1/3">
+                    <label>ბანკის სახელი</label>
+                    <input type="text" value="${b.bank||''}" placeholder="მაგ: TBC" oninput="_bcBanks[${i}].bank=this.value">
+                </div>
+                <div class="bc-field">
+                    <label>IBAN / ანგარიში</label>
+                    <input type="text" value="${b.iban||''}" placeholder="GE58TB..." oninput="_bcBanks[${i}].iban=this.value">
+                </div>
+                <div class="bc-field">
+                    <label>მიმღების სახელი</label>
+                    <input type="text" value="${b.name||''}" placeholder="Tissu Shop" oninput="_bcBanks[${i}].name=this.value">
+                </div>`;
+            list.appendChild(card);
+        });
+        const hidden = document.getElementById('bc-payment_accounts');
+        if (hidden) hidden.value = JSON.stringify(_bcBanks);
+    }
+
+    function bcAddBank() {
+        _bcBanks.push({ bank: '', iban: '', name: '' });
+        bcRenderBanks();
+    }
+
+    function bcRemoveBank(i) {
+        _bcBanks.splice(i, 1);
+        bcRenderBanks();
     }
 
     async function loadBotConfig() {
+        const inl = document.getElementById('bot-cfg-inline-status');
+        if (inl) inl.textContent = 'იტვირთება...';
         try {
             const r = await fetch('/api/admin/bot-config', { credentials: 'include' });
             if (!r.ok) { botCfgStatus('ჩატვირთვა ვერ მოხდა: ' + r.status, false); return; }
             const cfg = await r.json();
-            BC_FIELDS.forEach(f => {
+            BC_TEXT_FIELDS.forEach(f => {
                 const el = document.getElementById('bc-' + f);
                 if (!el) return;
                 let val = cfg[f] ?? '';
-                if (f === 'payment_accounts') {
-                    val = typeof val === 'string' ? val : JSON.stringify(val, null, 2);
-                } else if (f === 'emoji_enabled') {
-                    val = val === true || val === 'true' ? 'true' : 'false';
-                }
+                if (f === 'emoji_enabled') val = (val === true || val === 'true') ? 'true' : 'false';
                 el.value = String(val);
             });
+            // banks
+            let banks = cfg['payment_accounts'] ?? [];
+            if (typeof banks === 'string') { try { banks = JSON.parse(banks); } catch(_) { banks = []; } }
+            if (!Array.isArray(banks)) banks = [];
+            _bcBanks = banks.map(b => ({ bank: b.bank||'', iban: b.iban||'', name: b.name||'' }));
+            bcRenderBanks();
+            if (inl) inl.textContent = '';
         } catch(e) {
             botCfgStatus('შეცდომა: ' + e.message, false);
         }
     }
 
     async function saveBotConfig() {
+        const inl = document.getElementById('bot-cfg-inline-status');
+        if (inl) inl.textContent = 'ინახება...';
         const data = {};
-        for (const f of BC_FIELDS) {
+        for (const f of BC_TEXT_FIELDS) {
             const el = document.getElementById('bc-' + f);
             if (!el) continue;
             let val = el.value.trim();
-            if (f === 'payment_accounts') {
-                try { val = JSON.parse(val); } catch(e) {
-                    botCfgStatus('payment_accounts — JSON არ არის სწორი', false); return;
-                }
-            } else if (f === 'emoji_enabled') {
-                val = val === 'true';
-            }
-            if (val !== '' && val !== null) data[f] = val;
+            if (f === 'emoji_enabled') val = val === 'true';
+            if (val !== '') data[f] = val;
         }
+        data['payment_accounts'] = _bcBanks.filter(b => b.bank || b.iban);
         try {
             const csrfCookie = document.cookie.split(';').map(c=>c.trim()).find(c=>c.startsWith('csrf_token='));
             const csrf = csrfCookie ? csrfCookie.split('=')[1] : '';
