@@ -2502,17 +2502,13 @@
                 <button class="bc-bank-remove" type="button" onclick="bcRemoveBank(${i})" title="წაშლა">
                     <svg style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
-                <div class="bc-field" style="grid-column:1/3">
+                <div class="bc-field">
                     <label>ბანკის სახელი</label>
-                    <input type="text" value="${b.bank||''}" placeholder="მაგ: TBC" oninput="_bcBanks[${i}].bank=this.value">
+                    <input type="text" value="${b.bank_name||''}" placeholder="მაგ: თიბისი" oninput="_bcBanks[${i}].bank_name=this.value">
                 </div>
                 <div class="bc-field">
-                    <label>IBAN / ანგარიში</label>
-                    <input type="text" value="${b.iban||''}" placeholder="GE58TB..." oninput="_bcBanks[${i}].iban=this.value">
-                </div>
-                <div class="bc-field">
-                    <label>მიმღების სახელი</label>
-                    <input type="text" value="${b.name||''}" placeholder="Tissu Shop" oninput="_bcBanks[${i}].name=this.value">
+                    <label>ანგარიშის ნომერი (IBAN)</label>
+                    <input type="text" value="${b.account_number||''}" placeholder="GE58TB..." oninput="_bcBanks[${i}].account_number=this.value">
                 </div>`;
             list.appendChild(card);
         });
@@ -2521,7 +2517,7 @@
     }
 
     function bcAddBank() {
-        _bcBanks.push({ bank: '', iban: '', name: '' });
+        _bcBanks.push({ bank_name: '', account_number: '' });
         bcRenderBanks();
     }
 
@@ -2548,7 +2544,7 @@
             let banks = cfg['payment_accounts'] ?? [];
             if (typeof banks === 'string') { try { banks = JSON.parse(banks); } catch(_) { banks = []; } }
             if (!Array.isArray(banks)) banks = [];
-            _bcBanks = banks.map(b => ({ bank: b.bank||'', iban: b.iban||'', name: b.name||'' }));
+            _bcBanks = banks.map(b => ({ bank_name: b.bank_name||'', account_number: b.account_number||'' }));
             bcRenderBanks();
             if (inl) inl.textContent = '';
         } catch(e) {
@@ -2567,7 +2563,7 @@
             if (f === 'emoji_enabled') val = val === 'true';
             if (val !== '') data[f] = val;
         }
-        data['payment_accounts'] = _bcBanks.filter(b => b.bank || b.iban);
+        data['payment_accounts'] = _bcBanks.filter(b => b.bank_name || b.account_number);
         try {
             const csrfCookie = document.cookie.split(';').map(c=>c.trim()).find(c=>c.startsWith('csrf_token='));
             const csrf = csrfCookie ? csrfCookie.split('=')[1] : '';
