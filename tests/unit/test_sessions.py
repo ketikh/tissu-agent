@@ -31,7 +31,14 @@ def test_session_token_roundtrips():
     s = _reimport()
     tok = s.issue_session_token(user_id=42, tenant_id="default")
     loaded = s.load_session_token(tok)
-    assert loaded == {"user_id": 42, "tenant_id": "default"}
+    assert loaded == {"user_id": 42, "tenant_id": "default", "epoch": 0}
+
+
+def test_session_token_carries_epoch():
+    s = _reimport()
+    tok = s.issue_session_token(user_id=7, tenant_id="abc", epoch=3)
+    loaded = s.load_session_token(tok)
+    assert loaded["epoch"] == 3
 
 
 def test_session_token_rejects_garbled_input():

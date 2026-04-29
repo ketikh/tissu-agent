@@ -33,6 +33,7 @@ from src.db import (
     update_tenant_fb_credentials, delete_tenant_cascade,
     update_tenant_features, list_pricing_plans, update_pricing_plan,
     log_super_action, list_super_actions, regenerate_tenant_api_key,
+    bump_admin_session_epoch, get_admin_session_epoch,
 )
 from src.sessions import IMPERSONATION_SECONDS
 from src.secrets_vault import encrypt_secret, redacted
@@ -898,6 +899,91 @@ async def admin_reset_password_submit(
     await update_admin_user_password(user_id, new_hash)
     await invalidate_all_password_resets_for(user_id)
     return RedirectResponse(url="/admin/login?reset=1", status_code=303)
+
+
+@app.get("/admin/settings", response_class=HTMLResponse)
+async def admin_settings_page(request: Request):
+    """Account settings page: change password + logout all devices."""
+    html_path = Path(__file__).parent / "admin-settings.html"
+    return HTMLResponse(
+        html_path.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.post("/api/admin/change-password")
+async def admin_change_password(request: Request):
+    """Change the logged-in admin's password.
+
+    Body: {"old_password": str, "new_password": str, "new_password2": str}
+
+    On success:
+    - Updates the password hash
+    - Bumps session_epoch → invalidates every other active session
+    - Re-issues cookies for the current session with the new epoch
+    so the caller stays logged in on this device.
+    """
+    user_id = getattr(request.state, "admin_user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="not signed in")
+
+    body = await request.json()
+    old_pw = (body.get("old_password") or "").strip()
+    new_pw = (body.get("new_password") or "").strip()
+    new_pw2 = (body.get("new_password2") or "").strip()
+
+    if not old_pw or not new_pw:
+        raise HTTPException(status_code=400, detail="missing fields")
+    if len(new_pw) < 8:
+        raise HTTPException(status_code=400, detail="password_too_short")
+    if new_pw != new_pw2:
+        raise HTTPException(status_code=400, detail="passwords_mismatch")
+
+    user = await find_admin_user_by_id(int(user_id))
+    if not user or not verify_password(old_pw, user["password_hash"]):
+        raise HTTPException(status_code=400, detail="wrong_old_password")
+
+    new_hash = hash_password(new_pw)
+    await update_admin_user_password(int(user_id), new_hash)
+    new_epoch = await bump_admin_session_epoch(int(user_id))
+
+    # Re-issue session + CSRF cookies with the new epoch so this device
+    # stays logged in; every other browser is kicked out automatically.
+    tenant_id = getattr(request.state, "tenant_id", DEFAULT_TENANT_ID)
+    new_token = issue_session_token(int(user_id), tenant_id, epoch=new_epoch)
+    new_csrf = issue_csrf_token(new_token)
+    secure = _is_secure_request(request)
+
+    from fastapi.responses import JSONResponse as _JSONResponse
+    response = _JSONResponse({"ok": True})
+    response.set_cookie(
+        SESSION_COOKIE_NAME, new_token,
+        **cookie_kwargs(LONG_SESSION_SECONDS, secure),
+    )
+    response.set_cookie(
+        CSRF_COOKIE_NAME, new_csrf,
+        max_age=LONG_SESSION_SECONDS, httponly=False,
+        secure=secure, samesite="lax", path="/",
+    )
+    return response
+
+
+@app.post("/api/admin/logout-all-devices")
+async def admin_logout_all_devices(request: Request):
+    """Bump session_epoch → invalidate every active session for this
+    user, including the current browser. Caller should redirect to
+    /admin/login immediately after."""
+    user_id = getattr(request.state, "admin_user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="not signed in")
+
+    await bump_admin_session_epoch(int(user_id))
+
+    from fastapi.responses import JSONResponse as _JSONResponse
+    response = _JSONResponse({"ok": True})
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    response.delete_cookie(CSRF_COOKIE_NAME, path="/")
+    return response
 
 
 @app.get("/admin/chat-test", response_class=HTMLResponse)

@@ -23,7 +23,10 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from src.db import DEFAULT_TENANT_ID, resolve_api_key, get_tenant, update_tenant_status
+from src.db import (
+    DEFAULT_TENANT_ID, resolve_api_key, get_tenant,
+    update_tenant_status, get_admin_session_epoch,
+)
 from src.sessions import (
     SESSION_COOKIE_NAME, CSRF_COOKIE_NAME,
     SHORT_SESSION_SECONDS, LONG_SESSION_SECONDS,
@@ -148,6 +151,11 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             if cookie:
                 session = load_session_token(cookie, max_age_seconds=LONG_SESSION_SECONDS)
                 if session and "user_id" in session:
+                    if not await _session_epoch_ok(session):
+                        return JSONResponse(
+                            {"error": "session_revoked"},
+                            status_code=401,
+                        )
                     if (request.method in UNSAFE_METHODS
                             and not _csrf_ok(request, cookie)):
                         return JSONResponse(
@@ -259,6 +267,12 @@ class AdminSessionMiddleware(BaseHTTPMiddleware):
         if cookie:
             session = load_session_token(cookie, max_age_seconds=LONG_SESSION_SECONDS)
             if session and "user_id" in session:
+                # Server-side revocation: any token whose epoch is
+                # older than the user's current session_epoch was
+                # invalidated by a password change or "logout all
+                # devices". Treat as expired → bounce to login.
+                if not await _session_epoch_ok(session):
+                    return _redirect_to_login()
                 # Admin HTML POST endpoints (e.g. a future settings form)
                 # get the same CSRF check. Login, logout, and password
                 # reset are exempt — they either predate the session or
@@ -306,6 +320,24 @@ class AdminSessionMiddleware(BaseHTTPMiddleware):
             content=None,
             headers={"location": "/admin/login?error=expired"},
         ) if False else _redirect_to_login()
+
+
+async def _session_epoch_ok(session: dict) -> bool:
+    """Return True iff the session token's epoch matches the user's
+    current session_epoch in the DB. A None / missing epoch in the
+    token counts as 0 — old tokens issued before this column existed
+    stay valid until the user first bumps (e.g. by changing password).
+    Defensive on DB errors: a failed lookup keeps the session alive
+    rather than locking everyone out on a transient outage."""
+    user_id = session.get("user_id")
+    if not user_id:
+        return False
+    token_epoch = int(session.get("epoch") or 0)
+    try:
+        current = await get_admin_session_epoch(int(user_id))
+    except Exception:
+        return True
+    return token_epoch >= current
 
 
 def _trial_expired(trial_ends_at: str) -> bool:

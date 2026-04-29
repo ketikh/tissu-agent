@@ -72,8 +72,15 @@ def issue_session_token(
     user_id: int,
     tenant_id: str,
     impersonator_id: int | None = None,
+    epoch: int = 0,
 ) -> str:
     """Return a signed cookie value carrying the user id + tenant id.
+
+    ``epoch`` is the user's session_epoch at the moment of issue. The
+    middleware compares it against the current DB value on every
+    request — bumping the user's epoch (e.g. on password change or
+    "logout all devices") invalidates every previously-issued token
+    in one shot, without a session table.
 
     When ``impersonator_id`` is set, the session represents a
     super-admin acting AS that user (Phase 2 "login as customer"
@@ -81,7 +88,11 @@ def issue_session_token(
     impersonation session, the admin UI shows a banner, and
     destructive actions can be blocked.
     """
-    payload: dict = {"user_id": int(user_id), "tenant_id": str(tenant_id)}
+    payload: dict = {
+        "user_id": int(user_id),
+        "tenant_id": str(tenant_id),
+        "epoch": int(epoch),
+    }
     if impersonator_id is not None:
         payload["impersonator_id"] = int(impersonator_id)
     return _serializer(_SESSION_SALT).dumps(payload)

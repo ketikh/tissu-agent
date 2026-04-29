@@ -617,6 +617,15 @@ async def init_db():
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_tenant_email "
             "ON admin_users (tenant_id, LOWER(email))"
         )
+        # Bumped on password change or "logout all devices" — every
+        # session token carries the epoch it was issued at, and the
+        # middleware refuses any token whose epoch is older than the
+        # user's current value. That gives us server-side revocation
+        # without a session table.
+        await conn.execute(
+            "ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS "
+            "session_epoch INTEGER NOT NULL DEFAULT 0"
+        )
 
         # Password-reset tokens. We store only the hash of the token so
         # a DB dump doesn't hand out active reset links. used_at gets
@@ -823,6 +832,36 @@ async def update_admin_user_password(user_id: int, new_hash: str) -> None:
         "UPDATE admin_users SET password_hash = $1 WHERE id = $2",
         new_hash, user_id,
     )
+
+
+async def bump_admin_session_epoch(user_id: int) -> int:
+    """Increment session_epoch and return the new value.
+
+    Every active session token carries the epoch it was issued at; the
+    middleware refuses any token whose epoch is < the user's current
+    value. Bumping therefore invalidates every existing session for
+    this user atomically. Used by change-password and logout-all-
+    devices."""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "UPDATE admin_users SET session_epoch = session_epoch + 1 "
+        "WHERE id = $1 RETURNING session_epoch",
+        user_id,
+    )
+    return int(row["session_epoch"]) if row else 0
+
+
+async def get_admin_session_epoch(user_id: int) -> int:
+    """Read the current session_epoch for ``user_id``. Used by the
+    middleware on every authenticated request to decide whether the
+    presented token is still valid. Returns 0 if the user is missing —
+    the caller will reject the token regardless because find_admin_
+    user_by_id will already have returned None."""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT session_epoch FROM admin_users WHERE id = $1", user_id,
+    )
+    return int(row["session_epoch"]) if row else 0
 
 
 async def create_password_reset(

@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tissu Shop — პარამეტრები</title>
+    <link rel="preconnect" href="https://rsms.me/">
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0; padding: 0;
+            font-family: "Inter var", "Inter", -apple-system, system-ui, sans-serif;
+            background: #F8F7F4;
+            color: #17140E;
+            min-height: 100vh;
+        }
+        body { padding: 40px 24px; }
+        .page {
+            max-width: 520px;
+            margin: 0 auto;
+        }
+        .back {
+            display: inline-flex; align-items: center; gap: 6px;
+            text-decoration: none; color: #8B8478; font-size: 13px;
+            margin-bottom: 28px;
+            transition: color .12s;
+        }
+        .back:hover { color: #17140E; }
+        h1 {
+            margin: 0 0 4px; font-size: 22px; font-weight: 600;
+            letter-spacing: -0.01em;
+        }
+        .subtitle { margin: 0 0 36px; font-size: 14px; color: #8B8478; }
+
+        .card {
+            background: #FFFFFF;
+            border: 1px solid #ECE7DF;
+            border-radius: 14px;
+            padding: 28px 28px 24px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 12px rgba(23,20,14,.04);
+        }
+        .card-title {
+            font-size: 15px; font-weight: 600; margin: 0 0 4px;
+        }
+        .card-desc {
+            font-size: 13px; color: #8B8478; margin: 0 0 22px;
+        }
+        label {
+            display: block; margin-bottom: 6px;
+            font-size: 13px; font-weight: 500; color: #4A443B;
+        }
+        input[type="password"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #D8D2C7;
+            border-radius: 8px;
+            font-size: 15px;
+            font-family: inherit;
+            background: #FBFAF7;
+            color: #17140E;
+            transition: border-color .12s, background .12s;
+        }
+        input[type="password"]:focus {
+            outline: none;
+            border-color: #1F1B16;
+            background: #FFFFFF;
+        }
+        .field { margin-bottom: 16px; }
+        .field:last-of-type { margin-bottom: 20px; }
+
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            gap: 8px;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-size: 14px; font-weight: 500; font-family: inherit;
+            cursor: pointer; border: none;
+            transition: background .12s, opacity .12s;
+        }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-primary {
+            background: #1F1B16; color: #FBFAF7;
+            width: 100%;
+        }
+        .btn-primary:hover:not(:disabled) { background: #000; }
+        .btn-danger {
+            background: #FEF2F2; color: #DC2626;
+            border: 1px solid #FECACA;
+            width: 100%;
+        }
+        .btn-danger:hover:not(:disabled) { background: #FEE2E2; }
+
+        .alert {
+            display: none;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-bottom: 14px;
+        }
+        .alert-error { background: #FEF2F2; color: #991B1B; border: 1px solid #FECACA; }
+        .alert-success { background: #F0FDF4; color: #166534; border: 1px solid #BBF7D0; }
+        .alert.show { display: block; }
+
+        .spinner {
+            display: none;
+            width: 16px; height: 16px;
+            border: 2px solid rgba(255,255,255,.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin .6s linear infinite;
+        }
+        .spinner.dark {
+            border-color: rgba(220,38,38,.3);
+            border-top-color: #DC2626;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <a class="back" href="/admin">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+            მთავარი
+        </a>
+
+        <h1>⚙️ პარამეტრები</h1>
+        <p class="subtitle">ანგარიშის უსაფრთხოება</p>
+
+        <!-- Change password -->
+        <div class="card">
+            <p class="card-title">პაროლის შეცვლა</p>
+            <p class="card-desc">ახალი პაროლი მინიმუმ 8 სიმბოლოა</p>
+
+            <div class="alert alert-error" id="pw-error"></div>
+            <div class="alert alert-success" id="pw-success"></div>
+
+            <div class="field">
+                <label for="old-pw">ძველი პაროლი</label>
+                <input type="password" id="old-pw" autocomplete="current-password" placeholder="••••••••">
+            </div>
+            <div class="field">
+                <label for="new-pw">ახალი პაროლი</label>
+                <input type="password" id="new-pw" autocomplete="new-password" placeholder="••••••••">
+            </div>
+            <div class="field">
+                <label for="new-pw2">ახალი პაროლი (გამეორება)</label>
+                <input type="password" id="new-pw2" autocomplete="new-password" placeholder="••••••••">
+            </div>
+
+            <button class="btn btn-primary" id="pw-btn" onclick="changePassword()">
+                <span class="spinner" id="pw-spin"></span>
+                პაროლის შეცვლა
+            </button>
+        </div>
+
+        <!-- Logout all devices -->
+        <div class="card">
+            <p class="card-title">სხვა მოწყობილობებიდან გასვლა</p>
+            <p class="card-desc">ყველა სხვა ბრაუზერი გამოვა სისტემიდან. ეს გვერდიც დაიხურება.</p>
+
+            <div class="alert alert-error" id="logout-error"></div>
+
+            <button class="btn btn-danger" id="logout-btn" onclick="logoutAll()">
+                <span class="spinner dark" id="logout-spin"></span>
+                🚪 სხვა მოწყობილობებიდან გასვლა
+            </button>
+        </div>
+    </div>
+
+    <script>
+        function csrfToken() {
+            return document.cookie.split(';')
+                .map(c => c.trim())
+                .find(c => c.startsWith('admin_csrf='))
+                ?.split('=').slice(1).join('=') || '';
+        }
+
+        function showAlert(id, msg, type) {
+            const el = document.getElementById(id);
+            el.textContent = msg;
+            el.className = `alert alert-${type} show`;
+        }
+
+        function hideAlerts(...ids) {
+            ids.forEach(id => {
+                const el = document.getElementById(id);
+                el.className = 'alert';
+            });
+        }
+
+        async function changePassword() {
+            hideAlerts('pw-error', 'pw-success');
+            const oldPw  = document.getElementById('old-pw').value;
+            const newPw  = document.getElementById('new-pw').value;
+            const newPw2 = document.getElementById('new-pw2').value;
+
+            if (!oldPw || !newPw || !newPw2) {
+                showAlert('pw-error', 'ყველა ველი შეავსე', 'error');
+                return;
+            }
+            if (newPw.length < 8) {
+                showAlert('pw-error', 'ახალი პაროლი მინიმუმ 8 სიმბოლოა', 'error');
+                return;
+            }
+            if (newPw !== newPw2) {
+                showAlert('pw-error', 'ახალი პაროლები არ ემთხვევა', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('pw-btn');
+            const spin = document.getElementById('pw-spin');
+            btn.disabled = true;
+            spin.style.display = 'block';
+
+            try {
+                const res = await fetch('/api/admin/change-password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken(),
+                    },
+                    body: JSON.stringify({
+                        old_password: oldPw,
+                        new_password: newPw,
+                        new_password2: newPw2,
+                    }),
+                });
+                const data = await res.json();
+                if (res.ok && data.ok) {
+                    showAlert('pw-success', 'პაროლი შეიცვალა ✨ სხვა მოწყობილობები გამოვიდა სისტემიდან.', 'success');
+                    document.getElementById('old-pw').value = '';
+                    document.getElementById('new-pw').value = '';
+                    document.getElementById('new-pw2').value = '';
+                } else {
+                    const msgs = {
+                        wrong_old_password: 'ძველი პაროლი არასწორია',
+                        password_too_short: 'ახალი პაროლი მინიმუმ 8 სიმბოლოა',
+                        passwords_mismatch: 'ახალი პაროლები არ ემთხვევა',
+                    };
+                    showAlert('pw-error', msgs[data.detail] || 'შეცდომა — სცადე თავიდან', 'error');
+                }
+            } catch {
+                showAlert('pw-error', 'კავშირის შეცდომა — სცადე თავიდან', 'error');
+            } finally {
+                btn.disabled = false;
+                spin.style.display = 'none';
+            }
+        }
+
+        async function logoutAll() {
+            hideAlerts('logout-error');
+            if (!confirm('ყველა სხვა მოწყობილობა გამოვა სისტემიდან. გავაგრძელოთ?')) return;
+
+            const btn = document.getElementById('logout-btn');
+            const spin = document.getElementById('logout-spin');
+            btn.disabled = true;
+            spin.style.display = 'block';
+
+            try {
+                const res = await fetch('/api/admin/logout-all-devices', {
+                    method: 'POST',
+                    headers: { 'X-CSRF-Token': csrfToken() },
+                });
+                if (res.ok) {
+                    window.location.href = '/admin/login';
+                } else {
+                    showAlert('logout-error', 'შეცდომა — სცადე თავიდან', 'error');
+                    btn.disabled = false;
+                    spin.style.display = 'none';
+                }
+            } catch {
+                showAlert('logout-error', 'კავშირის შეცდომა — სცადე თავიდან', 'error');
+                btn.disabled = false;
+                spin.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
