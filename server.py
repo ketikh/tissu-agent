@@ -35,6 +35,7 @@ from src.db import (
     log_super_action, list_super_actions, regenerate_tenant_api_key,
     bump_admin_session_epoch, get_admin_session_epoch,
     get_bot_config, upsert_bot_config,
+    get_site_sections, upsert_site_section,
 )
 from src.sessions import IMPERSONATION_SECONDS
 from src.secrets_vault import encrypt_secret, redacted
@@ -1018,6 +1019,50 @@ async def admin_put_bot_config(request: Request):
     if not filtered:
         raise HTTPException(status_code=400, detail="no valid fields provided")
     await upsert_bot_config(tenant_id, filtered)
+    return {"ok": True}
+
+
+_VALID_CMS_PAGES = frozenset({"home", "about", "faq", "shop", "contact"})
+_VALID_CMS_SECTIONS: dict[str, frozenset[str]] = {
+    "home": frozenset({
+        "hero", "marquee", "products_grid", "necklace_grid",
+        "about", "reviews", "newsletter",
+    }),
+    "faq":     frozenset({"items"}),
+    "shop":    frozenset({"hero"}),
+    "about":   frozenset({"hero", "two_sides", "process", "cta"}),
+    "contact": frozenset({"hero", "info", "wholesale_card"}),
+}
+
+
+@app.get("/api/admin/site/{page}")
+async def admin_get_site_page(page: str, request: Request):
+    """Return all saved sections for one CMS page."""
+    if page not in _VALID_CMS_PAGES:
+        raise HTTPException(status_code=404, detail="unknown page")
+    tenant_id = get_tenant_id(request)
+    sections = await get_site_sections(tenant_id, page)
+    return {"page": page, "sections": sections}
+
+
+@app.put("/api/admin/site/{page}/{section}")
+async def admin_put_site_section(page: str, section: str, request: Request):
+    """Upsert one section's payload for a CMS page."""
+    if page not in _VALID_CMS_PAGES:
+        raise HTTPException(status_code=404, detail="unknown page")
+    allowed = _VALID_CMS_SECTIONS.get(page, frozenset())
+    if allowed and section not in allowed:
+        raise HTTPException(status_code=400, detail="unknown section for this page")
+    tenant_id = get_tenant_id(request)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON")
+    payload = body.get("payload")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="payload must be an object")
+    position = int(body.get("position", 0))
+    await upsert_site_section(tenant_id, page, section, payload, position)
     return {"ok": True}
 
 

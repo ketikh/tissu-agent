@@ -725,6 +725,31 @@ async def init_db():
             )
             print(f"[bot-config-seed] seeded default Tissu bot config", flush=True)
 
+        # ── Custom domain (Phase 7 prep) ────────────────────────
+        await conn.execute(
+            "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS custom_domain TEXT UNIQUE NULL"
+        )
+
+        # ── Site CMS content ────────────────────────────────────
+        # Each row stores one section of one page for one tenant.
+        # payload is JSONB — schema varies per section type.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS site_content (
+                id SERIAL PRIMARY KEY,
+                tenant_id TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+                page TEXT NOT NULL,
+                section TEXT NOT NULL,
+                position INTEGER NOT NULL DEFAULT 0,
+                payload JSONB NOT NULL DEFAULT '{}',
+                updated_at TEXT NOT NULL DEFAULT '',
+                UNIQUE(tenant_id, page, section)
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_site_content_tenant_page "
+            "ON site_content (tenant_id, page)"
+        )
+
         # Seed an owner account from the env vars if both are set AND
         # no account exists for that tenant yet. This mirrors the
         # bootstrap-admin pattern for api_keys — first-boot convenience
@@ -1579,3 +1604,52 @@ async def upsert_bot_config(tenant_id: str, data: dict) -> None:
             f"UPDATE bot_configs SET {', '.join(fields)} WHERE tenant_id = ${idx}",
             *params,
         )
+
+
+# ── Site CMS helpers ────────────────────────────────────────────────────────
+
+
+async def get_site_sections(tenant_id: str, page: str) -> list[dict]:
+    """Return all sections for a page, ordered by position."""
+    import json as _json
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT section, position, payload, updated_at "
+        "FROM site_content WHERE tenant_id = $1 AND page = $2 "
+        "ORDER BY position",
+        tenant_id, page,
+    )
+    result = []
+    for r in rows:
+        raw = r["payload"]
+        payload = _json.loads(raw) if isinstance(raw, str) else dict(raw)
+        result.append({
+            "section": r["section"],
+            "position": r["position"],
+            "payload": payload,
+            "updated_at": r["updated_at"],
+        })
+    return result
+
+
+async def upsert_site_section(
+    tenant_id: str,
+    page: str,
+    section: str,
+    payload: dict,
+    position: int = 0,
+) -> None:
+    """Insert or replace a single section's content."""
+    import json as _json
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    pool = await get_db()
+    await pool.execute(
+        """INSERT INTO site_content (tenant_id, page, section, position, payload, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (tenant_id, page, section)
+           DO UPDATE SET position = EXCLUDED.position,
+                         payload  = EXCLUDED.payload,
+                         updated_at = EXCLUDED.updated_at""",
+        tenant_id, page, section, position, _json.dumps(payload), now,
+    )

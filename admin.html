@@ -599,6 +599,10 @@
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M12 2a4 4 0 0 1 4 4v5H8V6a4 4 0 0 1 4-4z"/><circle cx="9" cy="17" r="1" fill="currentColor"/><circle cx="15" cy="17" r="1" fill="currentColor"/></svg>
                 ბოტი
             </button>
+            <button class="nav-item" data-tab="site" onclick="showTab('site', this)">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                საიტი
+            </button>
         </nav>
 
         <div class="cat-group">
@@ -1034,6 +1038,73 @@
                     </div>
                 </div>
             </div>
+
+            <!-- ══ SITE CMS TAB ══════════════════════════════════════════ -->
+            <div id="tab-site" class="section">
+                <style>
+                    .cms-page { max-width: 800px; }
+                    .cms-header { margin-bottom: 20px; }
+                    .cms-header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 4px; }
+                    .cms-header p { color: var(--muted); font-size: 13px; }
+                    .cms-page-tabs { display: flex; gap: 6px; margin-bottom: 18px; flex-wrap: wrap; }
+                    .cms-page-tab { padding: 6px 14px; border: 1px solid var(--border); border-radius: 20px; font-size: 12.5px; font-weight: 500; cursor: pointer; background: var(--surface); color: var(--text-2); transition: all .15s; }
+                    .cms-page-tab:hover { border-color: var(--border-strong); color: var(--text); }
+                    .cms-page-tab.active { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+                    .cms-section-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 10px; overflow: hidden; box-shadow: var(--shadow-xs); }
+                    .cms-section-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; cursor: pointer; user-select: none; }
+                    .cms-section-head:hover { background: var(--surface-2); }
+                    .cms-section-icon { width: 28px; height: 28px; border-radius: 7px; background: var(--accent-soft); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+                    .cms-section-icon svg { width: 13px; height: 13px; color: var(--text-2); }
+                    .cms-section-name { font-size: 13px; font-weight: 600; flex: 1; }
+                    .cms-section-sub { font-size: 11.5px; color: var(--muted); }
+                    .cms-section-chevron { color: var(--muted); transition: transform .2s; flex-shrink: 0; }
+                    .cms-section-card.open .cms-section-chevron { transform: rotate(180deg); }
+                    .cms-section-body { display: none; padding: 16px 18px; border-top: 1px solid var(--border); }
+                    .cms-section-card.open .cms-section-body { display: block; }
+                    .cms-lang-tabs { display: flex; gap: 0; margin-bottom: 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; width: fit-content; }
+                    .cms-lang-btn { padding: 5px 16px; font-size: 12px; font-weight: 600; cursor: pointer; background: var(--surface); border: none; color: var(--muted); transition: all .12s; }
+                    .cms-lang-btn.active { background: var(--accent); color: var(--surface); }
+                    .cms-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+                    .cms-field label { font-size: 11.5px; font-weight: 600; color: var(--text-2); }
+                    .cms-field .cms-desc { font-size: 11px; color: var(--muted); margin-top: -2px; }
+                    .cms-field input, .cms-field textarea, .cms-field select { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 10px; font-size: 13px; background: var(--bg); width: 100%; transition: border-color .15s; }
+                    .cms-field input:focus, .cms-field textarea:focus { outline: none; border-color: var(--hi); box-shadow: 0 0 0 3px rgba(200,117,81,0.1); }
+                    .cms-field textarea { resize: vertical; min-height: 64px; line-height: 1.5; }
+                    .cms-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+                    .cms-repeater { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+                    .cms-rep-row { display: flex; gap: 6px; align-items: flex-start; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; }
+                    .cms-rep-row input { flex: 1; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 8px; font-size: 12.5px; background: var(--bg); }
+                    .cms-rep-row input:focus { outline: none; border-color: var(--hi); }
+                    .cms-rep-remove { padding: 4px 6px; background: none; border: none; cursor: pointer; color: var(--muted); border-radius: 4px; flex-shrink: 0; }
+                    .cms-rep-remove:hover { color: var(--danger); background: var(--danger-soft); }
+                    .cms-add-row { display: flex; align-items: center; gap: 6px; border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); padding: 6px 10px; background: none; cursor: pointer; font-size: 12px; color: var(--muted); transition: all .15s; }
+                    .cms-add-row:hover { border-color: var(--hi); color: var(--hi-ink); background: var(--hi-soft); }
+                    .cms-product-pill { display: inline-flex; align-items: center; gap: 6px; background: var(--accent-soft); border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px 3px 8px; font-size: 12px; margin: 2px; }
+                    .cms-product-pill button { background: none; border: none; cursor: pointer; color: var(--muted); padding: 0; line-height: 1; font-size: 14px; }
+                    .cms-product-add { display: flex; gap: 8px; margin-top: 6px; }
+                    .cms-product-add select { flex: 1; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 8px; font-size: 12.5px; background: var(--bg); }
+                    .cms-section-actions { display: flex; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+                    .cms-status-bar { display: none; margin-bottom: 14px; border-radius: var(--radius-sm); padding: 9px 14px; font-size: 13px; font-weight: 500; }
+                    .cms-status-bar.ok { background: var(--success-soft); color: var(--success); display: flex; align-items: center; gap: 7px; }
+                    .cms-status-bar.err { background: var(--danger-soft); color: var(--danger); display: flex; align-items: center; gap: 7px; }
+                    @media (max-width: 600px) { .cms-2col { grid-template-columns: 1fr; } }
+                </style>
+
+                <div class="cms-page">
+                    <div class="cms-header">
+                        <h1>საიტის კონტენტი</h1>
+                        <p>შეცვალე საიტის ტექსტები, ფოტოები და სტრუქტურა. ცვლილება ~1 წუთში გამოჩნდება საიტზე.</p>
+                    </div>
+                    <div id="cms-status" class="cms-status-bar"></div>
+                    <div class="cms-page-tabs">
+                        <button class="cms-page-tab active" onclick="cmsSwitchPage('home',this)">🏠 მთავარი</button>
+                        <button class="cms-page-tab" onclick="cmsSwitchPage('faq',this)">❓ FAQ</button>
+                        <button class="cms-page-tab" onclick="cmsSwitchPage('shop',this)">🛍 მაღაზია</button>
+                    </div>
+                    <div id="cms-sections-container"></div>
+                </div>
+            </div>
+
         </div>
     </main>
 </div>
@@ -2583,6 +2654,452 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         document.querySelector('.nav-item[data-tab="bot"]')?.addEventListener('click', loadBotConfig);
+        document.querySelector('.nav-item[data-tab="site"]')?.addEventListener('click', () => cmsSwitchPage('home', document.querySelector('.cms-page-tab.active')));
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
+    // CMS Editor
+    // ══════════════════════════════════════════════════════════════════════
+
+    let _cmsPage = 'home';
+    let _cmsSections = {};   // page → { section → payload }
+    let _cmsLang = 'ka';     // active language tab
+    let _cmsInventory = [];  // cached product list for pickers
+
+    // Section definitions — what fields each section exposes
+    const CMS_DEFS = {
+        home: [
+            { key: 'hero', label: 'Hero', sub: 'მთავარი ბანერი — სათაური, ლიდ-ტექსტი, ღილაკი', icon: 'M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z', fields: [
+                { k:'eyebrow',   bi:true,  label:'Eyebrow (პატარა ზედა ტექსტი)', hint:'მაგ: "ხელნაკეთი თბილისიდან"' },
+                { k:'title',     bi:true,  label:'სათაური',        hint:'მთავარი H1, ~60 სიმბოლო' },
+                { k:'italic',    bi:true,  label:'Italic accent',  hint:'დახრილი ხაზი სათაურის ქვეშ' },
+                { k:'lead',      bi:true,  label:'პარაგრაფი',      hint:'~120 სიმბოლო' },
+                { k:'cta_text',  bi:true,  label:'"შოპი" ღილაკის ტექსტი' },
+                { k:'cta_link',  bi:false, label:'ღილაკის ბმული', hint:'მაგ: /shop' },
+                { k:'hero_image_url', bi:false, label:'Hero ფოტოს URL', hint:'Cloudinary-დან' },
+            ]},
+            { key: 'marquee', label: 'Marquee', sub: 'გადარბენი ლენტა გამოსახულებებით', icon: 'M4 6h16M4 12h16M4 18h16', fields: [
+                { k:'phrases', bi:true, label:'ფრაზები', hint:'5–8 მოკლე ფრაზა, ლენტში ბრუნავს', type:'repeater' },
+            ]},
+            { key: 'products_grid', label: 'პროდუქტების Grid', sub: 'მთავარ გვერდზე ნაჩვენები ჩანთები (max 6)', icon: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z', fields: [
+                { k:'title', bi:true, label:'სათაური' },
+                { k:'sub',   bi:true, label:'ქვესათაური' },
+                { k:'attached_product_ids', bi:false, label:'პროდუქტები (max 6)', type:'product_picker', max:6 },
+            ]},
+            { key: 'necklace_grid', label: 'Necklace Grid', sub: 'ყელსაბამების სექცია (max 2)', icon: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 4a6 6 0 0 1 0 12', fields: [
+                { k:'title', bi:true, label:'სათაური' },
+                { k:'attached_product_ids', bi:false, label:'პროდუქტები (max 2)', type:'product_picker', max:2 },
+            ]},
+            { key: 'about', label: 'How it works', sub: '"გადაბრუნე" სექცია — ნაბიჯები', icon: 'M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z', fields: [
+                { k:'title',    bi:true,  label:'სათაური' },
+                { k:'body',     bi:true,  label:'პარაგრაფი', hint:'~150 სიმბოლო' },
+                { k:'steps',    bi:true,  label:'3 ნაბიჯი', type:'steps', hint:'ზუსტად 3 ელემენტი' },
+                { k:'cta_text', bi:true,  label:'ღილაკის ტექსტი' },
+                { k:'cta_link', bi:false, label:'ღილაკის ბმული' },
+                { k:'photo_front_url', bi:false, label:'წინა ფოტოს URL' },
+                { k:'photo_back_url',  bi:false, label:'უკანა ფოტოს URL' },
+            ]},
+            { key: 'reviews', label: 'Reviews', sub: '3 კლიენტის შეფასება', icon: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', fields: [
+                { k:'quotes', bi:true, label:'შეფასებები (3 ცალი)', type:'quotes', hint:'ტექსტი, სახელი, meta, ფოტო' },
+            ]},
+            { key: 'newsletter', label: 'Newsletter', sub: 'Email-ის გამოწერის სექცია', icon: 'M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z', fields: [
+                { k:'title',       bi:true, label:'სათაური' },
+                { k:'body',        bi:true, label:'ტექსტი' },
+                { k:'placeholder', bi:true, label:'Input placeholder', hint:'მაგ: "შეიყვანე email"' },
+                { k:'cta',         bi:true, label:'ღილაკის ტექსტი' },
+            ]},
+        ],
+        faq: [
+            { key: 'items', label: 'კითხვა-პასუხები', sub: 'FAQ სიაში ნაჩვენები ყველა კითხვა', icon: 'M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01', fields: [
+                { k:'questions', bi:true, label:'კითხვა-პასუხები', type:'faq_items' },
+            ]},
+        ],
+        shop: [
+            { key: 'hero', label: 'Shop Hero', sub: 'მაღაზიის გვერდის ზედა ბანერი', icon: 'M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z', fields: [
+                { k:'title', bi:true, label:'სათაური' },
+                { k:'sub',   bi:true, label:'ქვეტექსტი' },
+            ]},
+        ],
+    };
+
+    function cmsGetCsrf() {
+        const c = document.cookie.split(';').map(x=>x.trim()).find(x=>x.startsWith('csrf_token='));
+        return c ? c.split('=')[1] : '';
+    }
+
+    function cmsShowStatus(msg, ok) {
+        const el = document.getElementById('cms-status');
+        el.className = 'cms-status-bar ' + (ok ? 'ok' : 'err');
+        const icon = ok
+            ? '<svg style="width:14px;height:14px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
+            : '<svg style="width:14px;height:14px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+        el.innerHTML = icon + msg;
+        if (ok) setTimeout(() => { el.className = 'cms-status-bar'; el.innerHTML = ''; }, 3500);
+    }
+
+    async function cmsSwitchPage(page, tabEl) {
+        _cmsPage = page;
+        document.querySelectorAll('.cms-page-tab').forEach(t => t.classList.remove('active'));
+        if (tabEl) tabEl.classList.add('active');
+        await cmsLoadPage(page);
+    }
+
+    async function cmsLoadPage(page) {
+        const container = document.getElementById('cms-sections-container');
+        container.innerHTML = '<p style="color:var(--muted);font-size:13px;padding:8px 0">იტვირთება...</p>';
+        try {
+            const r = await fetch(`/api/admin/site/${page}`, { credentials: 'include' });
+            const data = await r.json();
+            if (!_cmsSections[page]) _cmsSections[page] = {};
+            (data.sections || []).forEach(s => { _cmsSections[page][s.section] = s.payload; });
+        } catch(e) {}
+        cmsRenderPage(page);
+    }
+
+    function cmsRenderPage(page) {
+        const container = document.getElementById('cms-sections-container');
+        container.innerHTML = '';
+        const defs = CMS_DEFS[page] || [];
+        defs.forEach((sec, i) => {
+            const payload = (_cmsSections[page] || {})[sec.key] || {};
+            container.appendChild(cmsBuildSectionCard(page, sec, payload, i));
+        });
+    }
+
+    function cmsBuildSectionCard(page, def, payload, position) {
+        const card = document.createElement('div');
+        card.className = 'cms-section-card';
+        card.id = `cms-card-${page}-${def.key}`;
+        card.innerHTML = `
+            <div class="cms-section-head" onclick="cmsToggleSection('${page}','${def.key}')">
+                <div class="cms-section-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${def.icon}"/></svg>
+                </div>
+                <div style="flex:1">
+                    <div class="cms-section-name">${def.label}</div>
+                    <div class="cms-section-sub">${def.sub}</div>
+                </div>
+                <svg class="cms-section-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+            <div class="cms-section-body" id="cms-body-${page}-${def.key}">
+                ${cmsBuildSectionForm(page, def, payload, position)}
+            </div>`;
+        return card;
+    }
+
+    function cmsBuildSectionForm(page, def, payload, position) {
+        const hasBi = def.fields.some(f => f.bi);
+        let html = '';
+        if (hasBi) {
+            html += `<div class="cms-lang-tabs" style="margin-bottom:14px">
+                <button class="cms-lang-btn ${_cmsLang==='ka'?'active':''}" onclick="cmsSetLang('ka','${page}','${def.key}')">ქართული</button>
+                <button class="cms-lang-btn ${_cmsLang==='en'?'active':''}" onclick="cmsSetLang('en','${page}','${def.key}')">English</button>
+            </div>`;
+        }
+        def.fields.forEach(f => {
+            const fieldType = f.type || (f.bi ? 'bilingual' : 'text');
+            html += cmsBuildField(page, def.key, f, payload, fieldType);
+        });
+        html += `<div class="cms-section-actions">
+            <button class="btn btn-primary btn-sm" onclick="cmsSaveSection('${page}','${def.key}',${position})">შენახვა</button>
+            <button class="btn btn-ghost btn-sm" onclick="cmsLoadPage('${page}')">გაუქმება</button>
+        </div>`;
+        return html;
+    }
+
+    function cmsBuildField(page, sectionKey, f, payload, fieldType) {
+        const id = `cms-f-${page}-${sectionKey}-${f.k}`;
+        const hint = f.hint ? `<div class="cms-desc">${f.hint}</div>` : '';
+
+        if (fieldType === 'bilingual') {
+            const ka = payload[`${f.k}_ka`] || '';
+            const en = payload[`${f.k}_en`] || '';
+            const isLong = f.k === 'body' || f.k === 'lead';
+            const inputKa = isLong
+                ? `<textarea id="${id}_ka" data-field="${f.k}_ka" rows="3">${ka}</textarea>`
+                : `<input type="text" id="${id}_ka" data-field="${f.k}_ka" value="${ka.replace(/"/g,'&quot;')}">`;
+            const inputEn = isLong
+                ? `<textarea id="${id}_en" data-field="${f.k}_en" rows="3" style="display:none">${en}</textarea>`
+                : `<input type="text" id="${id}_en" data-field="${f.k}_en" value="${en.replace(/"/g,'&quot;')}" style="display:none">`;
+            return `<div class="cms-field"><label>${f.label}</label>${hint}${inputKa}${inputEn}</div>`;
+        }
+
+        if (fieldType === 'text') {
+            const val = payload[f.k] || '';
+            return `<div class="cms-field"><label>${f.label}</label>${hint}<input type="text" id="${id}" data-field="${f.k}" value="${val.replace(/"/g,'&quot;')}"></div>`;
+        }
+
+        if (fieldType === 'repeater') {
+            const items_ka = payload[`${f.k}_ka`] || [];
+            const items_en = payload[`${f.k}_en`] || [];
+            return `<div class="cms-field"><label>${f.label}</label>${hint}
+                <div class="cms-repeater" id="${id}_ka_list" data-field="${f.k}_ka">${items_ka.map((v,i)=>`<div class="cms-rep-row"><input value="${v}" oninput="cmsRepUpdate('${id}_ka_list',${i},this.value)"><button class="cms-rep-remove" onclick="cmsRepRemove('${id}_ka_list',${i})">×</button></div>`).join('')}</div>
+                <button class="cms-add-row" style="display:${_cmsLang==='ka'?'flex':'none'}" onclick="cmsRepAdd('${id}_ka_list')">+ ქართული ფრაზა</button>
+                <div class="cms-repeater" id="${id}_en_list" data-field="${f.k}_en" style="display:${_cmsLang==='en'?'block':'none'}">${items_en.map((v,i)=>`<div class="cms-rep-row"><input value="${v}" oninput="cmsRepUpdate('${id}_en_list',${i},this.value)"><button class="cms-rep-remove" onclick="cmsRepRemove('${id}_en_list',${i})">×</button></div>`).join('')}</div>
+                <button class="cms-add-row" style="display:${_cmsLang==='en'?'flex':'none'}" onclick="cmsRepAdd('${id}_en_list')">+ English phrase</button>
+            </div>`;
+        }
+
+        if (fieldType === 'steps') {
+            const steps = payload['steps'] || [{title_ka:'',title_en:''},{title_ka:'',title_en:''},{title_ka:'',title_en:''}];
+            while (steps.length < 3) steps.push({title_ka:'',title_en:''});
+            return `<div class="cms-field"><label>${f.label}</label>${hint}
+                ${[0,1,2].map(i => `<div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
+                    <span style="font-size:11px;color:var(--muted);width:16px;text-align:right;flex-shrink:0">${i+1}.</span>
+                    <input type="text" id="${id}_${i}_ka" data-step="${i}" data-lang="ka" value="${(steps[i]?.title_ka||'').replace(/"/g,'&quot;')}" placeholder="ქართული" style="${_cmsLang==='en'?'display:none':''}">
+                    <input type="text" id="${id}_${i}_en" data-step="${i}" data-lang="en" value="${(steps[i]?.title_en||'').replace(/"/g,'&quot;')}" placeholder="English" style="${_cmsLang==='ka'?'display:none':''}">
+                </div>`).join('')}
+            </div>`;
+        }
+
+        if (fieldType === 'quotes') {
+            const quotes = payload['quotes'] || [{},{},{}];
+            while (quotes.length < 3) quotes.push({});
+            return `<div class="cms-field"><label>${f.label}</label>${hint}
+                ${[0,1,2].map(i => `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px">
+                    <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:8px">შეფასება ${i+1}</div>
+                    <input type="text" id="${id}_${i}_text_ka" value="${(quotes[i]?.text_ka||'').replace(/"/g,'&quot;')}" placeholder="ტექსტი (ქართ.)" style="margin-bottom:5px;${_cmsLang==='en'?'display:none':''}">
+                    <input type="text" id="${id}_${i}_text_en" value="${(quotes[i]?.text_en||'').replace(/"/g,'&quot;')}" placeholder="Text (EN)" style="margin-bottom:5px;${_cmsLang==='ka'?'display:none':''}">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                        <input type="text" id="${id}_${i}_name" value="${(quotes[i]?.name||'').replace(/"/g,'&quot;')}" placeholder="სახელი">
+                        <input type="text" id="${id}_${i}_photo_url" value="${(quotes[i]?.photo_url||'').replace(/"/g,'&quot;')}" placeholder="ფოტოს URL">
+                        <input type="text" id="${id}_${i}_meta_ka" value="${(quotes[i]?.meta_ka||'').replace(/"/g,'&quot;')}" placeholder="meta (ქართ.)" style="${_cmsLang==='en'?'display:none':''}">
+                        <input type="text" id="${id}_${i}_meta_en" value="${(quotes[i]?.meta_en||'').replace(/"/g,'&quot;')}" placeholder="meta (EN)" style="${_cmsLang==='ka'?'display:none':''}">
+                    </div>
+                </div>`).join('')}
+            </div>`;
+        }
+
+        if (fieldType === 'product_picker') {
+            const ids = payload[f.k] || [];
+            const max = f.max || 99;
+            const pills = ids.map(id => {
+                const p = _cmsInventory.find(x => String(x.id) === String(id));
+                const label = p ? `${p.code} — ${p.model||''} ${p.size||''}`.trim() : `#${id}`;
+                return `<span class="cms-product-pill">${label}<button onclick="cmsRemoveProduct('${page}','${sectionKey}','${f.k}','${id}')">×</button></span>`;
+            }).join('');
+            const options = _cmsInventory.map(p => `<option value="${p.id}">${p.code} — ${(p.model||'')} ${(p.size||'')} (${p.price}₾)</option>`).join('');
+            return `<div class="cms-field"><label>${f.label} <span style="color:var(--muted);font-weight:400;font-size:11px">max ${max}</span></label>${hint}
+                <div id="${id}_pills">${pills}</div>
+                <div class="cms-product-add" ${ids.length >= max ? 'style="opacity:.4;pointer-events:none"' : ''}>
+                    <select id="${id}_sel"><option value="">— პროდუქტის არჩევა —</option>${options}</select>
+                    <button class="btn btn-ghost btn-sm" onclick="cmsAddProduct('${page}','${sectionKey}','${f.k}','${id}_sel',${max})">+ დამატება</button>
+                </div>
+            </div>`;
+        }
+
+        if (fieldType === 'faq_items') {
+            const questions = payload['questions'] || [];
+            return `<div class="cms-field"><label>${f.label}</label>${hint}
+                <div id="${id}_list">
+                    ${questions.map((q,i) => cmsFaqRow(id, i, q)).join('')}
+                </div>
+                <button class="cms-add-row" style="margin-top:6px" onclick="cmsFaqAdd('${id}_list')">+ კითხვის დამატება</button>
+            </div>`;
+        }
+
+        return '';
+    }
+
+    function cmsFaqRow(id, i, q) {
+        return `<div class="cms-rep-row" style="flex-direction:column;gap:6px" id="${id}_item_${i}">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:11px;font-weight:600;color:var(--muted)">კითხვა ${i+1}</span>
+                <button class="cms-rep-remove" onclick="cmsFaqRemove('${id}_list',${i})">×</button>
+            </div>
+            <input placeholder="კითხვა (ქართ.)" value="${(q.q_ka||'').replace(/"/g,'&quot;')}" data-faq="${i}" data-fk="q_ka">
+            <input placeholder="Question (EN)" value="${(q.q_en||'').replace(/"/g,'&quot;')}" data-faq="${i}" data-fk="q_en">
+            <textarea placeholder="პასუხი (ქართ.)" rows="2" data-faq="${i}" data-fk="a_ka">${q.a_ka||''}</textarea>
+            <textarea placeholder="Answer (EN)" rows="2" data-faq="${i}" data-fk="a_en">${q.a_en||''}</textarea>
+            <input placeholder="კატეგორია (მაგ: Shipping)" value="${(q.category||'').replace(/"/g,'&quot;')}" data-faq="${i}" data-fk="category">
+        </div>`;
+    }
+
+    function cmsToggleSection(page, sectionKey) {
+        const card = document.getElementById(`cms-card-${page}-${sectionKey}`);
+        if (!card) return;
+        const isOpen = card.classList.contains('open');
+        document.querySelectorAll('.cms-section-card.open').forEach(c => c.classList.remove('open'));
+        if (!isOpen) card.classList.add('open');
+    }
+
+    function cmsSetLang(lang, page, sectionKey) {
+        _cmsLang = lang;
+        const body = document.getElementById(`cms-body-${page}-${sectionKey}`);
+        if (!body) return;
+        body.querySelectorAll('[data-field]').forEach(el => {
+            const field = el.dataset.field;
+            if (field.endsWith('_ka')) el.style.display = lang === 'ka' ? '' : 'none';
+            if (field.endsWith('_en')) el.style.display = lang === 'en' ? '' : 'none';
+        });
+        body.querySelectorAll('.cms-lang-btn').forEach(b => b.classList.toggle('active', b.textContent.includes(lang === 'ka' ? 'ქართ' : 'Eng')));
+        // steps
+        body.querySelectorAll('[data-lang]').forEach(el => {
+            el.style.display = el.dataset.lang === lang ? '' : 'none';
+        });
+        // repeater add buttons
+        body.querySelectorAll('.cms-add-row').forEach(btn => {
+            if (btn.textContent.includes('ქართ')) btn.style.display = lang === 'ka' ? 'flex' : 'none';
+            if (btn.textContent.includes('EN') || btn.textContent.includes('Engl')) btn.style.display = lang === 'en' ? 'flex' : 'none';
+        });
+        // quotes
+        body.querySelectorAll('[id*="_text_ka"],[id*="_meta_ka"]').forEach(el => { el.style.display = lang === 'ka' ? '' : 'none'; });
+        body.querySelectorAll('[id*="_text_en"],[id*="_meta_en"]').forEach(el => { el.style.display = lang === 'en' ? '' : 'none'; });
+    }
+
+    function cmsRepUpdate(listId, idx, val) {
+        const list = document.getElementById(listId);
+        if (!list) return;
+        const inputs = list.querySelectorAll('input');
+        if (inputs[idx]) inputs[idx].value = val;
+    }
+
+    function cmsRepAdd(listId) {
+        const list = document.getElementById(listId);
+        if (!list) return;
+        const i = list.querySelectorAll('.cms-rep-row').length;
+        const row = document.createElement('div');
+        row.className = 'cms-rep-row';
+        row.innerHTML = `<input value="" oninput="cmsRepUpdate('${listId}',${i},this.value)"><button class="cms-rep-remove" onclick="cmsRepRemove('${listId}',${i})">×</button>`;
+        list.appendChild(row);
+    }
+
+    function cmsRepRemove(listId, idx) {
+        const list = document.getElementById(listId);
+        if (!list) return;
+        const rows = list.querySelectorAll('.cms-rep-row');
+        if (rows[idx]) rows[idx].remove();
+    }
+
+    function cmsAddProduct(page, sectionKey, fieldKey, selId, max) {
+        const sel = document.getElementById(selId);
+        if (!sel || !sel.value) return;
+        const payload = (_cmsSections[page]||{})[sectionKey] || {};
+        const ids = [...(payload[fieldKey] || [])];
+        if (ids.length >= max) return;
+        if (ids.includes(sel.value)) return;
+        ids.push(sel.value);
+        if (!_cmsSections[page]) _cmsSections[page] = {};
+        if (!_cmsSections[page][sectionKey]) _cmsSections[page][sectionKey] = {};
+        _cmsSections[page][sectionKey][fieldKey] = ids;
+        cmsRenderPage(page);
+        // re-open the card
+        setTimeout(() => { document.getElementById(`cms-card-${page}-${sectionKey}`)?.classList.add('open'); }, 10);
+    }
+
+    function cmsRemoveProduct(page, sectionKey, fieldKey, productId) {
+        const payload = (_cmsSections[page]||{})[sectionKey] || {};
+        const ids = (payload[fieldKey] || []).filter(x => String(x) !== String(productId));
+        if (!_cmsSections[page]) _cmsSections[page] = {};
+        if (!_cmsSections[page][sectionKey]) _cmsSections[page][sectionKey] = {};
+        _cmsSections[page][sectionKey][fieldKey] = ids;
+        cmsRenderPage(page);
+        setTimeout(() => { document.getElementById(`cms-card-${page}-${sectionKey}`)?.classList.add('open'); }, 10);
+    }
+
+    function cmsFaqAdd(listId) {
+        const list = document.getElementById(listId);
+        if (!list) return;
+        const i = list.querySelectorAll('[id*="_item_"]').length;
+        const id = listId.replace('_list','');
+        const div = document.createElement('div');
+        div.innerHTML = cmsFaqRow(id, i, {});
+        list.appendChild(div.firstChild);
+    }
+
+    function cmsFaqRemove(listId, idx) {
+        const item = document.getElementById(listId.replace('_list',`_item_${idx}`));
+        if (item) item.remove();
+    }
+
+    function cmsCollectPayload(page, def) {
+        const body = document.getElementById(`cms-body-${page}-${def.key}`);
+        if (!body) return {};
+        const payload = { ...( (_cmsSections[page]||{})[def.key] || {} ) };
+
+        def.fields.forEach(f => {
+            const fieldType = f.type || (f.bi ? 'bilingual' : 'text');
+            const id = `cms-f-${page}-${def.key}-${f.k}`;
+
+            if (fieldType === 'bilingual') {
+                const ka = body.querySelector(`[data-field="${f.k}_ka"]`);
+                const en = body.querySelector(`[data-field="${f.k}_en"]`);
+                if (ka) payload[`${f.k}_ka`] = ka.value;
+                if (en) payload[`${f.k}_en`] = en.value;
+            } else if (fieldType === 'text') {
+                const el = body.querySelector(`[data-field="${f.k}"]`);
+                if (el) payload[f.k] = el.value;
+            } else if (fieldType === 'repeater') {
+                ['ka','en'].forEach(lang => {
+                    const list = document.getElementById(`${id}_${lang}_list`);
+                    if (!list) return;
+                    payload[`${f.k}_${lang}`] = [...list.querySelectorAll('input')].map(x => x.value).filter(Boolean);
+                });
+            } else if (fieldType === 'steps') {
+                const steps = [0,1,2].map(i => ({
+                    title_ka: (document.getElementById(`${id}_${i}_ka`)?.value || ''),
+                    title_en: (document.getElementById(`${id}_${i}_en`)?.value || ''),
+                }));
+                payload['steps'] = steps;
+            } else if (fieldType === 'quotes') {
+                const quotes = [0,1,2].map(i => ({
+                    text_ka:   document.getElementById(`${id}_${i}_text_ka`)?.value || '',
+                    text_en:   document.getElementById(`${id}_${i}_text_en`)?.value || '',
+                    name:      document.getElementById(`${id}_${i}_name`)?.value || '',
+                    photo_url: document.getElementById(`${id}_${i}_photo_url`)?.value || '',
+                    meta_ka:   document.getElementById(`${id}_${i}_meta_ka`)?.value || '',
+                    meta_en:   document.getElementById(`${id}_${i}_meta_en`)?.value || '',
+                }));
+                payload['quotes'] = quotes;
+            } else if (fieldType === 'faq_items') {
+                const list = document.getElementById(`${id}_list`);
+                if (!list) return;
+                const rows = list.querySelectorAll('[data-faq]');
+                const map = {};
+                rows.forEach(el => {
+                    const i = el.dataset.faq;
+                    const fk = el.dataset.fk;
+                    if (!map[i]) map[i] = {};
+                    map[i][fk] = el.tagName === 'TEXTAREA' ? el.value : el.value;
+                });
+                payload['questions'] = Object.values(map);
+            }
+        });
+        return payload;
+    }
+
+    async function cmsSaveSection(page, sectionKey, position) {
+        const def = (CMS_DEFS[page]||[]).find(d => d.key === sectionKey);
+        if (!def) return;
+        const payload = cmsCollectPayload(page, def);
+        if (!_cmsSections[page]) _cmsSections[page] = {};
+        _cmsSections[page][sectionKey] = payload;
+        try {
+            const r = await fetch(`/api/admin/site/${page}/${sectionKey}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': cmsGetCsrf() },
+                credentials: 'include',
+                body: JSON.stringify({ payload, position }),
+            });
+            const j = await r.json();
+            if (r.ok && j.ok) cmsShowStatus(`"${def.label}" შენახულია ✓`, true);
+            else cmsShowStatus('შეცდომა: ' + (j.detail || r.status), false);
+        } catch(e) {
+            cmsShowStatus('შეცდომა: ' + e.message, false);
+        }
+    }
+
+    // Pre-load inventory for product pickers when the site tab opens
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelector('.nav-item[data-tab="site"]')?.addEventListener('click', async () => {
+            if (!_cmsInventory.length) {
+                try {
+                    const r = await fetch('/api/inventory', { credentials: 'include' });
+                    const d = await r.json();
+                    _cmsInventory = (d.items || d || []);
+                } catch(_) {}
+            }
+        });
     });
 </script>
 </body>

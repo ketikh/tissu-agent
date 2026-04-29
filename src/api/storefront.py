@@ -17,7 +17,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
-from src.db import DEFAULT_TENANT_ID, get_db
+from src.db import DEFAULT_TENANT_ID, get_db, get_site_sections
 
 
 router = APIRouter(prefix="/api/storefront", tags=["storefront"])
@@ -210,3 +210,40 @@ async def get_product(
 
     response.headers["Cache-Control"] = STOREFRONT_CACHE
     return _serialize(dict(row))
+
+
+_VALID_PAGES = frozenset({"home", "about", "faq", "shop", "contact"})
+
+
+@router.get("/content/{page}")
+async def get_site_content(
+    page: str,
+    request: Request,
+    response: Response,
+    tenant_id: str = Depends(_tenant_id),
+):
+    """Return CMS content sections for a page.
+
+    The website calls this to replace its hardcoded copy with owner-edited
+    text.  If a section is missing in the DB the frontend falls back to its
+    built-in defaults, so partial edits are safe.
+    """
+    if page not in _VALID_PAGES:
+        raise HTTPException(status_code=404, detail="page not found")
+
+    sections = await get_site_sections(tenant_id, page)
+    updated_at = max((s["updated_at"] for s in sections), default=None)
+
+    response.headers["Cache-Control"] = STOREFRONT_CACHE
+    return {
+        "page": page,
+        "sections": [
+            {
+                "section": s["section"],
+                "position": s["position"],
+                "payload": s["payload"],
+            }
+            for s in sections
+        ],
+        "updated_at": updated_at,
+    }
