@@ -831,6 +831,23 @@ async def _process_message(
             sys_prefix = f"[SYSTEM: customer_name={customer_name}; delivery_day={delivery_day}]"
         text = f"{sys_prefix}\n{text}"
 
+        # ── Clear history on greeting so bot always starts fresh ──
+        _GREETING_PATTERNS = (
+            "გამარჯობა", "სალამი", "სალამ", "გამარჯობა!", "მოგესალმებ",
+            "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
+        )
+        raw_text = text.split("\n", 1)[-1].strip().lower()
+        if raw_text in _GREETING_PATTERNS or raw_text in {p + "!" for p in _GREETING_PATTERNS}:
+            try:
+                _pool = await get_db()
+                await _pool.execute(
+                    "DELETE FROM messages WHERE conversation_id = $1",
+                    conversation_id,
+                )
+                print(f"[MSG] Greeting detected — cleared history for {conversation_id}", flush=True)
+            except Exception as _e:
+                print(f"[MSG] History clear error: {_e}", flush=True)
+
         # ── Run agent ──
         print(f"[MSG] Calling agent...", flush=True)
         agent = await get_support_sales_agent(tenant_id)
