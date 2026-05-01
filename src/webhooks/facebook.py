@@ -848,7 +848,7 @@ async def _process_message(
                 print(f"[MSG] Greeting — cleared history, replying directly for {conversation_id}", flush=True)
             except Exception as _e:
                 print(f"[MSG] History clear error: {_e}", flush=True)
-            greeting_reply = await get_greeting_text(tenant_id)
+            greeting_reply = await get_greeting_text(DEFAULT_TENANT_ID)
             if FB_PAGE_TOKEN:
                 async with httpx.AsyncClient(timeout=30) as _gc:
                     await _gc.post(
@@ -859,7 +859,7 @@ async def _process_message(
             return
         # ── Run agent ──
         print(f"[MSG] Calling agent...", flush=True)
-        agent = await get_support_sales_agent(tenant_id)
+        agent = await get_support_sales_agent(DEFAULT_TENANT_ID)
         try:
             result = await run_agent(agent, text, conversation_id)
         except Exception as e:
