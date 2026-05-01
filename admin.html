@@ -1365,6 +1365,8 @@
         chats: 'ჩატები',
         sale: 'ფასდაკლება',
         insights: 'ინსაიტები',
+        bot: 'ბოტი',
+        site: 'საიტი',
     };
     const PAGE_CRUMBS = {
         dashboard: 'Overview',
@@ -1375,6 +1377,8 @@
         chats: 'Workspace',
         sale: 'Workspace',
         insights: 'Workspace',
+        bot: 'Settings',
+        site: 'Settings',
     };
 
     function showTab(tab, btn) {
@@ -1401,6 +1405,8 @@
         if (tab === 'sale') loadSale();
         if (tab === 'chats') loadChats();
         if (tab === 'insights') loadInsights();
+        if (tab === 'bot') loadBotConfig();
+        if (tab === 'site') cmsSwitchPage('home', document.querySelector('.cms-page-tab.active'));
     }
 
     let allOrders = [];
@@ -2652,10 +2658,7 @@
         }
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
-        document.querySelector('.nav-item[data-tab="bot"]')?.addEventListener('click', loadBotConfig);
-        document.querySelector('.nav-item[data-tab="site"]')?.addEventListener('click', () => cmsSwitchPage('home', document.querySelector('.cms-page-tab.active')));
-    });
+    // Bot and site tabs are loaded via showTab() — no separate listener needed.
 
     // ══════════════════════════════════════════════════════════════════════
     // CMS Editor
