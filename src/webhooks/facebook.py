@@ -963,12 +963,17 @@ async def _send_product_images(
     # When they ask "დიდიც გაქვთ?" after seeing FP6, we'd resolve to FD2 via
     # pairs — but FP6's photos were already sent. If they haven't seen FD2
     # yet, we still send FD2, otherwise everything is text-only.
-    already_seen_codes = _sent_codes.get(conversation_id, set()) if conversation_id else set()
-    prefiltered_items = [it for it in items if (it.get("code") or "").upper() not in already_seen_codes]
-    if conversation_id and not prefiltered_items:
-        print(f"[PHOTO] All codes already shown in this session — skipping photo send", flush=True)
-        return
-    items_to_send = prefiltered_items if prefiltered_items else items
+    # Exception: photo/link match results (_bypass_inventory_dedup) always
+    # resend — the customer explicitly sent a photo asking about this product.
+    if result.get("_bypass_inventory_dedup"):
+        items_to_send = items
+    else:
+        already_seen_codes = _sent_codes.get(conversation_id, set()) if conversation_id else set()
+        prefiltered_items = [it for it in items if (it.get("code") or "").upper() not in already_seen_codes]
+        if conversation_id and not prefiltered_items:
+            print(f"[PHOTO] All codes already shown in this session — skipping photo send", flush=True)
+            return
+        items_to_send = prefiltered_items if prefiltered_items else items
 
     sent_codes: set[str] = set()
     photos_sent = 0
