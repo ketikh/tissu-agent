@@ -758,6 +758,14 @@ async def init_db():
             )
         """)
 
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS pending_soldout (
+                conversation_id TEXT PRIMARY KEY,
+                code            TEXT NOT NULL,
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+
         # Seed an owner account from the env vars if both are set AND
         # no account exists for that tenant yet. This mirrors the
         # bootstrap-admin pattern for api_keys — first-boot convenience
@@ -1690,4 +1698,33 @@ async def delete_pending_photo(conversation_id: str) -> None:
     pool = await get_db()
     await pool.execute(
         "DELETE FROM pending_photos WHERE conversation_id = $1", conversation_id
+    )
+
+
+async def set_pending_soldout(conversation_id: str, code: str) -> None:
+    """Store the sold-out matched code, keyed by conversation."""
+    pool = await get_db()
+    await pool.execute(
+        """INSERT INTO pending_soldout (conversation_id, code)
+           VALUES ($1, $2)
+           ON CONFLICT (conversation_id) DO UPDATE SET code = EXCLUDED.code, created_at = now()""",
+        conversation_id, code,
+    )
+
+
+async def pop_pending_soldout(conversation_id: str) -> str | None:
+    """Retrieve and delete the pending sold-out code. Returns None if not found."""
+    pool = await get_db()
+    row = await pool.fetchrow(
+        "DELETE FROM pending_soldout WHERE conversation_id = $1 RETURNING code",
+        conversation_id,
+    )
+    return row["code"] if row else None
+
+
+async def delete_pending_soldout(conversation_id: str) -> None:
+    """Remove pending sold-out entry without returning it."""
+    pool = await get_db()
+    await pool.execute(
+        "DELETE FROM pending_soldout WHERE conversation_id = $1", conversation_id
     )
