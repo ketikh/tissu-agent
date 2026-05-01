@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 
-from src.agents.support_sales import get_support_sales_agent
+from src.agents.support_sales import get_support_sales_agent, get_greeting_text
 from src.db import (
     get_db, DEFAULT_TENANT_ID,
     get_tenant, get_tenant_by_fb_page_id,
@@ -831,23 +831,32 @@ async def _process_message(
             sys_prefix = f"[SYSTEM: customer_name={customer_name}; delivery_day={delivery_day}]"
         text = f"{sys_prefix}\n{text}"
 
-        # ── Clear history on greeting so bot always starts fresh ──
-        _GREETING_PATTERNS = (
-            "გამარჯობა", "სალამი", "სალამ", "გამარჯობა!", "მოგესალმებ",
-            "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
-        )
+        # ── Short-circuit: reply to pure greetings directly, no LLM needed ──
+        _GREETINGS = frozenset({
+            "გამარჯობა", "გამარჯობა!", "სალამი", "სალამ", "სალამი!",
+            "მოგესალმებ", "hello", "hello!", "hi", "hi!", "hey", "hey!",
+            "good morning", "good afternoon", "good evening",
+        })
         raw_text = text.split("\n", 1)[-1].strip().lower()
-        if raw_text in _GREETING_PATTERNS or raw_text in {p + "!" for p in _GREETING_PATTERNS}:
+        if raw_text in _GREETINGS:
             try:
                 _pool = await get_db()
                 await _pool.execute(
                     "DELETE FROM messages WHERE conversation_id = $1",
                     conversation_id,
                 )
-                print(f"[MSG] Greeting detected — cleared history for {conversation_id}", flush=True)
+                print(f"[MSG] Greeting — cleared history, replying directly for {conversation_id}", flush=True)
             except Exception as _e:
                 print(f"[MSG] History clear error: {_e}", flush=True)
-
+            greeting_reply = await get_greeting_text(tenant_id)
+            if FB_PAGE_TOKEN:
+                async with httpx.AsyncClient(timeout=30) as _gc:
+                    await _gc.post(
+                        "https://graph.facebook.com/v21.0/me/messages",
+                        params={"access_token": FB_PAGE_TOKEN},
+                        json={"recipient": {"id": sender_id}, "message": {"text": greeting_reply}},
+                    )
+            return
         # ── Run agent ──
         print(f"[MSG] Calling agent...", flush=True)
         agent = await get_support_sales_agent(tenant_id)

@@ -261,6 +261,13 @@ _FALLBACK_CFG: dict = {
 }
 
 
+async def get_greeting_text(tenant_id: str = DEFAULT_TENANT_ID) -> str:
+    """Return the configured greeting text for this tenant."""
+    cfg = await get_bot_config(tenant_id) or _FALLBACK_CFG
+    company = cfg.get("company_name") or "ჩვენი კომპანია"
+    return cfg.get("bot_greeting") or f"გამარჯობა ✨ {company}-ის ასისტენტი ვარ. რით შემიძლია დაგეხმაროთ?"
+
+
 async def get_support_sales_agent(tenant_id: str = DEFAULT_TENANT_ID) -> AgentDefinition:
     cfg = await get_bot_config(tenant_id) or _FALLBACK_CFG
     prompt = build_prompt(cfg)
