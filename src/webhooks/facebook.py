@@ -16,6 +16,7 @@ from src.agents.support_sales import get_support_sales_agent, get_greeting_text
 from src.db import (
     get_db, DEFAULT_TENANT_ID,
     get_tenant, get_tenant_by_fb_page_id,
+    save_pending_photo, pop_pending_photo, delete_pending_photo,
 )
 from src.engine import run_agent
 from src.notifications import send_whatsapp_image, send_whatsapp_text
@@ -83,10 +84,6 @@ _sent_codes: dict[str, set[str]] = {}
 # Buffers for text↔photo pairing
 _pending_text: dict[str, dict] = {}   # sender_id -> {text, mid, ...} — text waiting for photo
 _pending_photo: dict[str, dict] = {}  # sender_id -> {image_url, mid, ...} — photo waiting for text
-
-# When AI fails to match a photo we ask the customer for size first; we keep the
-# bytes here and only forward to WhatsApp once we know which size to send.
-_pending_failed_photos: dict[str, bytes] = {}
 
 # When AI matches but the product is sold out, we ask the customer for size first
 # and only then announce it's out of stock for that size.
@@ -291,7 +288,7 @@ async def _process_message(
         # ── Photo handling ──
         if image_url:
             # A new photo replaces whatever old photo was pending size confirmation
-            _pending_failed_photos.pop(conversation_id, None)
+            await delete_pending_photo(conversation_id)
             _pending_soldout.pop(conversation_id, None)
             image_bytes = await download_image(image_url)
             if not image_bytes:
@@ -498,8 +495,8 @@ async def _process_message(
                             )
                         elif photo_bytes:
                             # First photo in the session and AI failed — we don't know the
-                            # customer's size yet. Hold the photo and ask first.
-                            _pending_failed_photos[conversation_id] = photo_bytes
+                            # customer's size yet. Hold the photo in DB and ask first.
+                            await save_pending_photo(conversation_id, photo_bytes)
                             _pending_photos.pop(conversation_id, None)
                             await _log("step6_awaiting_size_before_owner")
                             text = (
@@ -739,8 +736,8 @@ async def _process_message(
 
             # Size answered for a photo that AI previously failed to match →
             # forward it to WhatsApp now, with the size we just learned.
-            if size_wanted and conversation_id in _pending_failed_photos:
-                pending_bytes = _pending_failed_photos.pop(conversation_id)
+            pending_bytes = (await pop_pending_photo(conversation_id)) if size_wanted else None
+            if size_wanted and pending_bytes:
                 try:
                     public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
                     admin_url = f"{public_url}/admin"
@@ -845,6 +842,7 @@ async def _process_message(
                     "DELETE FROM messages WHERE conversation_id = $1",
                     conversation_id,
                 )
+                await delete_pending_photo(conversation_id)
                 print(f"[MSG] Greeting — cleared history, replying directly for {conversation_id}", flush=True)
             except Exception as _e:
                 print(f"[MSG] History clear error: {_e}", flush=True)

@@ -750,6 +750,14 @@ async def init_db():
             "ON site_content (tenant_id, page)"
         )
 
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS pending_photos (
+                conversation_id TEXT PRIMARY KEY,
+                image_bytes     BYTEA NOT NULL,
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+
         # Seed an owner account from the env vars if both are set AND
         # no account exists for that tenant yet. This mirrors the
         # bootstrap-admin pattern for api_keys — first-boot convenience
@@ -1652,4 +1660,34 @@ async def upsert_site_section(
                          payload  = EXCLUDED.payload,
                          updated_at = EXCLUDED.updated_at""",
         tenant_id, page, section, position, _json.dumps(payload), now,
+    )
+
+
+async def save_pending_photo(conversation_id: str, image_bytes: bytes) -> None:
+    """Persist a photo (bytes) that AI failed to match, keyed by conversation."""
+    pool = await get_db()
+    await pool.execute(
+        """INSERT INTO pending_photos (conversation_id, image_bytes)
+           VALUES ($1, $2)
+           ON CONFLICT (conversation_id) DO UPDATE SET image_bytes = EXCLUDED.image_bytes,
+                                                       created_at  = now()""",
+        conversation_id, image_bytes,
+    )
+
+
+async def pop_pending_photo(conversation_id: str) -> bytes | None:
+    """Retrieve and delete a pending photo. Returns None if not found."""
+    pool = await get_db()
+    row = await pool.fetchrow(
+        "DELETE FROM pending_photos WHERE conversation_id = $1 RETURNING image_bytes",
+        conversation_id,
+    )
+    return bytes(row["image_bytes"]) if row else None
+
+
+async def delete_pending_photo(conversation_id: str) -> None:
+    """Remove pending photo without returning it (e.g. on conversation reset)."""
+    pool = await get_db()
+    await pool.execute(
+        "DELETE FROM pending_photos WHERE conversation_id = $1", conversation_id
     )
