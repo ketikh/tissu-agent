@@ -766,6 +766,17 @@ async def init_db():
             )
         """)
 
+        # Enable RLS on every public table so Supabase REST API (anon key)
+        # cannot read or write data. The postgres superuser used by asyncpg
+        # bypasses RLS automatically — no policies needed for the backend.
+        _all_tables = await conn.fetch(
+            "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+        )
+        for _t in _all_tables:
+            await conn.execute(
+                f"ALTER TABLE {_t['tablename']} ENABLE ROW LEVEL SECURITY"
+            )
+
         # Seed an owner account from the env vars if both are set AND
         # no account exists for that tenant yet. This mirrors the
         # bootstrap-admin pattern for api_keys — first-boot convenience
