@@ -20,7 +20,7 @@ from src.db import (
     set_pending_soldout, pop_pending_soldout, delete_pending_soldout,
 )
 from src.engine import run_agent
-from src.notifications import send_whatsapp_image, send_whatsapp_text
+from src.notifications import notify_owner_image, notify_owner_text
 from src.secrets_vault import decrypt_secret
 from src.tools.support import _pending_photos, _ai_hints
 from src.vision import download_image, is_payment_receipt
@@ -96,31 +96,31 @@ BUFFER_SECONDS = 6
 
 
 def _bg_wa_image(image_bytes: bytes, caption: str, filename: str = "photo.jpg") -> None:
-    """Fire-and-forget WhatsApp image send. Owner notifications must NEVER
-    block the customer's reply — a slow or failing WA call (e.g. 24h window
-    closed) previously stalled FB/IG responses entirely."""
+    """Fire-and-forget owner image notification (Telegram primary, WA fallback).
+    Owner notifications must NEVER block the customer's reply — a slow or
+    failing send previously stalled FB/IG responses entirely."""
     async def _run():
         try:
             await asyncio.wait_for(
-                send_whatsapp_image(image_bytes, caption=caption, filename=filename),
+                notify_owner_image(image_bytes, caption=caption, filename=filename),
                 timeout=20,
             )
         except asyncio.TimeoutError:
-            print("[WA] image send timed out (20s) — continuing", flush=True)
+            print("[NOTIFY] image send timed out (20s) — continuing", flush=True)
         except Exception as e:
-            print(f"[WA] image send error: {e}", flush=True)
+            print(f"[NOTIFY] image send error: {e}", flush=True)
     asyncio.create_task(_run())
 
 
 def _bg_wa_text(message: str) -> None:
-    """Fire-and-forget WhatsApp text send."""
+    """Fire-and-forget owner text notification (Telegram primary, WA fallback)."""
     async def _run():
         try:
-            await asyncio.wait_for(send_whatsapp_text(message), timeout=10)
+            await asyncio.wait_for(notify_owner_text(message), timeout=10)
         except asyncio.TimeoutError:
-            print("[WA] text send timed out (10s) — continuing", flush=True)
+            print("[NOTIFY] text send timed out (10s) — continuing", flush=True)
         except Exception as e:
-            print(f"[WA] text send error: {e}", flush=True)
+            print(f"[NOTIFY] text send error: {e}", flush=True)
     asyncio.create_task(_run())
 
 

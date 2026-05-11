@@ -61,16 +61,43 @@ from src.agents.support_sales import get_support_sales_agent
 from src.agents.marketing import get_marketing_agent
 from src.channels import get_adapter, ADAPTERS
 from src.webhooks.facebook import router as fb_router
+from src.webhooks.telegram import router as tg_router
 from src.webhooks.whatsapp import router as wa_router
 from src.api.storefront import router as storefront_router
 from src.auth import APIKeyMiddleware, AdminSessionMiddleware
 from src.security_headers import SecurityHeadersMiddleware
 
 
+async def _register_telegram_webhook() -> None:
+    """If a Telegram bot token is configured, register our /tg-webhook URL
+    so Telegram pushes owner messages to us. Idempotent — re-registering
+    with the same URL is a cheap no-op."""
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    if not token:
+        return
+    public_url = os.environ.get("PUBLIC_URL", "https://tissu-agent-production.up.railway.app").rstrip("/")
+    webhook_url = f"{public_url}/tg-webhook"
+    try:
+        import httpx as _httpx
+        async with _httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"https://api.telegram.org/bot{token}/setWebhook",
+                json={"url": webhook_url, "drop_pending_updates": False},
+            )
+            data = resp.json()
+            if data.get("ok"):
+                print(f"[TG] Webhook set: {webhook_url}", flush=True)
+            else:
+                print(f"[TG] Webhook set failed: {data}", flush=True)
+    except Exception as e:
+        print(f"[TG] Webhook setup error: {e}", flush=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     await seed_knowledge_base()
+    await _register_telegram_webhook()
     yield
     await close_pool()
 
@@ -109,6 +136,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 # Include webhook routers
 app.include_router(fb_router)
 app.include_router(wa_router)
+app.include_router(tg_router)
 # Public storefront read API — also under /api/* so it goes through the
 # same X-API-Key gate; the router itself re-uses the tenant_id from the
 # middleware to scope every query.
