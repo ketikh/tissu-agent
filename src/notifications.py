@@ -107,6 +107,7 @@ def _get_tg_config() -> tuple[str, str]:
 async def send_telegram_text(message: str) -> bool:
     """Send a text message to the owner via Telegram."""
     token, chat_id = _get_tg_config()
+    print(f"[TG] send_text called — token_set={bool(token)} chat_id_set={bool(chat_id)}", flush=True)
     if not (token and chat_id):
         print("[TG] Not configured — set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID", flush=True)
         return False
@@ -123,11 +124,12 @@ async def send_telegram_text(message: str) -> bool:
             )
             data = resp.json()
             if not data.get("ok"):
-                print(f"[TG] Text send failed: {data}", flush=True)
+                print(f"[TG] Text send failed: status={resp.status_code} body={data}", flush=True)
                 return False
+            print(f"[TG] Text sent ✓ ({len(message)} chars)", flush=True)
         return True
     except Exception as e:
-        print(f"[TG] Text exception: {e}", flush=True)
+        print(f"[TG] Text exception: {type(e).__name__}: {e}", flush=True)
         return False
 
 
@@ -138,6 +140,7 @@ async def send_telegram_image(image_bytes: bytes, caption: str, filename: str = 
     as a follow-up text message so confirm/deny URLs aren't truncated.
     """
     token, chat_id = _get_tg_config()
+    print(f"[TG] send_image called — bytes={len(image_bytes)} token_set={bool(token)} chat_id_set={bool(chat_id)}", flush=True)
     if not (token and chat_id):
         print("[TG] Not configured — set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID", flush=True)
         return False
@@ -156,8 +159,9 @@ async def send_telegram_image(image_bytes: bytes, caption: str, filename: str = 
             )
             resp_data = resp.json()
             if not resp_data.get("ok"):
-                print(f"[TG] Photo send failed: {resp_data}", flush=True)
+                print(f"[TG] Photo send failed: status={resp.status_code} body={resp_data}", flush=True)
                 return False
+            print(f"[TG] Photo sent ✓ ({len(image_bytes)} bytes, caption {len(caption)} chars)", flush=True)
             if overflow:
                 await client.post(
                     f"{TG_API_BASE}/bot{token}/sendMessage",
@@ -165,7 +169,7 @@ async def send_telegram_image(image_bytes: bytes, caption: str, filename: str = 
                 )
         return True
     except Exception as e:
-        print(f"[TG] Photo exception: {e}", flush=True)
+        print(f"[TG] Photo exception: {type(e).__name__}: {e}", flush=True)
         return False
 
 
@@ -176,11 +180,15 @@ async def send_telegram_image(image_bytes: bytes, caption: str, filename: str = 
 
 async def notify_owner_text(message: str) -> bool:
     if os.getenv("TELEGRAM_BOT_TOKEN"):
+        print("[NOTIFY] → Telegram (text)", flush=True)
         return await send_telegram_text(message)
+    print("[NOTIFY] → WhatsApp (text) — TELEGRAM_BOT_TOKEN not set", flush=True)
     return await send_whatsapp_text(message)
 
 
 async def notify_owner_image(image_bytes: bytes, caption: str, filename: str = "photo.jpg") -> bool:
     if os.getenv("TELEGRAM_BOT_TOKEN"):
+        print("[NOTIFY] → Telegram (image)", flush=True)
         return await send_telegram_image(image_bytes, caption=caption, filename=filename)
+    print("[NOTIFY] → WhatsApp (image) — TELEGRAM_BOT_TOKEN not set", flush=True)
     return await send_whatsapp_image(image_bytes, caption=caption, filename=filename)
