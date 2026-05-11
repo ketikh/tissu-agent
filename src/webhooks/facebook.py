@@ -88,7 +88,12 @@ _pending_photo: dict[str, dict] = {}  # sender_id -> {image_url, mid, ...} — p
 
 # When AI matches but the product is sold out, we ask the customer for size first
 # and only then announce it's out of stock for that size.
-_PHOTO_HINT = re.compile(r'(გაქვთ|მოდელი|ჩანთა|ასეთი|მსგავსი|ეს\s*არის|have|this)', re.IGNORECASE)
+_PHOTO_HINT = re.compile(
+    r'(გაქვთ|მოდელი|ჩანთა|ასეთი|მსგავსი|ეს\s*არის|ეს\?|ესეც|'
+    r'გადამოწმ|გადაამოწმ|შეამოწმ|შემიმოწმ|გადამიმოწმ|'
+    r'have|this|check)',
+    re.IGNORECASE,
+)
 
 # Longer buffer so the customer has time to attach a photo after typing
 # "ესეც" / "ეს გაქვთ?" etc. 3s was often too fast for humans.
