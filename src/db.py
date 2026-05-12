@@ -766,6 +766,23 @@ async def init_db():
             )
         """)
 
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS promo_codes (
+                id               SERIAL PRIMARY KEY,
+                tenant_id        TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+                code             TEXT NOT NULL,
+                description      TEXT NOT NULL DEFAULT '',
+                discount_percent INTEGER NOT NULL CHECK (discount_percent BETWEEN 1 AND 100),
+                active           BOOLEAN NOT NULL DEFAULT true,
+                created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        await conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_promo_codes_tenant_code "
+            "ON promo_codes (tenant_id, UPPER(code))"
+        )
+
         # Enable RLS on every public table so Supabase REST API (anon key)
         # cannot read or write data. The postgres superuser used by asyncpg
         # bypasses RLS automatically — no policies needed for the backend.
@@ -1739,3 +1756,88 @@ async def delete_pending_soldout(conversation_id: str) -> None:
     await pool.execute(
         "DELETE FROM pending_soldout WHERE conversation_id = $1", conversation_id
     )
+
+
+async def list_promo_codes(tenant_id: str) -> list[dict]:
+    """Return every promo code for a tenant, newest first."""
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT id, code, description, discount_percent, active, "
+        "       created_at, updated_at "
+        "FROM promo_codes WHERE tenant_id = $1 "
+        "ORDER BY active DESC, created_at DESC",
+        tenant_id,
+    )
+    return [dict(r) for r in rows]
+
+
+async def create_promo_code(
+    tenant_id: str, code: str, description: str, discount_percent: int,
+    active: bool = True,
+) -> dict:
+    """Insert a new promo code. Raises asyncpg.UniqueViolationError if the
+    (tenant_id, UPPER(code)) pair already exists."""
+    pool = await get_db()
+    row = await pool.fetchrow(
+        """INSERT INTO promo_codes (tenant_id, code, description, discount_percent, active)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id, code, description, discount_percent, active, created_at, updated_at""",
+        tenant_id, code.strip(), (description or "").strip(),
+        int(discount_percent), bool(active),
+    )
+    return dict(row)
+
+
+async def update_promo_code(
+    tenant_id: str, promo_id: int,
+    code: str | None = None,
+    description: str | None = None,
+    discount_percent: int | None = None,
+    active: bool | None = None,
+) -> dict | None:
+    """Update a promo code in place. Only the fields explicitly passed
+    (non-None) are changed."""
+    sets: list[str] = []
+    params: list = []
+    if code is not None:
+        sets.append(f"code = ${len(params)+1}")
+        params.append(code.strip())
+    if description is not None:
+        sets.append(f"description = ${len(params)+1}")
+        params.append(description.strip())
+    if discount_percent is not None:
+        sets.append(f"discount_percent = ${len(params)+1}")
+        params.append(int(discount_percent))
+    if active is not None:
+        sets.append(f"active = ${len(params)+1}")
+        params.append(bool(active))
+    if not sets:
+        # Nothing to update — return the existing row.
+        pool = await get_db()
+        row = await pool.fetchrow(
+            "SELECT id, code, description, discount_percent, active, created_at, updated_at "
+            "FROM promo_codes WHERE tenant_id = $1 AND id = $2",
+            tenant_id, promo_id,
+        )
+        return dict(row) if row else None
+
+    sets.append("updated_at = now()")
+    params.extend([tenant_id, promo_id])
+    pool = await get_db()
+    row = await pool.fetchrow(
+        f"UPDATE promo_codes SET {', '.join(sets)} "
+        f"WHERE tenant_id = ${len(params)-1} AND id = ${len(params)} "
+        f"RETURNING id, code, description, discount_percent, active, created_at, updated_at",
+        *params,
+    )
+    return dict(row) if row else None
+
+
+async def delete_promo_code(tenant_id: str, promo_id: int) -> bool:
+    """Delete a promo code. Returns True if a row was removed."""
+    pool = await get_db()
+    result = await pool.execute(
+        "DELETE FROM promo_codes WHERE tenant_id = $1 AND id = $2",
+        tenant_id, promo_id,
+    )
+    return result.endswith("1")

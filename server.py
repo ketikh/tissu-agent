@@ -36,6 +36,7 @@ from src.db import (
     bump_admin_session_epoch, get_admin_session_epoch,
     get_bot_config, upsert_bot_config,
     get_site_sections, upsert_site_section,
+    list_promo_codes, create_promo_code, update_promo_code, delete_promo_code,
 )
 from src.sessions import IMPERSONATION_SECONDS
 from src.secrets_vault import encrypt_secret, redacted
@@ -1624,6 +1625,88 @@ async def update_category(slug: str, request: Request, tenant_id: str = Depends(
         f"WHERE slug = ${idx} AND tenant_id = ${idx + 1}",
         *params,
     )
+    return {"ok": True}
+
+
+# ── Promo codes ──────────────────────────────────────────────────────────────
+# Simple flat list — code + description + percent. Bot integration can read
+# from this same table later (e.g. "give 10% off if customer types code X").
+
+def _serialize_promo(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "code": row["code"],
+        "description": row.get("description") or "",
+        "discount_percent": row["discount_percent"],
+        "active": bool(row["active"]),
+        "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+        "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+    }
+
+
+@app.get("/api/promo-codes")
+async def api_list_promo_codes(tenant_id: str = Depends(get_tenant_id)):
+    rows = await list_promo_codes(tenant_id)
+    return {"promo_codes": [_serialize_promo(r) for r in rows]}
+
+
+@app.post("/api/promo-codes")
+async def api_create_promo_code(request: Request, tenant_id: str = Depends(get_tenant_id)):
+    data = await request.json()
+    code = (data.get("code") or "").strip()
+    description = (data.get("description") or "").strip()
+    try:
+        percent = int(data.get("discount_percent") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="discount_percent უნდა იყოს რიცხვი")
+    active = bool(data.get("active", True))
+    if not code:
+        raise HTTPException(status_code=400, detail="კოდი აუცილებელია")
+    if not (1 <= percent <= 100):
+        raise HTTPException(status_code=400, detail="პროცენტი უნდა იყოს 1-დან 100-მდე")
+    try:
+        row = await create_promo_code(tenant_id, code, description, percent, active)
+    except asyncpg.exceptions.UniqueViolationError:
+        raise HTTPException(status_code=409, detail="ეს კოდი უკვე არსებობს")
+    return _serialize_promo(row)
+
+
+@app.put("/api/promo-codes/{promo_id}")
+async def api_update_promo_code(
+    promo_id: int, request: Request, tenant_id: str = Depends(get_tenant_id),
+):
+    data = await request.json()
+    kwargs: dict = {}
+    if "code" in data:
+        if not (data["code"] or "").strip():
+            raise HTTPException(status_code=400, detail="კოდი აუცილებელია")
+        kwargs["code"] = data["code"]
+    if "description" in data:
+        kwargs["description"] = data["description"] or ""
+    if "discount_percent" in data:
+        try:
+            percent = int(data["discount_percent"])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="discount_percent უნდა იყოს რიცხვი")
+        if not (1 <= percent <= 100):
+            raise HTTPException(status_code=400, detail="პროცენტი უნდა იყოს 1-დან 100-მდე")
+        kwargs["discount_percent"] = percent
+    if "active" in data:
+        kwargs["active"] = bool(data["active"])
+    try:
+        row = await update_promo_code(tenant_id, promo_id, **kwargs)
+    except asyncpg.exceptions.UniqueViolationError:
+        raise HTTPException(status_code=409, detail="ეს კოდი უკვე არსებობს")
+    if not row:
+        raise HTTPException(status_code=404, detail="პრომოკოდი ვერ მოიძებნა")
+    return _serialize_promo(row)
+
+
+@app.delete("/api/promo-codes/{promo_id}")
+async def api_delete_promo_code(promo_id: int, tenant_id: str = Depends(get_tenant_id)):
+    ok = await delete_promo_code(tenant_id, promo_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="პრომოკოდი ვერ მოიძებნა")
     return {"ok": True}
 
 

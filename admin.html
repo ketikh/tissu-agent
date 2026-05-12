@@ -591,6 +591,11 @@
                 ფასდაკლება
                 <span class="count" id="sidebar-sale-count">0</span>
             </button>
+            <button class="nav-item" data-tab="promos" onclick="showTab('promos', this)">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                პრომოკოდები
+                <span class="count" id="sidebar-promos-count">0</span>
+            </button>
             <button class="nav-item" data-tab="insights" onclick="showTab('insights', this)">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-5"/></svg>
                 ინსაიტები
@@ -776,6 +781,52 @@
                         </div>
                     </div>
                     <div class="product-grid" id="sale-grid"></div>
+                </div>
+            </div>
+            <div id="tab-promos" class="section">
+                <div class="card">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+                        <div>
+                            <h2 style="margin-bottom:2px">🎟️ პრომოკოდები</h2>
+                            <p class="hint" style="margin-bottom:0">დაამატე კოდი, აღწერა და ფასდაკლების პროცენტი. კლიენტს თუ ეცოდინება კოდი — შეგვიძლია გამოვიყენოთ შემდგომში ბოტში ან საიტზე.</p>
+                        </div>
+                    </div>
+
+                    <div style="display:grid;grid-template-columns:1fr 1fr 110px 80px auto;gap:8px;align-items:end;margin-bottom:16px;padding:12px;background:#fafafa;border-radius:8px">
+                        <label style="display:flex;flex-direction:column;gap:4px">
+                            <span style="font-size:13px;color:#555">კოდი</span>
+                            <input id="promo-code" placeholder="WELCOME10" style="text-transform:uppercase;padding:8px 10px;border:1px solid #ddd;border-radius:6px">
+                        </label>
+                        <label style="display:flex;flex-direction:column;gap:4px">
+                            <span style="font-size:13px;color:#555">აღწერა (არასავალდებულო)</span>
+                            <input id="promo-desc" placeholder="ახალი კლიენტებისთვის" style="padding:8px 10px;border:1px solid #ddd;border-radius:6px">
+                        </label>
+                        <label style="display:flex;flex-direction:column;gap:4px">
+                            <span style="font-size:13px;color:#555">ფასდაკლება (%)</span>
+                            <input id="promo-percent" type="number" min="1" max="100" placeholder="10" style="padding:8px 10px;border:1px solid #ddd;border-radius:6px">
+                        </label>
+                        <label style="display:flex;align-items:center;gap:6px;padding-bottom:8px">
+                            <input id="promo-active" type="checkbox" checked>
+                            <span style="font-size:13px;color:#555">აქტიური</span>
+                        </label>
+                        <button class="btn-primary" onclick="addPromoCode()" style="padding:9px 16px">დამატება</button>
+                    </div>
+
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>კოდი</th>
+                                <th>აღწერა</th>
+                                <th style="width:120px">ფასდაკლება</th>
+                                <th style="width:110px">სტატუსი</th>
+                                <th style="width:170px">დამატებულია</th>
+                                <th style="width:160px">მოქმედებები</th>
+                            </tr>
+                        </thead>
+                        <tbody id="promos-table">
+                            <tr><td colspan="6" style="text-align:center;color:#999;padding:20px">იტვირთება…</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
             <div id="tab-insights" class="section">
@@ -1364,6 +1415,7 @@
         orders: 'შეკვეთები',
         chats: 'ჩატები',
         sale: 'ფასდაკლება',
+        promos: 'პრომოკოდები',
         insights: 'ინსაიტები',
         bot: 'ბოტი',
         site: 'საიტი',
@@ -1376,6 +1428,7 @@
         orders: 'Workspace',
         chats: 'Workspace',
         sale: 'Workspace',
+        promos: 'Workspace',
         insights: 'Workspace',
         bot: 'Settings',
         site: 'Settings',
@@ -1403,6 +1456,7 @@
         if (tab === 'pairs') loadPairs();
         if (tab === 'dashboard') loadDashboard();
         if (tab === 'sale') loadSale();
+        if (tab === 'promos') loadPromoCodes();
         if (tab === 'chats') loadChats();
         if (tab === 'insights') loadInsights();
         if (tab === 'bot') loadBotConfig();
@@ -2158,6 +2212,111 @@
         // tab click.
         if (document.getElementById('tab-insights')?.classList.contains('active')) {
             loadInsights();
+        }
+    }
+
+    // ── Promo codes ──────────────────────────────────────────────────────
+    function escapeHtml(s) {
+        return String(s || '').replace(/[&<>"']/g, c => ({
+            '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+        }[c]));
+    }
+
+    async function loadPromoCodes() {
+        const tbody = document.getElementById('promos-table');
+        try {
+            const r = await fetch(API + '/api/promo-codes');
+            const data = await r.json();
+            const list = data.promo_codes || [];
+            const countEl = document.getElementById('sidebar-promos-count');
+            if (countEl) countEl.textContent = list.filter(p => p.active).length;
+            if (!list.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:24px">ჯერ პრომოკოდი არ გაქვს — დაამატე ზემოთ.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = list.map(p => {
+                const created = p.created_at ? new Date(p.created_at).toLocaleDateString('ka-GE', { day:'2-digit', month:'short', year:'numeric' }) : '';
+                const statusBadge = p.active
+                    ? '<span style="background:#dcfce7;color:#166534;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600">აქტიური</span>'
+                    : '<span style="background:#fee2e2;color:#991b1b;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600">გათიშული</span>';
+                return `<tr>
+                    <td><strong style="font-family:monospace;font-size:14px">${escapeHtml(p.code)}</strong></td>
+                    <td style="color:#555">${escapeHtml(p.description) || '<span style="color:#bbb">—</span>'}</td>
+                    <td><strong>${p.discount_percent}%</strong></td>
+                    <td>${statusBadge}</td>
+                    <td style="color:#777;font-size:13px">${created}</td>
+                    <td>
+                        <button onclick="togglePromoActive(${p.id}, ${!p.active})" style="margin-right:6px;padding:5px 10px;border:1px solid #ddd;background:#fff;border-radius:5px;cursor:pointer;font-size:12px">${p.active ? 'გათიშე' : 'ჩართე'}</button>
+                        <button onclick="deletePromoCode(${p.id}, '${escapeHtml(p.code)}')" style="padding:5px 10px;border:1px solid #fee;background:#fef2f2;color:#c00;border-radius:5px;cursor:pointer;font-size:12px">წაშლა</button>
+                    </td>
+                </tr>`;
+            }).join('');
+        } catch (e) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#c00;padding:20px">შეცდომა: ${escapeHtml(e.message)}</td></tr>`;
+        }
+    }
+
+    async function addPromoCode() {
+        const codeEl = document.getElementById('promo-code');
+        const descEl = document.getElementById('promo-desc');
+        const pctEl = document.getElementById('promo-percent');
+        const activeEl = document.getElementById('promo-active');
+        const code = (codeEl.value || '').trim().toUpperCase();
+        const description = (descEl.value || '').trim();
+        const percent = parseInt(pctEl.value || '0', 10);
+        if (!code) { alert('კოდი ცარიელია'); codeEl.focus(); return; }
+        if (!percent || percent < 1 || percent > 100) { alert('პროცენტი 1-დან 100-მდე უნდა იყოს'); pctEl.focus(); return; }
+        try {
+            const r = await fetch(API + '/api/promo-codes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code, description, discount_percent: percent, active: activeEl.checked }),
+            });
+            if (!r.ok) {
+                const err = await r.json().catch(() => ({}));
+                alert(err.detail || 'შეცდომა დამატებისას');
+                return;
+            }
+            codeEl.value = '';
+            descEl.value = '';
+            pctEl.value = '';
+            activeEl.checked = true;
+            await loadPromoCodes();
+        } catch (e) {
+            alert('შეცდომა: ' + e.message);
+        }
+    }
+
+    async function togglePromoActive(id, newActive) {
+        try {
+            const r = await fetch(API + '/api/promo-codes/' + id, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ active: newActive }),
+            });
+            if (!r.ok) {
+                const err = await r.json().catch(() => ({}));
+                alert(err.detail || 'შეცდომა');
+                return;
+            }
+            await loadPromoCodes();
+        } catch (e) {
+            alert('შეცდომა: ' + e.message);
+        }
+    }
+
+    async function deletePromoCode(id, code) {
+        if (!confirm(`დარწმუნებული ხარ რომ წაშლი კოდს "${code}"?`)) return;
+        try {
+            const r = await fetch(API + '/api/promo-codes/' + id, { method: 'DELETE' });
+            if (!r.ok) {
+                const err = await r.json().catch(() => ({}));
+                alert(err.detail || 'შეცდომა წაშლისას');
+                return;
+            }
+            await loadPromoCodes();
+        } catch (e) {
+            alert('შეცდომა: ' + e.message);
         }
     }
 
