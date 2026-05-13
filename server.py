@@ -156,6 +156,22 @@ async def root_redirect():
     return RedirectResponse(url="/admin", status_code=302)
 
 
+# CSP for the admin page — mirrors the default plus an allowance for the
+# Pinterest agent iframe loaded inside the "Pinterest" tab.
+_ADMIN_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline' https://rsms.me; "
+    "img-src 'self' https://res.cloudinary.com data:; "
+    "font-src 'self' https://rsms.me data:; "
+    "connect-src 'self'; "
+    "frame-src https://pinterest-agent.railway.app; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
+
+
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_ui():
     html_path = Path(__file__).parent / "admin.html"
@@ -163,7 +179,10 @@ async def admin_ui():
     # feels broken when browsers cache the previous revision for hours.
     return HTMLResponse(
         html_path.read_text(encoding="utf-8"),
-        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Content-Security-Policy": _ADMIN_CSP,
+        },
     )
 
 

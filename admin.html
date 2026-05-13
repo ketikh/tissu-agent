@@ -608,6 +608,10 @@
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
                 საიტი
             </button>
+            <button class="nav-item" data-tab="pinterest" onclick="showTab('pinterest', this)">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14l3-8 3 5 2-2 3 5"/></svg>
+                პინტერესტი
+            </button>
         </nav>
 
         <div class="cat-group">
@@ -1156,6 +1160,16 @@
                 </div>
             </div>
 
+            <div id="tab-pinterest" class="section" style="padding:0">
+                <div style="position:relative;height:calc(100vh - 110px);border-radius:12px;overflow:hidden;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.05)">
+                    <iframe id="pinterest-frame"
+                            src="about:blank"
+                            data-src="https://pinterest-agent.railway.app/admin/dashboard"
+                            style="width:100%;height:100%;border:0;display:block"
+                            allow="clipboard-write"></iframe>
+                </div>
+            </div>
+
         </div>
     </main>
 </div>
@@ -1419,6 +1433,7 @@
         insights: 'ინსაიტები',
         bot: 'ბოტი',
         site: 'საიტი',
+        pinterest: 'პინტერესტი',
     };
     const PAGE_CRUMBS = {
         dashboard: 'Overview',
@@ -1432,6 +1447,7 @@
         insights: 'Workspace',
         bot: 'Settings',
         site: 'Settings',
+        pinterest: 'Integrations',
     };
 
     function showTab(tab, btn) {
@@ -1461,6 +1477,14 @@
         if (tab === 'insights') loadInsights();
         if (tab === 'bot') loadBotConfig();
         if (tab === 'site') cmsSwitchPage('home', document.querySelector('.cms-page-tab.active'));
+        if (tab === 'pinterest') {
+            // Lazy-load the iframe the first time the tab is opened so the
+            // Pinterest dashboard isn't hammered on every admin page load.
+            const frame = document.getElementById('pinterest-frame');
+            if (frame && frame.getAttribute('src') === 'about:blank') {
+                frame.src = frame.dataset.src;
+            }
+        }
     }
 
     let allOrders = [];
