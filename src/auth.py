@@ -177,8 +177,13 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
 
         # Scope enforcement: storefront-scoped keys can only touch
-        # /api/storefront/*. Admin-scoped keys can touch anything.
-        if scope == "storefront" and not path.startswith("/api/storefront/"):
+        # /api/storefront/* and /api/products (the public read endpoints).
+        # Admin-scoped keys can touch anything.
+        if scope == "storefront" and not (
+            path.startswith("/api/storefront/")
+            or path == "/api/products"
+            or path.startswith("/api/products/")
+        ):
             return JSONResponse(
                 {"error": "forbidden", "reason": "key is read-only storefront scope"},
                 status_code=403,
@@ -191,7 +196,11 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         # Status code is 403 Forbidden per the Phase 1 contract.
         # Phase 2: also auto-suspend any trial whose trial_ends_at
         # has passed — that's the "10-day free trial" cutoff.
-        if tenant_id != DEFAULT_TENANT_ID and not path.startswith("/api/storefront/"):
+        if tenant_id != DEFAULT_TENANT_ID and not (
+            path.startswith("/api/storefront/")
+            or path == "/api/products"
+            or path.startswith("/api/products/")
+        ):
             try:
                 t = await get_tenant(tenant_id)
             except Exception:

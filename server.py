@@ -64,7 +64,7 @@ from src.channels import get_adapter, ADAPTERS
 from src.webhooks.facebook import router as fb_router
 from src.webhooks.telegram import router as tg_router
 from src.webhooks.whatsapp import router as wa_router
-from src.api.storefront import router as storefront_router
+from src.api.storefront import router as storefront_router, simple_router as products_router
 from src.auth import APIKeyMiddleware, AdminSessionMiddleware
 from src.security_headers import SecurityHeadersMiddleware
 
@@ -142,6 +142,7 @@ app.include_router(tg_router)
 # same X-API-Key gate; the router itself re-uses the tenant_id from the
 # middleware to scope every query.
 app.include_router(storefront_router)
+app.include_router(products_router)
 
 
 # ── Pages ────────────────────────────────────────────────────

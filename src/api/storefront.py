@@ -22,6 +22,11 @@ from src.db import DEFAULT_TENANT_ID, get_db, get_site_sections
 
 router = APIRouter(prefix="/api/storefront", tags=["storefront"])
 
+# Lightweight alias router — exposes a minimal /api/products endpoint that
+# any external site can hit without learning our full schema. Returns a
+# flat array with just the four fields a product card needs.
+simple_router = APIRouter(prefix="/api", tags=["products"])
+
 # The Tissu website renders six sections. We map every internal category
 # slug into one of these six so the frontend can filter by stable names
 # without caring about legacy slugs. Unknown categories pass through
@@ -247,3 +252,30 @@ async def get_site_content(
         ],
         "updated_at": updated_at,
     }
+
+
+@simple_router.get("/products")
+async def list_products_simple(
+    request: Request,
+    response: Response,
+    tenant_id: str = Depends(_tenant_id),
+):
+    """Minimal product list — flat array with just the four fields a card
+    needs. For richer fields use ``/api/storefront/products``."""
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT id, product_name, image_url, stock "
+        "FROM inventory WHERE tenant_id = $1 AND stock > 0 "
+        "ORDER BY category, code, id",
+        tenant_id,
+    )
+    response.headers["Cache-Control"] = STOREFRONT_CACHE
+    return [
+        {
+            "id": r["id"],
+            "name": r["product_name"] or "",
+            "image_url": r["image_url"] or "",
+            "in_stock": (r["stock"] or 0) > 0,
+        }
+        for r in rows
+    ]
