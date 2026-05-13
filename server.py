@@ -167,6 +167,44 @@ async def admin_ui():
     )
 
 
+# Embedded Pinterest agent dashboard — the Pinterest agent is a separate
+# Railway deployment; we just iframe its admin so the operator stays inside
+# one tab. CSP is loosened only for this route so the iframe loads.
+PINTEREST_DASHBOARD_URL = "https://pinterest-agent.railway.app/admin/dashboard"
+
+
+@app.get("/admin/pinterest", response_class=HTMLResponse)
+async def admin_pinterest():
+    html = f"""<!DOCTYPE html>
+<html lang="ka">
+<head>
+    <meta charset="utf-8">
+    <title>Pinterest Agent — Tissu Admin</title>
+    <style>
+        html, body {{ margin: 0; padding: 0; height: 100%; background: #fafafa; }}
+        iframe {{ width: 100%; height: 100vh; border: 0; display: block; }}
+    </style>
+</head>
+<body>
+    <iframe src="{PINTEREST_DASHBOARD_URL}" allow="clipboard-write"></iframe>
+</body>
+</html>"""
+    csp = (
+        "default-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "frame-src https://pinterest-agent.railway.app; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'"
+    )
+    return HTMLResponse(
+        html,
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Security-Policy": csp,
+        },
+    )
+
+
 # ── Admin authentication ────────────────────────
 # Real email + password form backed by argon2id, with a signed
 # HTTP-only session cookie. Rate-limited per IP. CSRF protection
