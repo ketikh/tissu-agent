@@ -800,6 +800,24 @@ async def init_db():
             "ON necklace_options (tenant_id, kind, active)"
         )
 
+        # Migration: extra_price + variants on necklace charms. ADD COLUMN
+        # IF NOT EXISTS so re-running init_db is a no-op on a populated DB.
+        await conn.execute(
+            "ALTER TABLE necklace_options "
+            "ADD COLUMN IF NOT EXISTS extra_price NUMERIC NOT NULL DEFAULT 0"
+        )
+        await conn.execute(
+            "ALTER TABLE necklace_options "
+            "ADD COLUMN IF NOT EXISTS variants JSONB NOT NULL DEFAULT '[]'::jsonb"
+        )
+
+        # Migration: base price for a necklace order. Defaults to 19 GEL
+        # for every tenant — operator can change it from the admin UI.
+        await conn.execute(
+            "ALTER TABLE tenants "
+            "ADD COLUMN IF NOT EXISTS necklace_base_price NUMERIC NOT NULL DEFAULT 19"
+        )
+
         # Enable RLS on every public table so Supabase REST API (anon key)
         # cannot read or write data. The postgres superuser used by asyncpg
         # bypasses RLS automatically — no policies needed for the backend.
@@ -1864,12 +1882,56 @@ async def delete_promo_code(tenant_id: str, promo_id: int) -> bool:
 # Fabrics and charms that customers pick from when ordering a necklace.
 # Same table holds both — distinguished by `kind` ('fabric' | 'charm').
 
+_NK_COLUMNS = (
+    "id, kind, name, image_url, active, sort_order, "
+    "extra_price, variants, created_at"
+)
+
+
+def _parse_variants(raw) -> list[dict]:
+    """Normalise the variants JSONB into a clean list of {id, name, color}.
+    Anything malformed is dropped silently rather than crashing the API."""
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except Exception:
+            return []
+    if not isinstance(raw, list):
+        return []
+    out: list[dict] = []
+    for v in raw:
+        if not isinstance(v, dict):
+            continue
+        vid = str(v.get("id") or "").strip()
+        vname = str(v.get("name") or "").strip()
+        if not vname:
+            continue
+        if not vid:
+            vid = vname.lower().replace(" ", "-")
+        item = {"id": vid, "name": vname}
+        color = v.get("color")
+        if color and isinstance(color, str):
+            item["color"] = color.strip()
+        out.append(item)
+    return out
+
+
+def _row_to_option(row: dict) -> dict:
+    """Coerce a raw asyncpg row into plain JSON-ready types."""
+    d = dict(row)
+    d["extra_price"] = float(d.get("extra_price") or 0)
+    d["variants"] = _parse_variants(d.get("variants"))
+    return d
+
+
 async def list_necklace_options(
     tenant_id: str, kind: str | None = None, include_inactive: bool = False,
 ) -> list[dict]:
     """Return necklace options for a tenant. Filter by `kind` if given."""
     pool = await get_db()
-    sql = "SELECT id, kind, name, image_url, active, sort_order, created_at FROM necklace_options WHERE tenant_id = $1"
+    sql = f"SELECT {_NK_COLUMNS} FROM necklace_options WHERE tenant_id = $1"
     params: list = [tenant_id]
     if kind in ("fabric", "charm"):
         sql += " AND kind = $2"
@@ -1878,31 +1940,38 @@ async def list_necklace_options(
         sql += " AND active = true"
     sql += " ORDER BY kind, sort_order, id"
     rows = await pool.fetch(sql, *params)
-    return [dict(r) for r in rows]
+    return [_row_to_option(r) for r in rows]
 
 
 async def create_necklace_option(
     tenant_id: str, kind: str, name: str, image_url: str,
     active: bool = True, sort_order: int = 0,
+    extra_price: float = 0, variants: list[dict] | None = None,
 ) -> dict:
     """Insert a fabric or charm row. `kind` must be 'fabric' or 'charm'."""
     if kind not in ("fabric", "charm"):
         raise ValueError("kind must be 'fabric' or 'charm'")
     pool = await get_db()
+    variants_json = json.dumps(_parse_variants(variants or []))
     row = await pool.fetchrow(
-        """INSERT INTO necklace_options (tenant_id, kind, name, image_url, active, sort_order)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING id, kind, name, image_url, active, sort_order, created_at""",
+        f"""INSERT INTO necklace_options
+              (tenant_id, kind, name, image_url, active, sort_order, extra_price, variants)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+            RETURNING {_NK_COLUMNS}""",
         tenant_id, kind, (name or "").strip(), image_url,
         bool(active), int(sort_order),
+        float(extra_price or 0), variants_json,
     )
-    return dict(row)
+    return _row_to_option(row)
 
 
 async def update_necklace_option(
     tenant_id: str, option_id: int,
     name: str | None = None, active: bool | None = None,
     sort_order: int | None = None,
+    extra_price: float | None = None,
+    variants: list[dict] | None = None,
+    image_url: str | None = None,
 ) -> dict | None:
     """Patch a single option in place. Pass only the fields that change."""
     sets: list[str] = []
@@ -1916,22 +1985,53 @@ async def update_necklace_option(
     if sort_order is not None:
         sets.append(f"sort_order = ${len(params)+1}")
         params.append(int(sort_order))
+    if extra_price is not None:
+        sets.append(f"extra_price = ${len(params)+1}")
+        params.append(float(extra_price))
+    if variants is not None:
+        sets.append(f"variants = ${len(params)+1}::jsonb")
+        params.append(json.dumps(_parse_variants(variants)))
+    if image_url is not None:
+        sets.append(f"image_url = ${len(params)+1}")
+        params.append(image_url)
     pool = await get_db()
     if not sets:
         row = await pool.fetchrow(
-            "SELECT id, kind, name, image_url, active, sort_order, created_at "
-            "FROM necklace_options WHERE tenant_id = $1 AND id = $2",
+            f"SELECT {_NK_COLUMNS} FROM necklace_options "
+            f"WHERE tenant_id = $1 AND id = $2",
             tenant_id, option_id,
         )
-        return dict(row) if row else None
+        return _row_to_option(row) if row else None
     params.extend([tenant_id, option_id])
     row = await pool.fetchrow(
         f"UPDATE necklace_options SET {', '.join(sets)} "
         f"WHERE tenant_id = ${len(params)-1} AND id = ${len(params)} "
-        f"RETURNING id, kind, name, image_url, active, sort_order, created_at",
+        f"RETURNING {_NK_COLUMNS}",
         *params,
     )
-    return dict(row) if row else None
+    return _row_to_option(row) if row else None
+
+
+async def get_necklace_base_price(tenant_id: str) -> float:
+    """Return the per-necklace base price (GEL). Defaults to 19 if the
+    tenant row somehow has NULL."""
+    pool = await get_db()
+    val = await pool.fetchval(
+        "SELECT necklace_base_price FROM tenants WHERE tenant_id = $1",
+        tenant_id,
+    )
+    return float(val) if val is not None else 19.0
+
+
+async def set_necklace_base_price(tenant_id: str, price: float) -> float:
+    """Update the per-necklace base price. Returns the saved value."""
+    pool = await get_db()
+    val = await pool.fetchval(
+        "UPDATE tenants SET necklace_base_price = $1 "
+        "WHERE tenant_id = $2 RETURNING necklace_base_price",
+        float(price), tenant_id,
+    )
+    return float(val) if val is not None else float(price)
 
 
 async def delete_necklace_option(tenant_id: str, option_id: int) -> bool:

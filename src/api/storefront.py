@@ -17,7 +17,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
-from src.db import DEFAULT_TENANT_ID, get_db, get_site_sections, list_necklace_options
+from src.db import (
+    DEFAULT_TENANT_ID, get_db, get_site_sections,
+    list_necklace_options, get_necklace_base_price,
+)
 
 
 router = APIRouter(prefix="/api/storefront", tags=["storefront"])
@@ -289,15 +292,38 @@ async def storefront_necklace_options(
 ):
     """Public list of necklace customisation options the website shows
     to customers when they pick a fabric + charm. Active only — inactive
-    rows stay invisible to the public."""
+    rows stay invisible to the public.
+
+    Response shape:
+        {
+          "base_price": 19,
+          "fabrics": [{ id, name, image_url }],
+          "charms":  [{ id, name, image_url, extra_price, variants }]
+        }
+
+    `extra_price` is added on top of `base_price` if the customer picks
+    that charm. `variants` lets one photo represent multiple sub-options
+    (e.g. red vs. black heart); empty array when there are no sub-options.
+    """
     fabrics = await list_necklace_options(tenant_id, kind="fabric", include_inactive=False)
     charms = await list_necklace_options(tenant_id, kind="charm", include_inactive=False)
+    base_price = await get_necklace_base_price(tenant_id)
 
-    def _shape(rows):
-        return [
-            {"id": r["id"], "name": r.get("name") or "", "image_url": r["image_url"]}
-            for r in rows
-        ]
+    def _shape_fabric(r):
+        return {"id": r["id"], "name": r.get("name") or "", "image_url": r["image_url"]}
+
+    def _shape_charm(r):
+        return {
+            "id": r["id"],
+            "name": r.get("name") or "",
+            "image_url": r["image_url"],
+            "extra_price": float(r.get("extra_price") or 0),
+            "variants": r.get("variants") or [],
+        }
 
     response.headers["Cache-Control"] = STOREFRONT_CACHE
-    return {"fabrics": _shape(fabrics), "charms": _shape(charms)}
+    return {
+        "base_price": float(base_price),
+        "fabrics": [_shape_fabric(r) for r in fabrics],
+        "charms": [_shape_charm(r) for r in charms],
+    }

@@ -38,6 +38,7 @@ from src.db import (
     get_site_sections, upsert_site_section,
     list_promo_codes, create_promo_code, update_promo_code, delete_promo_code,
     list_necklace_options, create_necklace_option, update_necklace_option, delete_necklace_option,
+    get_necklace_base_price, set_necklace_base_price,
 )
 from src.sessions import IMPERSONATION_SECONDS
 from src.secrets_vault import encrypt_secret, redacted
@@ -1781,6 +1782,8 @@ def _serialize_necklace_option(row: dict) -> dict:
         "image_url": row["image_url"],
         "active": bool(row["active"]),
         "sort_order": row.get("sort_order") or 0,
+        "extra_price": float(row.get("extra_price") or 0),
+        "variants": row.get("variants") or [],
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
     }
 
@@ -1828,7 +1831,41 @@ async def api_update_necklace_option(
             kwargs["sort_order"] = int(data["sort_order"])
         except (TypeError, ValueError):
             raise HTTPException(status_code=400, detail="sort_order უნდა იყოს რიცხვი")
+    if "extra_price" in data:
+        try:
+            ep = float(data["extra_price"] or 0)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="extra_price უნდა იყოს რიცხვი")
+        if ep < 0:
+            raise HTTPException(status_code=400, detail="extra_price დადებითი უნდა იყოს")
+        kwargs["extra_price"] = ep
+    if "variants" in data:
+        v = data["variants"]
+        if v is None:
+            v = []
+        if not isinstance(v, list):
+            raise HTTPException(status_code=400, detail="variants უნდა იყოს მასივი")
+        kwargs["variants"] = v
+    if "image_url" in data and data["image_url"]:
+        kwargs["image_url"] = str(data["image_url"]).strip()
     row = await update_necklace_option(tenant_id, option_id, **kwargs)
+    if not row:
+        raise HTTPException(status_code=404, detail="ვარიანტი ვერ მოიძებნა")
+    return _serialize_necklace_option(row)
+
+
+@app.post("/api/necklace-options/{option_id}/image")
+async def api_replace_necklace_option_image(
+    option_id: int,
+    image: UploadFile = File(...),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """Swap the photo of an existing option (admin can re-upload without
+    deleting/recreating)."""
+    if not image:
+        raise HTTPException(status_code=400, detail="ფოტო აუცილებელია")
+    image_url = save_uploaded_image(image, prefix=f"necklace_{option_id}")
+    row = await update_necklace_option(tenant_id, option_id, image_url=image_url)
     if not row:
         raise HTTPException(status_code=404, detail="ვარიანტი ვერ მოიძებნა")
     return _serialize_necklace_option(row)
@@ -1840,6 +1877,26 @@ async def api_delete_necklace_option(option_id: int, tenant_id: str = Depends(ge
     if not ok:
         raise HTTPException(status_code=404, detail="ვარიანტი ვერ მოიძებნა")
     return {"ok": True}
+
+
+@app.get("/api/necklace-base-price")
+async def api_get_necklace_base_price(tenant_id: str = Depends(get_tenant_id)):
+    return {"base_price": await get_necklace_base_price(tenant_id)}
+
+
+@app.put("/api/necklace-base-price")
+async def api_set_necklace_base_price(
+    request: Request, tenant_id: str = Depends(get_tenant_id),
+):
+    data = await request.json()
+    try:
+        price = float(data.get("base_price"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="base_price უნდა იყოს რიცხვი")
+    if price < 0:
+        raise HTTPException(status_code=400, detail="base_price დადებითი უნდა იყოს")
+    saved = await set_necklace_base_price(tenant_id, price)
+    return {"base_price": saved}
 
 
 @app.put("/api/inventory/{item_id}/attr")

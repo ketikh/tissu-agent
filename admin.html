@@ -868,6 +868,16 @@
                         </div>
                     </div>
 
+                    <div class="nk-base-row">
+                        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#555">
+                            <span>ბაზური ფასი (1 ცალი ყელსაბამი):</span>
+                            <input id="nk-base-price" type="number" step="0.5" min="0" placeholder="19" style="width:90px;padding:7px 9px;border:1px solid #ddd;border-radius:6px">
+                            <span>₾</span>
+                            <button onclick="saveNecklaceBasePrice()" style="padding:6px 14px;border:1px solid #2563eb;background:#2563eb;color:#fff;border-radius:6px;cursor:pointer">შენახვა</button>
+                            <span id="nk-base-status" style="color:#16a34a;font-size:12px;min-width:60px"></span>
+                        </label>
+                    </div>
+
                     <div class="necklace-tabs" style="display:flex;gap:4px;border-bottom:1px solid #eee;margin-bottom:18px">
                         <button class="nk-tab active" data-kind="fabric" onclick="switchNecklaceKind('fabric',this)" style="padding:10px 18px;border:0;background:transparent;border-bottom:2px solid transparent;cursor:pointer;font-weight:500">🧵 ქსოვილები <span id="nk-count-fabric" style="color:#999;margin-left:4px">0</span></button>
                         <button class="nk-tab" data-kind="charm" onclick="switchNecklaceKind('charm',this)" style="padding:10px 18px;border:0;background:transparent;border-bottom:2px solid transparent;cursor:pointer;font-weight:500">✨ ჩარმები <span id="nk-count-charm" style="color:#999;margin-left:4px">0</span></button>
@@ -892,6 +902,25 @@
                 </div>
                 <style>
                     .nk-tab.active { border-bottom-color: #2563eb !important; color: #2563eb; }
+                    .nk-base-row {
+                        margin-bottom: 12px; padding: 10px 12px;
+                        background: #fff7ed; border: 1px solid #fed7aa;
+                        border-radius: 8px; display: flex; flex-wrap: wrap;
+                    }
+                    .nk-extra-badge {
+                        position: absolute; top: 6px; right: 6px;
+                        background: rgba(0,0,0,0.7); color: #fff;
+                        padding: 2px 7px; font-size: 11px; border-radius: 10px;
+                        font-weight: 600;
+                    }
+                    .nk-variants-strip {
+                        display: flex; gap: 3px; padding: 4px 8px;
+                        background: #f9fafb; border-top: 1px solid #f0f0f0;
+                    }
+                    .nk-variants-strip .swatch {
+                        width: 14px; height: 14px; border-radius: 50%;
+                        border: 1px solid rgba(0,0,0,0.1);
+                    }
                     .nk-upload-form {
                         display:grid; grid-template-columns:1fr 1fr 160px; gap:10px;
                         align-items:end; margin-bottom:10px; padding:12px;
@@ -2459,9 +2488,15 @@
 
     async function loadNecklaceOptions() {
         try {
-            const r = await fetch(API + '/api/necklace-options');
-            const data = await r.json();
+            const [optR, baseR] = await Promise.all([
+                fetch(API + '/api/necklace-options'),
+                fetch(API + '/api/necklace-base-price'),
+            ]);
+            const data = await optR.json();
+            const bp = await baseR.json();
             nkAll = data.options || [];
+            const baseInput = document.getElementById('nk-base-price');
+            if (baseInput) baseInput.value = bp.base_price ?? 19;
             const fc = nkAll.filter(o => o.kind === 'fabric' && o.active).length;
             const cc = nkAll.filter(o => o.kind === 'charm' && o.active).length;
             document.getElementById('nk-count-fabric').textContent = fc;
@@ -2473,6 +2508,23 @@
         }
     }
 
+    async function saveNecklaceBasePrice() {
+        const input = document.getElementById('nk-base-price');
+        const status = document.getElementById('nk-base-status');
+        const price = parseFloat(input.value);
+        if (isNaN(price) || price < 0) { alert('ფასი დადებითი რიცხვი უნდა იყოს'); return; }
+        try {
+            const r = await fetch(API + '/api/necklace-base-price', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ base_price: price }),
+            });
+            if (!r.ok) { alert((await r.json()).detail || 'შეცდომა'); return; }
+            status.textContent = '✓ შენახულია';
+            setTimeout(() => { status.textContent = ''; }, 2500);
+        } catch (e) { alert('შეცდომა: ' + e.message); }
+    }
+
     function renderNecklaceGrid() {
         const host = document.getElementById('necklace-grid');
         const items = nkAll.filter(o => o.kind === nkKind);
@@ -2481,17 +2533,128 @@
             host.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:#999;padding:24px">ჯერ ${label} არ გაქვს — ატვირთე ზემოთ.</div>`;
             return;
         }
-        host.innerHTML = items.map(o => `
-            <div class="nk-card ${o.active ? '' : 'inactive'}">
+        host.innerHTML = items.map(o => {
+            const isCharm = o.kind === 'charm';
+            const badge = isCharm && o.extra_price > 0
+                ? `<span class="nk-extra-badge">+${o.extra_price}₾</span>` : '';
+            const variants = isCharm && Array.isArray(o.variants) && o.variants.length
+                ? `<div class="nk-variants-strip">
+                    ${o.variants.slice(0, 6).map(v =>
+                        `<span class="swatch" style="background:${escapeHtml(v.color || '#ddd')}" title="${escapeHtml(v.name)}"></span>`
+                    ).join('')}
+                    ${o.variants.length > 6 ? `<span style="font-size:11px;color:#666">+${o.variants.length-6}</span>` : ''}
+                </div>` : '';
+            const editBtn = isCharm
+                ? `<button onclick="openNecklaceEditModal(${o.id})">რედაქტ.</button>` : '';
+            return `<div class="nk-card ${o.active ? '' : 'inactive'}" style="position:relative">
                 <img src="${escapeHtml(o.image_url)}" alt="${escapeHtml(o.name)}">
+                ${badge}
+                ${variants}
                 <div class="nk-meta">
                     <div class="nk-name">${escapeHtml(o.name) || '<span style="color:#bbb">სახელის გარეშე</span>'}</div>
                     <div class="nk-row">
+                        ${editBtn}
                         <button onclick="toggleNecklaceOption(${o.id}, ${!o.active})">${o.active ? 'გათიშე' : 'ჩართე'}</button>
                         <button class="danger" onclick="deleteNecklaceOption(${o.id})">წაშლა</button>
                     </div>
                 </div>
+            </div>`;
+        }).join('');
+    }
+
+    // ── Charm edit modal ──
+    let nkEditId = null;
+    let nkEditVariants = [];
+
+    function openNecklaceEditModal(id) {
+        const o = nkAll.find(x => x.id === id);
+        if (!o) return;
+        nkEditId = id;
+        nkEditVariants = (o.variants || []).map(v => ({ ...v }));
+        document.getElementById('nk-edit-current-img').innerHTML =
+            `<img src="${escapeHtml(o.image_url)}" style="max-width:200px;max-height:200px;border-radius:8px">`;
+        document.getElementById('nk-edit-image').value = '';
+        document.getElementById('nk-edit-name').value = o.name || '';
+        document.getElementById('nk-edit-extra').value = o.extra_price || '';
+        renderVariantRows();
+        document.getElementById('nk-edit-modal').style.display = 'flex';
+    }
+
+    function closeNecklaceEditModal() {
+        nkEditId = null;
+        nkEditVariants = [];
+        document.getElementById('nk-edit-modal').style.display = 'none';
+    }
+
+    function renderVariantRows() {
+        const host = document.getElementById('nk-edit-variants');
+        if (!nkEditVariants.length) {
+            host.innerHTML = '<p style="color:#999;font-size:13px;margin:0;padding:8px 0">ცარიელია — ვარიანტი არ ექნება.</p>';
+            return;
+        }
+        host.innerHTML = nkEditVariants.map((v, i) => `
+            <div style="display:grid;grid-template-columns:1fr 100px 38px 30px;gap:6px;align-items:center">
+                <input value="${escapeHtml(v.name || '')}" placeholder="სახელი (მაგ: წითელი)"
+                    oninput="updateVariantField(${i}, 'name', this.value)"
+                    style="padding:7px 9px;border:1px solid #ddd;border-radius:5px">
+                <input value="${escapeHtml(v.color || '')}" placeholder="#dc2626"
+                    oninput="updateVariantField(${i}, 'color', this.value)"
+                    style="padding:7px 9px;border:1px solid #ddd;border-radius:5px;font-family:monospace;font-size:12px">
+                <input type="color" value="${escapeHtml(v.color || '#000000')}"
+                    oninput="updateVariantField(${i}, 'color', this.value); document.querySelectorAll('#nk-edit-variants input')[i*3+1].value=this.value"
+                    style="width:38px;height:32px;padding:1px;border:1px solid #ddd;border-radius:5px;cursor:pointer">
+                <button onclick="removeVariantRow(${i})" style="background:#fef2f2;color:#c00;border:1px solid #fee;border-radius:5px;cursor:pointer;height:32px">×</button>
             </div>`).join('');
+    }
+
+    function addVariantRow() {
+        nkEditVariants.push({ name: '', color: '#000000' });
+        renderVariantRows();
+    }
+
+    function removeVariantRow(idx) {
+        nkEditVariants.splice(idx, 1);
+        renderVariantRows();
+    }
+
+    function updateVariantField(idx, field, value) {
+        nkEditVariants[idx][field] = value;
+    }
+
+    async function saveNecklaceEdit() {
+        if (!nkEditId) return;
+        const name = (document.getElementById('nk-edit-name').value || '').trim();
+        const extraRaw = (document.getElementById('nk-edit-extra').value || '').trim();
+        const extra_price = extraRaw === '' ? 0 : parseFloat(extraRaw);
+        if (isNaN(extra_price) || extra_price < 0) { alert('გადასახადი დადებითი რიცხვი უნდა იყოს'); return; }
+        // Drop variants with empty names so the API gets a clean list.
+        const variants = nkEditVariants
+            .filter(v => v.name && v.name.trim())
+            .map(v => ({
+                id: (v.id || v.name).toString().toLowerCase().replace(/\s+/g, '-'),
+                name: v.name.trim(),
+                ...(v.color ? { color: v.color } : {}),
+            }));
+
+        try {
+            // 1) Optional photo swap first
+            const fileEl = document.getElementById('nk-edit-image');
+            if (fileEl.files && fileEl.files[0]) {
+                const fd = new FormData();
+                fd.append('image', fileEl.files[0]);
+                const ri = await fetch(API + '/api/necklace-options/' + nkEditId + '/image', { method: 'POST', body: fd });
+                if (!ri.ok) { alert('ფოტოს ატვირთვა ვერ მოხერხდა'); return; }
+            }
+            // 2) Patch fields
+            const r = await fetch(API + '/api/necklace-options/' + nkEditId, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, extra_price, variants }),
+            });
+            if (!r.ok) { alert((await r.json()).detail || 'შეცდომა შენახვისას'); return; }
+            closeNecklaceEditModal();
+            await loadNecklaceOptions();
+        } catch (e) { alert('შეცდომა: ' + e.message); }
     }
 
     async function addNecklaceOption() {
@@ -3496,5 +3659,45 @@
         });
     });
 </script>
+
+<div id="nk-edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;padding:20px">
+    <div style="background:#fff;border-radius:12px;max-width:560px;width:100%;max-height:90vh;overflow:auto;padding:24px;box-shadow:0 20px 50px rgba(0,0,0,0.3)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+            <h3 style="margin:0">✨ ჩარმის რედაქტირება</h3>
+            <button onclick="closeNecklaceEditModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#999;line-height:1">×</button>
+        </div>
+
+        <div id="nk-edit-current-img" style="margin-bottom:14px;text-align:center;background:#f5f5f5;border-radius:8px;padding:10px"></div>
+        <label style="display:flex;flex-direction:column;gap:5px;margin-bottom:14px">
+            <span style="font-size:13px;color:#555">ფოტოს ჩანაცვლება (არასავალდებულო)</span>
+            <input id="nk-edit-image" type="file" accept="image/*">
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:5px;margin-bottom:14px">
+            <span style="font-size:13px;color:#555">სახელი</span>
+            <input id="nk-edit-name" placeholder="მაგ. ვერცხლის გული" style="padding:9px 11px;border:1px solid #ddd;border-radius:6px">
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:5px;margin-bottom:14px">
+            <span style="font-size:13px;color:#555">დამატებითი გადასახადი (₾, ცარიელი = 0)</span>
+            <input id="nk-edit-extra" type="number" step="0.5" min="0" placeholder="0" style="padding:9px 11px;border:1px solid #ddd;border-radius:6px">
+        </label>
+
+        <div style="margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <span style="font-size:13px;color:#555">ვარიანტები (სხვადასხვა ფერი/სტილი ერთ ფოტოში)</span>
+                <button onclick="addVariantRow()" style="padding:5px 10px;border:1px solid #ddd;background:#fff;border-radius:5px;cursor:pointer;font-size:12px">+ დამატება</button>
+            </div>
+            <div id="nk-edit-variants" style="display:flex;flex-direction:column;gap:6px"></div>
+            <p class="hint" style="margin:6px 0 0 0;font-size:11.5px">ცარიელი თუ დარჩება — ვარიანტი არ ექნება. წინააღმდეგ შემთხვევაში მომხმარებელი აარჩევს ერთ-ერთს რადიო ღილაკით.</p>
+        </div>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:14px;border-top:1px solid #eee">
+            <button onclick="closeNecklaceEditModal()" style="padding:9px 18px;border:1px solid #ddd;background:#fff;border-radius:6px;cursor:pointer">გაუქმება</button>
+            <button onclick="saveNecklaceEdit()" style="padding:9px 18px;border:0;background:#2563eb;color:#fff;border-radius:6px;cursor:pointer">შენახვა</button>
+        </div>
+    </div>
+</div>
+
 </body>
 </html>
