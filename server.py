@@ -37,6 +37,7 @@ from src.db import (
     get_bot_config, upsert_bot_config,
     get_site_sections, upsert_site_section,
     list_promo_codes, create_promo_code, update_promo_code, delete_promo_code,
+    list_necklace_options, create_necklace_option, update_necklace_option, delete_necklace_option,
 )
 from src.sessions import IMPERSONATION_SECONDS
 from src.secrets_vault import encrypt_secret, redacted
@@ -1765,6 +1766,79 @@ async def api_delete_promo_code(promo_id: int, tenant_id: str = Depends(get_tena
     ok = await delete_promo_code(tenant_id, promo_id)
     if not ok:
         raise HTTPException(status_code=404, detail="პრომოკოდი ვერ მოიძებნა")
+    return {"ok": True}
+
+
+# ── Necklace options (fabrics + charms) ──────────────────────────────────────
+# Each option is an image + display name. Customer picks one fabric and
+# one charm when ordering a necklace. Same table for both; `kind` discriminates.
+
+def _serialize_necklace_option(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "kind": row["kind"],
+        "name": row.get("name") or "",
+        "image_url": row["image_url"],
+        "active": bool(row["active"]),
+        "sort_order": row.get("sort_order") or 0,
+        "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+    }
+
+
+@app.get("/api/necklace-options")
+async def api_list_necklace_options(
+    kind: str = "",
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """Admin list — returns both active and inactive so the operator can
+    re-enable disabled rows from the UI."""
+    kind_arg = kind if kind in ("fabric", "charm") else None
+    rows = await list_necklace_options(tenant_id, kind=kind_arg, include_inactive=True)
+    return {"options": [_serialize_necklace_option(r) for r in rows]}
+
+
+@app.post("/api/necklace-options")
+async def api_create_necklace_option(
+    kind: str = Form(...),
+    name: str = Form(""),
+    image: UploadFile = File(...),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    if kind not in ("fabric", "charm"):
+        raise HTTPException(status_code=400, detail="kind უნდა იყოს fabric ან charm")
+    if not image:
+        raise HTTPException(status_code=400, detail="ფოტო აუცილებელია")
+    image_url = save_uploaded_image(image, prefix=f"necklace_{kind}")
+    row = await create_necklace_option(tenant_id, kind, name, image_url)
+    return _serialize_necklace_option(row)
+
+
+@app.put("/api/necklace-options/{option_id}")
+async def api_update_necklace_option(
+    option_id: int, request: Request, tenant_id: str = Depends(get_tenant_id),
+):
+    data = await request.json()
+    kwargs: dict = {}
+    if "name" in data:
+        kwargs["name"] = data["name"] or ""
+    if "active" in data:
+        kwargs["active"] = bool(data["active"])
+    if "sort_order" in data:
+        try:
+            kwargs["sort_order"] = int(data["sort_order"])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="sort_order უნდა იყოს რიცხვი")
+    row = await update_necklace_option(tenant_id, option_id, **kwargs)
+    if not row:
+        raise HTTPException(status_code=404, detail="ვარიანტი ვერ მოიძებნა")
+    return _serialize_necklace_option(row)
+
+
+@app.delete("/api/necklace-options/{option_id}")
+async def api_delete_necklace_option(option_id: int, tenant_id: str = Depends(get_tenant_id)):
+    ok = await delete_necklace_option(tenant_id, option_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="ვარიანტი ვერ მოიძებნა")
     return {"ok": True}
 
 

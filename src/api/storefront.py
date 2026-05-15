@@ -17,7 +17,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
-from src.db import DEFAULT_TENANT_ID, get_db, get_site_sections
+from src.db import DEFAULT_TENANT_ID, get_db, get_site_sections, list_necklace_options
 
 
 router = APIRouter(prefix="/api/storefront", tags=["storefront"])
@@ -279,3 +279,25 @@ async def list_products_simple(
         }
         for r in rows
     ]
+
+
+@router.get("/necklace-options")
+async def storefront_necklace_options(
+    request: Request,
+    response: Response,
+    tenant_id: str = Depends(_tenant_id),
+):
+    """Public list of necklace customisation options the website shows
+    to customers when they pick a fabric + charm. Active only — inactive
+    rows stay invisible to the public."""
+    fabrics = await list_necklace_options(tenant_id, kind="fabric", include_inactive=False)
+    charms = await list_necklace_options(tenant_id, kind="charm", include_inactive=False)
+
+    def _shape(rows):
+        return [
+            {"id": r["id"], "name": r.get("name") or "", "image_url": r["image_url"]}
+            for r in rows
+        ]
+
+    response.headers["Cache-Control"] = STOREFRONT_CACHE
+    return {"fabrics": _shape(fabrics), "charms": _shape(charms)}

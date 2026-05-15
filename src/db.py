@@ -783,6 +783,23 @@ async def init_db():
             "ON promo_codes (tenant_id, UPPER(code))"
         )
 
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS necklace_options (
+                id          SERIAL PRIMARY KEY,
+                tenant_id   TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+                kind        TEXT NOT NULL CHECK (kind IN ('fabric', 'charm')),
+                name        TEXT NOT NULL DEFAULT '',
+                image_url   TEXT NOT NULL,
+                active      BOOLEAN NOT NULL DEFAULT true,
+                sort_order  INTEGER NOT NULL DEFAULT 0,
+                created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_necklace_options_tenant_kind "
+            "ON necklace_options (tenant_id, kind, active)"
+        )
+
         # Enable RLS on every public table so Supabase REST API (anon key)
         # cannot read or write data. The postgres superuser used by asyncpg
         # bypasses RLS automatically — no policies needed for the backend.
@@ -1839,5 +1856,89 @@ async def delete_promo_code(tenant_id: str, promo_id: int) -> bool:
     result = await pool.execute(
         "DELETE FROM promo_codes WHERE tenant_id = $1 AND id = $2",
         tenant_id, promo_id,
+    )
+    return result.endswith("1")
+
+
+# ── Necklace customisation options ────────────────────────────────────────────
+# Fabrics and charms that customers pick from when ordering a necklace.
+# Same table holds both — distinguished by `kind` ('fabric' | 'charm').
+
+async def list_necklace_options(
+    tenant_id: str, kind: str | None = None, include_inactive: bool = False,
+) -> list[dict]:
+    """Return necklace options for a tenant. Filter by `kind` if given."""
+    pool = await get_db()
+    sql = "SELECT id, kind, name, image_url, active, sort_order, created_at FROM necklace_options WHERE tenant_id = $1"
+    params: list = [tenant_id]
+    if kind in ("fabric", "charm"):
+        sql += " AND kind = $2"
+        params.append(kind)
+    if not include_inactive:
+        sql += " AND active = true"
+    sql += " ORDER BY kind, sort_order, id"
+    rows = await pool.fetch(sql, *params)
+    return [dict(r) for r in rows]
+
+
+async def create_necklace_option(
+    tenant_id: str, kind: str, name: str, image_url: str,
+    active: bool = True, sort_order: int = 0,
+) -> dict:
+    """Insert a fabric or charm row. `kind` must be 'fabric' or 'charm'."""
+    if kind not in ("fabric", "charm"):
+        raise ValueError("kind must be 'fabric' or 'charm'")
+    pool = await get_db()
+    row = await pool.fetchrow(
+        """INSERT INTO necklace_options (tenant_id, kind, name, image_url, active, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, kind, name, image_url, active, sort_order, created_at""",
+        tenant_id, kind, (name or "").strip(), image_url,
+        bool(active), int(sort_order),
+    )
+    return dict(row)
+
+
+async def update_necklace_option(
+    tenant_id: str, option_id: int,
+    name: str | None = None, active: bool | None = None,
+    sort_order: int | None = None,
+) -> dict | None:
+    """Patch a single option in place. Pass only the fields that change."""
+    sets: list[str] = []
+    params: list = []
+    if name is not None:
+        sets.append(f"name = ${len(params)+1}")
+        params.append(name.strip())
+    if active is not None:
+        sets.append(f"active = ${len(params)+1}")
+        params.append(bool(active))
+    if sort_order is not None:
+        sets.append(f"sort_order = ${len(params)+1}")
+        params.append(int(sort_order))
+    pool = await get_db()
+    if not sets:
+        row = await pool.fetchrow(
+            "SELECT id, kind, name, image_url, active, sort_order, created_at "
+            "FROM necklace_options WHERE tenant_id = $1 AND id = $2",
+            tenant_id, option_id,
+        )
+        return dict(row) if row else None
+    params.extend([tenant_id, option_id])
+    row = await pool.fetchrow(
+        f"UPDATE necklace_options SET {', '.join(sets)} "
+        f"WHERE tenant_id = ${len(params)-1} AND id = ${len(params)} "
+        f"RETURNING id, kind, name, image_url, active, sort_order, created_at",
+        *params,
+    )
+    return dict(row) if row else None
+
+
+async def delete_necklace_option(tenant_id: str, option_id: int) -> bool:
+    """Delete a single option. Returns True if a row was removed."""
+    pool = await get_db()
+    result = await pool.execute(
+        "DELETE FROM necklace_options WHERE tenant_id = $1 AND id = $2",
+        tenant_id, option_id,
     )
     return result.endswith("1")

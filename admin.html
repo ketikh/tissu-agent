@@ -610,6 +610,10 @@
                 პრომოკოდები
                 <span class="count" id="sidebar-promos-count">0</span>
             </button>
+            <button class="nav-item" data-tab="necklace" onclick="showTab('necklace', this)">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="6" r="3"/><path d="M5 21c0-5 3-9 7-9s7 4 7 9"/></svg>
+                ყელსაბამის ვარიანტები
+            </button>
             <button class="nav-item" data-tab="insights" onclick="showTab('insights', this)">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-5"/></svg>
                 ინსაიტები
@@ -847,6 +851,49 @@
                     </table>
                 </div>
             </div>
+            <div id="tab-necklace" class="section">
+                <div class="card">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+                        <div>
+                            <h2 style="margin-bottom:2px">📿 ყელსაბამის ვარიანტები</h2>
+                            <p class="hint" style="margin-bottom:0">ატვირთე ქსოვილების და ჩარმების ფოტოები — საიტზე კლიენტი ამათგან აარჩევს რომელი უნდა.</p>
+                        </div>
+                    </div>
+
+                    <div class="necklace-tabs" style="display:flex;gap:4px;border-bottom:1px solid #eee;margin-bottom:18px">
+                        <button class="nk-tab active" data-kind="fabric" onclick="switchNecklaceKind('fabric',this)" style="padding:10px 18px;border:0;background:transparent;border-bottom:2px solid transparent;cursor:pointer;font-weight:500">🧵 ქსოვილები <span id="nk-count-fabric" style="color:#999;margin-left:4px">0</span></button>
+                        <button class="nk-tab" data-kind="charm" onclick="switchNecklaceKind('charm',this)" style="padding:10px 18px;border:0;background:transparent;border-bottom:2px solid transparent;cursor:pointer;font-weight:500">✨ ჩარმები <span id="nk-count-charm" style="color:#999;margin-left:4px">0</span></button>
+                    </div>
+
+                    <div style="display:grid;grid-template-columns:1fr 1fr 160px;gap:10px;align-items:end;margin-bottom:18px;padding:12px;background:#fafafa;border-radius:8px">
+                        <label style="display:flex;flex-direction:column;gap:4px">
+                            <span style="font-size:13px;color:#555">სახელი (არასავალდებულო)</span>
+                            <input id="nk-name" placeholder="მაგ. წითელი ყვავილებიანი" style="padding:8px 10px;border:1px solid #ddd;border-radius:6px">
+                        </label>
+                        <label style="display:flex;flex-direction:column;gap:4px">
+                            <span style="font-size:13px;color:#555">ფოტო</span>
+                            <input id="nk-file" type="file" accept="image/*" style="padding:6px;border:1px solid #ddd;border-radius:6px">
+                        </label>
+                        <button class="btn-primary" onclick="addNecklaceOption()" style="padding:9px 16px">ატვირთვა</button>
+                    </div>
+
+                    <div id="necklace-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px">
+                        <div style="grid-column:1/-1;text-align:center;color:#999;padding:24px">იტვირთება…</div>
+                    </div>
+                </div>
+                <style>
+                    .nk-tab.active { border-bottom-color: #2563eb !important; color: #2563eb; }
+                    .nk-card { background:#fff; border:1px solid #eee; border-radius:10px; overflow:hidden; }
+                    .nk-card img { width:100%; aspect-ratio:1; object-fit:cover; display:block; background:#f5f5f5; }
+                    .nk-card .nk-meta { padding:8px 10px; display:flex;flex-direction:column;gap:6px; }
+                    .nk-card .nk-name { font-size:13px; color:#333; }
+                    .nk-card .nk-row { display:flex;gap:6px;align-items:center; }
+                    .nk-card .nk-row button { flex:1; padding:5px 8px; font-size:12px; border-radius:5px; cursor:pointer; border:1px solid #ddd; background:#fff; }
+                    .nk-card .nk-row button.danger { color:#c00; background:#fef2f2; border-color:#fee; }
+                    .nk-card.inactive { opacity:0.5; }
+                </style>
+            </div>
+
             <div id="tab-insights" class="section">
                 <div class="card">
                     <h2>ხარვეზები / უკმაყოფილო კლიენტები</h2>
@@ -1448,6 +1495,7 @@
         bot: 'ბოტი',
         site: 'საიტი',
         pinterest: 'პინტერესტი',
+        necklace: 'ყელსაბამის ვარიანტები',
     };
     const PAGE_CRUMBS = {
         dashboard: 'Overview',
@@ -1462,6 +1510,7 @@
         bot: 'Settings',
         site: 'Settings',
         pinterest: 'Integrations',
+        necklace: 'Catalog · ყელსაბამები',
     };
 
     function showTab(tab, btn) {
@@ -1487,6 +1536,7 @@
         if (tab === 'dashboard') loadDashboard();
         if (tab === 'sale') loadSale();
         if (tab === 'promos') loadPromoCodes();
+        if (tab === 'necklace') loadNecklaceOptions();
         if (tab === 'chats') loadChats();
         if (tab === 'insights') loadInsights();
         if (tab === 'bot') loadBotConfig();
@@ -2201,7 +2251,7 @@
                             <span style="font-size:12px">🏷️</span>
                             ${i.on_sale ? 'ფასდაკლებაშია' : 'ფასდაკლებაში'}
                         </button>
-                        ${i.on_sale ? `<div class="price-input-group sale">
+                        <div class="price-input-group sale" style="${i.on_sale ? '' : 'opacity:0.55'}">
                             <div class="price-cell">
                                 <input type="number" step="0.5" value="${i.sale_price ?? ''}" min="0" placeholder="ახალი ფასი" id="sale-${i.id}"
                                     onkeydown="if(event.key==='Enter') document.getElementById('sale-check-${i.id}').click()"
@@ -2209,7 +2259,7 @@
                                 <span class="price-suffix">₾</span>
                             </div>
                             <button class="price-check" id="sale-check-${i.id}" onclick="const inp=document.getElementById('sale-${i.id}'); setSalePrice(${i.id}, inp.value, inp)" title="შენახვა">✓</button>
-                        </div>` : ''}
+                        </div>
                     </div>
                     <div class="stock-control">
                         <button class="minus" onclick="chg(${i.id},${i.stock-1})">−</button>
@@ -2356,6 +2406,98 @@
         } catch (e) {
             alert('შეცდომა: ' + e.message);
         }
+    }
+
+    // ── Necklace options (fabrics + charms) ──────────────────────────────
+    let nkKind = 'fabric';
+    let nkAll = [];
+
+    function switchNecklaceKind(kind, btn) {
+        nkKind = kind;
+        document.querySelectorAll('.nk-tab').forEach(t => t.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+        renderNecklaceGrid();
+    }
+
+    async function loadNecklaceOptions() {
+        try {
+            const r = await fetch(API + '/api/necklace-options');
+            const data = await r.json();
+            nkAll = data.options || [];
+            const fc = nkAll.filter(o => o.kind === 'fabric' && o.active).length;
+            const cc = nkAll.filter(o => o.kind === 'charm' && o.active).length;
+            document.getElementById('nk-count-fabric').textContent = fc;
+            document.getElementById('nk-count-charm').textContent = cc;
+            renderNecklaceGrid();
+        } catch (e) {
+            document.getElementById('necklace-grid').innerHTML =
+                `<div style="grid-column:1/-1;text-align:center;color:#c00;padding:24px">შეცდომა: ${escapeHtml(e.message)}</div>`;
+        }
+    }
+
+    function renderNecklaceGrid() {
+        const host = document.getElementById('necklace-grid');
+        const items = nkAll.filter(o => o.kind === nkKind);
+        if (!items.length) {
+            const label = nkKind === 'fabric' ? 'ქსოვილი' : 'ჩარმი';
+            host.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:#999;padding:24px">ჯერ ${label} არ გაქვს — ატვირთე ზემოთ.</div>`;
+            return;
+        }
+        host.innerHTML = items.map(o => `
+            <div class="nk-card ${o.active ? '' : 'inactive'}">
+                <img src="${escapeHtml(o.image_url)}" alt="${escapeHtml(o.name)}">
+                <div class="nk-meta">
+                    <div class="nk-name">${escapeHtml(o.name) || '<span style="color:#bbb">სახელის გარეშე</span>'}</div>
+                    <div class="nk-row">
+                        <button onclick="toggleNecklaceOption(${o.id}, ${!o.active})">${o.active ? 'გათიშე' : 'ჩართე'}</button>
+                        <button class="danger" onclick="deleteNecklaceOption(${o.id})">წაშლა</button>
+                    </div>
+                </div>
+            </div>`).join('');
+    }
+
+    async function addNecklaceOption() {
+        const fileEl = document.getElementById('nk-file');
+        const nameEl = document.getElementById('nk-name');
+        if (!fileEl.files || !fileEl.files[0]) { alert('ფოტო აარჩიე'); return; }
+        const fd = new FormData();
+        fd.append('kind', nkKind);
+        fd.append('name', nameEl.value || '');
+        fd.append('image', fileEl.files[0]);
+        try {
+            const r = await fetch(API + '/api/necklace-options', { method: 'POST', body: fd });
+            if (!r.ok) {
+                const err = await r.json().catch(() => ({}));
+                alert(err.detail || 'შეცდომა ატვირთვისას');
+                return;
+            }
+            nameEl.value = '';
+            fileEl.value = '';
+            await loadNecklaceOptions();
+        } catch (e) {
+            alert('შეცდომა: ' + e.message);
+        }
+    }
+
+    async function toggleNecklaceOption(id, newActive) {
+        try {
+            const r = await fetch(API + '/api/necklace-options/' + id, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ active: newActive }),
+            });
+            if (!r.ok) { alert((await r.json()).detail || 'შეცდომა'); return; }
+            await loadNecklaceOptions();
+        } catch (e) { alert('შეცდომა: ' + e.message); }
+    }
+
+    async function deleteNecklaceOption(id) {
+        if (!confirm('წავშალო ეს ვარიანტი?')) return;
+        try {
+            const r = await fetch(API + '/api/necklace-options/' + id, { method: 'DELETE' });
+            if (!r.ok) { alert((await r.json()).detail || 'შეცდომა'); return; }
+            await loadNecklaceOptions();
+        } catch (e) { alert('შეცდომა: ' + e.message); }
     }
 
     async function loadInsights() {
