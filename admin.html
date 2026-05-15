@@ -2251,7 +2251,7 @@
                             <span style="font-size:12px">🏷️</span>
                             ${i.on_sale ? 'ფასდაკლებაშია' : 'ფასდაკლებაში'}
                         </button>
-                        <div class="price-input-group sale" style="${i.on_sale ? '' : 'opacity:0.55'}">
+                        ${i.on_sale ? `<div class="price-input-group sale">
                             <div class="price-cell">
                                 <input type="number" step="0.5" value="${i.sale_price ?? ''}" min="0" placeholder="ახალი ფასი" id="sale-${i.id}"
                                     onkeydown="if(event.key==='Enter') document.getElementById('sale-check-${i.id}').click()"
@@ -2259,7 +2259,7 @@
                                 <span class="price-suffix">₾</span>
                             </div>
                             <button class="price-check" id="sale-check-${i.id}" onclick="const inp=document.getElementById('sale-${i.id}'); setSalePrice(${i.id}, inp.value, inp)" title="შენახვა">✓</button>
-                        </div>
+                        </div>` : ''}
                     </div>
                     <div class="stock-control">
                         <button class="minus" onclick="chg(${i.id},${i.stock-1})">−</button>
