@@ -537,11 +537,25 @@
                 position: fixed; top: 0; left: 0; right: 0; bottom: auto; height: auto;
                 flex-direction: row; overflow-x: auto; overflow-y: hidden;
                 padding: 10px 14px; gap: 6px; z-index: 9; align-items: center;
+                -webkit-overflow-scrolling: touch;
             }
-            .brand, .side-title, .cat-group, .side-foot { display: none; }
+            .brand, .side-title, .side-foot { display: none; }
             .nav { flex-direction: row; gap: 4px; flex-wrap: nowrap; }
-            .nav-item { white-space: nowrap; padding: 7px 12px; }
+            .nav-item { white-space: nowrap; padding: 7px 12px; flex-shrink: 0; }
             .nav-item .count { display: none; }
+            /* Catalog group becomes a horizontal continuation of the nav so
+               კატეგორიები are reachable on mobile too. */
+            .cat-group {
+                margin-top: 0; padding-top: 0; border-top: 0;
+                border-left: 1px solid var(--border);
+                margin-left: 6px; padding-left: 10px;
+                display: flex; gap: 4px; align-items: center;
+                flex-shrink: 0;
+            }
+            .cat-item {
+                white-space: nowrap; padding: 7px 12px; flex-shrink: 0;
+            }
+            .cat-item .count, .cat-item .gear, .cat-item .dot { display: none; }
             .topbar { top: 56px; padding: 0 18px; }
             .content { padding: 18px 16px 80px; }
         }
