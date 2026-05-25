@@ -40,6 +40,8 @@ from src.db import (
     list_necklace_options, create_necklace_option, update_necklace_option, delete_necklace_option,
     get_necklace_base_price, set_necklace_base_price,
     list_gallery_photos, create_gallery_photo, update_gallery_photo, delete_gallery_photo,
+    list_product_gallery, create_product_gallery_photo,
+    update_product_gallery_photo, delete_product_gallery_photo,
 )
 from src.sessions import IMPERSONATION_SECONDS
 from src.secrets_vault import encrypt_secret, redacted
@@ -2006,6 +2008,86 @@ async def api_replace_gallery_image(
 @app.delete("/api/admin/gallery/{photo_id}")
 async def api_delete_gallery(photo_id: int, tenant_id: str = Depends(get_tenant_id)):
     ok = await delete_gallery_photo(tenant_id, photo_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="ფოტო ვერ მოიძებნა")
+    return {"ok": True}
+
+
+# ── Per-product lookbook (storefront product page + Pinterest) ────
+
+def _serialize_product_gallery(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "inventory_id": row["inventory_id"],
+        "image_url": row["image_url"],
+        "position": int(row.get("position") or 0),
+        "created_at": row.get("created_at"),
+    }
+
+
+@app.get("/api/product-gallery")
+async def api_list_product_gallery(
+    inventory_id: int = 0,
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """List per-product lookbook photos. Pass ``?inventory_id=N`` to scope
+    to a single product; omit it to get every row for this tenant."""
+    inv_id = inventory_id if inventory_id > 0 else None
+    rows = await list_product_gallery(tenant_id, inventory_id=inv_id)
+    return {"photos": [_serialize_product_gallery(r) for r in rows]}
+
+
+@app.post("/api/product-gallery")
+async def api_create_product_gallery(
+    inventory_id: int = Form(...),
+    image: UploadFile = File(...),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    if not image:
+        raise HTTPException(status_code=400, detail="ფოტო აუცილებელია")
+    if inventory_id <= 0:
+        raise HTTPException(status_code=400, detail="inventory_id აუცილებელია")
+    # Confirm the inventory row belongs to this tenant — prevents an
+    # attacker with one tenant's key from attaching photos to another
+    # tenant's product.
+    pool = await get_db()
+    owns = await pool.fetchval(
+        "SELECT 1 FROM inventory WHERE id = $1 AND tenant_id = $2",
+        inventory_id, tenant_id,
+    )
+    if not owns:
+        raise HTTPException(status_code=404, detail="პროდუქტი ვერ მოიძებნა")
+    image_url = save_uploaded_image(
+        image, prefix=f"lookbook_{inventory_id}",
+        folder=f"tissu/lookbook/{inventory_id}",
+    )
+    row = await create_product_gallery_photo(tenant_id, inventory_id, image_url)
+    return _serialize_product_gallery(row)
+
+
+@app.put("/api/product-gallery/{photo_id}")
+async def api_update_product_gallery(
+    photo_id: int, request: Request, tenant_id: str = Depends(get_tenant_id),
+):
+    """Patch position (used for reorder). Send only the fields you want."""
+    data = await request.json()
+    kwargs: dict = {}
+    if "position" in data:
+        try:
+            kwargs["position"] = int(data["position"])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="position უნდა იყოს რიცხვი")
+    row = await update_product_gallery_photo(tenant_id, photo_id, **kwargs)
+    if not row:
+        raise HTTPException(status_code=404, detail="ფოტო ვერ მოიძებნა")
+    return _serialize_product_gallery(row)
+
+
+@app.delete("/api/product-gallery/{photo_id}")
+async def api_delete_product_gallery(
+    photo_id: int, tenant_id: str = Depends(get_tenant_id),
+):
+    ok = await delete_product_gallery_photo(tenant_id, photo_id)
     if not ok:
         raise HTTPException(status_code=404, detail="ფოტო ვერ მოიძებნა")
     return {"ok": True}

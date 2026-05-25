@@ -115,6 +115,7 @@ def test_serialize_matches_task_contract():
         "image_back": "https://cdn/back.jpg",
         "category": "pouch",
         "tags": ["new"],
+        "gallery_images": [],
         "updated_at": "2026-04-23T12:34:56Z",
     }
 

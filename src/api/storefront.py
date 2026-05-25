@@ -21,6 +21,7 @@ from src.db import (
     DEFAULT_TENANT_ID, get_db, get_site_sections,
     list_necklace_options, get_necklace_base_price,
     list_gallery_photos,
+    list_product_gallery, list_product_gallery_for_ids,
 )
 
 
@@ -106,8 +107,14 @@ def _effective_price(row: dict) -> float:
         return 0.0
 
 
-def _serialize(row: dict) -> dict:
-    """Turn an inventory row into the public response shape."""
+def _serialize(row: dict, gallery_images: list[str] | None = None) -> dict:
+    """Turn an inventory row into the public response shape.
+
+    ``gallery_images`` is the pre-fetched lookbook for this product. Pass
+    an empty list (or None — coerced to []) when the product has no
+    lifestyle photos. The website checks for a non-empty array to decide
+    whether to render the "On model" section.
+    """
     stock = int(row.get("stock") or 0)
     effective = _effective_price(row)
     # original_price exposes the pre-discount number so the storefront
@@ -141,6 +148,7 @@ def _serialize(row: dict) -> dict:
         "image_back": row.get("image_url_back") or "",
         "category": _map_category(row.get("category")),
         "tags": _parse_tags(row.get("tags")),
+        "gallery_images": list(gallery_images or []),
         "updated_at": row.get("updated_at") or row.get("created_at") or "",
     }
 
@@ -189,7 +197,16 @@ async def list_products(
     sql += " ORDER BY category, code, id"
 
     rows = await pool.fetch(sql, *params)
-    products = [_serialize(dict(r)) for r in rows]
+    rows = [dict(r) for r in rows]
+    # Batch-fetch lookbook photos for every product in this page so the
+    # response includes them without an N+1 query loop.
+    gallery_by_id = await list_product_gallery_for_ids(
+        tenant_id, [r["id"] for r in rows]
+    )
+    products = [
+        _serialize(r, gallery_images=gallery_by_id.get(r["id"], []))
+        for r in rows
+    ]
     response.headers["Cache-Control"] = STOREFRONT_CACHE
     return {"products": products, "count": len(products)}
 
@@ -217,8 +234,12 @@ async def get_product(
     if not row:
         raise HTTPException(status_code=404, detail="not found")
 
+    gallery = await list_product_gallery(tenant_id, inventory_id=id_int)
     response.headers["Cache-Control"] = STOREFRONT_CACHE
-    return _serialize(dict(row))
+    return _serialize(
+        dict(row),
+        gallery_images=[g["image_url"] for g in gallery],
+    )
 
 
 _VALID_PAGES = frozenset({"home", "about", "faq", "shop", "contact"})

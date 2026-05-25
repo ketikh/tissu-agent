@@ -31,6 +31,7 @@ TENANT_SCOPED_TABLES = (
     "confirm_tokens",
     "categories",
     "product_extra_photos",
+    "product_gallery",
     # These tables are created lazily by other modules (image_match,
     # vision_match, the Facebook webhook's photo-hint pipeline). ADD
     # COLUMN will fail if the table isn't there yet, so init_db wraps
@@ -818,9 +819,32 @@ async def init_db():
             "ADD COLUMN IF NOT EXISTS necklace_base_price NUMERIC NOT NULL DEFAULT 19"
         )
 
-        # Lookbook / lifestyle gallery — independent of the product catalog
-        # so the bot never sees these photos. Owner edits via admin, the
-        # storefront reads via /api/storefront/gallery.
+        # Per-product lookbook photos — used by the website product page
+        # ("On model") and the Pinterest agent. Kept separate from
+        # `inventory.image_url / image_url_back` (which the Messenger bot
+        # uses) AND from `product_extra_photos` (the AI-search index).
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS product_gallery (
+                id            SERIAL PRIMARY KEY,
+                tenant_id     TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+                inventory_id  INTEGER NOT NULL REFERENCES inventory(id) ON DELETE CASCADE,
+                image_url     TEXT NOT NULL,
+                position      INTEGER NOT NULL DEFAULT 0,
+                created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_product_gallery_inv "
+            "ON product_gallery (inventory_id, position, id)"
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_product_gallery_tenant "
+            "ON product_gallery (tenant_id)"
+        )
+
+        # Site-wide lookbook / lifestyle gallery — independent of the
+        # product catalog so the bot never sees these photos. Owner edits
+        # via admin, the storefront reads via /api/storefront/gallery.
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS gallery_photos (
                 id          SERIAL PRIMARY KEY,
@@ -2169,6 +2193,133 @@ async def delete_gallery_photo(tenant_id: str, photo_id: int) -> bool:
     pool = await get_db()
     result = await pool.execute(
         "DELETE FROM gallery_photos WHERE tenant_id = $1 AND id = $2",
+        tenant_id, photo_id,
+    )
+    return result.endswith("1")
+
+
+# ── Per-product lookbook photos ──────────────────────────────
+# Photos that show one specific product (model shots, lifestyle, etc.).
+# Used by the storefront product page and the Pinterest agent — the
+# Messenger bot does NOT read these.
+
+_PG_COLUMNS = "id, inventory_id, image_url, position, created_at"
+
+
+def _row_to_product_gallery(row) -> dict:
+    d = dict(row)
+    d["position"] = int(d.get("position") or 0)
+    if d.get("created_at") is not None:
+        d["created_at"] = d["created_at"].isoformat()
+    return d
+
+
+async def list_product_gallery(
+    tenant_id: str, inventory_id: int | None = None,
+) -> list[dict]:
+    """Every per-product lookbook photo for this tenant, optionally
+    scoped to a single inventory item. Ordered for direct rendering."""
+    pool = await get_db()
+    if inventory_id is not None:
+        rows = await pool.fetch(
+            f"SELECT {_PG_COLUMNS} FROM product_gallery "
+            f"WHERE tenant_id = $1 AND inventory_id = $2 "
+            f"ORDER BY position, id",
+            tenant_id, inventory_id,
+        )
+    else:
+        rows = await pool.fetch(
+            f"SELECT {_PG_COLUMNS} FROM product_gallery "
+            f"WHERE tenant_id = $1 ORDER BY inventory_id, position, id",
+            tenant_id,
+        )
+    return [_row_to_product_gallery(r) for r in rows]
+
+
+async def list_product_gallery_for_ids(
+    tenant_id: str, inventory_ids: list[int],
+) -> dict[int, list[str]]:
+    """Batched lookup: return ``{inventory_id: [url, url, ...]}`` for the
+    given ids, sorted by position. Used by the storefront /products list
+    so we attach lookbook photos in a single round-trip instead of N+1."""
+    if not inventory_ids:
+        return {}
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT inventory_id, image_url FROM product_gallery "
+        "WHERE tenant_id = $1 AND inventory_id = ANY($2::int[]) "
+        "ORDER BY inventory_id, position, id",
+        tenant_id, list(inventory_ids),
+    )
+    out: dict[int, list[str]] = {}
+    for r in rows:
+        out.setdefault(int(r["inventory_id"]), []).append(r["image_url"])
+    return out
+
+
+async def create_product_gallery_photo(
+    tenant_id: str, inventory_id: int, image_url: str,
+    position: int | None = None,
+) -> dict:
+    """Insert a lookbook photo for one product. If position is None,
+    append after the last existing photo for that product."""
+    pool = await get_db()
+    if position is None:
+        last = await pool.fetchval(
+            "SELECT COALESCE(MAX(position), 0) FROM product_gallery "
+            "WHERE tenant_id = $1 AND inventory_id = $2",
+            tenant_id, inventory_id,
+        )
+        position = int(last or 0) + 1
+    row = await pool.fetchrow(
+        f"""INSERT INTO product_gallery
+              (tenant_id, inventory_id, image_url, position)
+            VALUES ($1, $2, $3, $4)
+            RETURNING {_PG_COLUMNS}""",
+        tenant_id, int(inventory_id), image_url, int(position),
+    )
+    return _row_to_product_gallery(row)
+
+
+async def update_product_gallery_photo(
+    tenant_id: str, photo_id: int,
+    position: int | None = None,
+    image_url: str | None = None,
+) -> dict | None:
+    """Patch a single lookbook row. Pass only what changes."""
+    sets: list[str] = []
+    params: list = []
+    if position is not None:
+        sets.append(f"position = ${len(params)+1}")
+        params.append(int(position))
+    if image_url is not None:
+        sets.append(f"image_url = ${len(params)+1}")
+        params.append(image_url)
+    pool = await get_db()
+    if not sets:
+        row = await pool.fetchrow(
+            f"SELECT {_PG_COLUMNS} FROM product_gallery "
+            f"WHERE tenant_id = $1 AND id = $2",
+            tenant_id, photo_id,
+        )
+        return _row_to_product_gallery(row) if row else None
+    params.extend([tenant_id, photo_id])
+    row = await pool.fetchrow(
+        f"UPDATE product_gallery SET {', '.join(sets)} "
+        f"WHERE tenant_id = ${len(params)-1} AND id = ${len(params)} "
+        f"RETURNING {_PG_COLUMNS}",
+        *params,
+    )
+    return _row_to_product_gallery(row) if row else None
+
+
+async def delete_product_gallery_photo(
+    tenant_id: str, photo_id: int,
+) -> bool:
+    """Remove a single lookbook photo. Returns True if a row was deleted."""
+    pool = await get_db()
+    result = await pool.execute(
+        "DELETE FROM product_gallery WHERE tenant_id = $1 AND id = $2",
         tenant_id, photo_id,
     )
     return result.endswith("1")

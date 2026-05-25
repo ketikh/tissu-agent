@@ -626,6 +626,10 @@
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                 გალერეა
             </button>
+            <button class="nav-item" data-tab="lookbook" onclick="showTab('lookbook', this)">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21V8a2 2 0 0 0-2-2h-3l-2-3H7a2 2 0 0 0-2 2v16"/><circle cx="12" cy="13" r="3"/></svg>
+                Lookbook
+            </button>
             <button class="nav-item" data-tab="insights" onclick="showTab('insights', this)">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-5"/></svg>
                 ინსაიტები
@@ -1058,6 +1062,94 @@
                         .gl-upload-btn { width: 100%; padding: 11px; }
                         .gl-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
                         .gl-card .gl-meta { padding: 8px 10px; }
+                    }
+                </style>
+            </div>
+
+            <div id="tab-lookbook" class="section">
+                <div class="card">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+                        <div>
+                            <h2 style="margin-bottom:2px">📸 Lookbook (პროდუქტებზე)</h2>
+                            <p class="hint" style="margin-bottom:0">ცხოვრებაში / On model ფოტოები. იჩვენება საიტზე პროდუქტის გვერდის ქვედა სექციაში და Pinterest აგენტი იყენებს. ბოტი ვერ ხედავს.</p>
+                        </div>
+                    </div>
+
+                    <div class="lb-upload-form">
+                        <label class="lb-upload-field">
+                            <span class="lb-upload-label">პროდუქტი</span>
+                            <select id="lb-product"><option value="">აირჩიე პროდუქტი…</option></select>
+                        </label>
+                        <label class="lb-upload-field">
+                            <span class="lb-upload-label">ფოტო (ერთი ან რამდენიმე)</span>
+                            <input id="lb-file" type="file" accept="image/*" multiple>
+                        </label>
+                        <button class="btn-primary lb-upload-btn" onclick="addLookbookPhotos()" id="lb-upload-btn">+ ფოტოს დამატება</button>
+                    </div>
+                    <p id="lb-upload-status" class="hint" style="margin:0 0 16px 0;min-height:18px"></p>
+
+                    <div id="lookbook-list">
+                        <div style="text-align:center;color:#999;padding:24px">იტვირთება…</div>
+                    </div>
+                </div>
+                <style>
+                    .lb-upload-form {
+                        display:grid; grid-template-columns:1fr 1fr 180px; gap:10px;
+                        align-items:end; margin-bottom:10px; padding:12px;
+                        background:#fafafa; border-radius:8px;
+                    }
+                    .lb-upload-field { display:flex; flex-direction:column; gap:4px; min-width:0; }
+                    .lb-upload-label { font-size:13px; color:#555; }
+                    .lb-upload-field input, .lb-upload-field select {
+                        padding:8px 10px; border:1px solid #ddd; border-radius:6px;
+                        min-width:0; width:100%; box-sizing:border-box; background:#fff;
+                    }
+                    .lb-upload-field input[type=file] { padding:6px; }
+                    .lb-upload-btn { padding:9px 16px; }
+
+                    .lb-product-block {
+                        background:#fff; border:1px solid #e5e7eb; border-radius:10px;
+                        padding:14px; margin-bottom:14px;
+                    }
+                    .lb-product-head {
+                        display:flex; align-items:center; gap:10px;
+                        margin-bottom:10px; padding-bottom:10px;
+                        border-bottom:1px solid #f1f1f1;
+                    }
+                    .lb-product-head img { width:42px; height:42px; object-fit:cover; border-radius:6px; background:#f5f5f5; }
+                    .lb-product-head .lb-pname { font-weight:600; font-size:14px; color:#111; }
+                    .lb-product-head .lb-pcode { font-size:12px; color:#666; }
+                    .lb-grid {
+                        display:grid; grid-template-columns:repeat(5, 1fr); gap:10px;
+                    }
+                    .lb-card {
+                        position:relative; background:#fff; border:1px solid #e5e7eb;
+                        border-radius:8px; overflow:hidden;
+                    }
+                    .lb-card img { width:100%; aspect-ratio:1; object-fit:cover; display:block; background:#f5f5f5; }
+                    .lb-card .lb-meta {
+                        padding:6px 8px; display:flex; gap:6px; align-items:center;
+                    }
+                    .lb-card .lb-pos {
+                        flex:1; padding:3px 6px; border:1px solid #d1d5db;
+                        border-radius:4px; font-size:12px; width:100%; box-sizing:border-box;
+                    }
+                    .lb-card .lb-del {
+                        padding:3px 8px; border:1px solid #fecaca; background:#fef2f2;
+                        color:#b91c1c; border-radius:4px; cursor:pointer; font-size:13px;
+                    }
+                    .lb-card .lb-del:hover { background:#fee2e2; }
+                    .lb-empty { padding:14px; text-align:center; color:#999; font-size:13px; }
+
+                    @media (max-width: 1100px) {
+                        .lb-grid { grid-template-columns: repeat(4, 1fr); }
+                    }
+                    @media (max-width: 760px) {
+                        .lb-upload-form {
+                            grid-template-columns: 1fr; gap: 8px; padding: 10px;
+                        }
+                        .lb-upload-btn { width: 100%; padding: 11px; }
+                        .lb-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
                     }
                 </style>
             </div>
@@ -1665,6 +1757,7 @@
         pinterest: 'პინტერესტი',
         necklace: 'ყელსაბამის ვარიანტები',
         gallery: 'გალერეა',
+        lookbook: 'Lookbook (პროდუქტებზე)',
     };
     const PAGE_CRUMBS = {
         dashboard: 'Overview',
@@ -1681,6 +1774,7 @@
         pinterest: 'Integrations',
         necklace: 'Catalog · ყელსაბამები',
         gallery: 'Lookbook',
+        lookbook: 'Catalog · Lookbook',
     };
 
     function showTab(tab, btn) {
@@ -1708,6 +1802,7 @@
         if (tab === 'promos') loadPromoCodes();
         if (tab === 'necklace') loadNecklaceOptions();
         if (tab === 'gallery') loadGalleryPhotos();
+        if (tab === 'lookbook') loadLookbookData();
         if (tab === 'chats') loadChats();
         if (tab === 'insights') loadInsights();
         if (tab === 'bot') loadBotConfig();
@@ -2937,6 +3032,129 @@
             const r = await fetch(API + '/api/admin/gallery/' + id, { method: 'DELETE' });
             if (!r.ok) { alert((await r.json()).detail || 'შეცდომა'); return; }
             await loadGalleryPhotos();
+        } catch (e) { alert('შეცდომა: ' + e.message); }
+    }
+
+    // ── Per-product Lookbook ──────────────────────────────────
+    let lookbookInventory = [];
+    let lookbookPhotos = [];
+
+    async function loadLookbookData() {
+        const host = document.getElementById('lookbook-list');
+        try {
+            const [invR, lbR] = await Promise.all([
+                fetch(API + '/api/inventory'),
+                fetch(API + '/api/product-gallery'),
+            ]);
+            const inv = await invR.json();
+            const lb = await lbR.json();
+            lookbookInventory = inv.inventory || [];
+            lookbookPhotos = lb.photos || [];
+            const sel = document.getElementById('lb-product');
+            const current = sel.value;
+            sel.innerHTML = '<option value="">აირჩიე პროდუქტი…</option>' + lookbookInventory.map(p =>
+                `<option value="${p.id}">${(p.code || '#' + p.id)} — ${(p.product_name || '').replace(/</g, '&lt;')}</option>`
+            ).join('');
+            if (current) sel.value = current;
+            renderLookbookList();
+        } catch (e) {
+            host.innerHTML = '<div style="text-align:center;color:#c00;padding:24px">ვერ ჩაიტვირთა: ' + e.message + '</div>';
+        }
+    }
+
+    function renderLookbookList() {
+        const host = document.getElementById('lookbook-list');
+        const byInv = {};
+        for (const p of lookbookPhotos) {
+            (byInv[p.inventory_id] = byInv[p.inventory_id] || []).push(p);
+        }
+        // Build blocks for products that actually have photos, then add
+        // an "empty state" hint if there are none anywhere.
+        const productsWithPhotos = lookbookInventory.filter(p => byInv[p.id]);
+        if (!productsWithPhotos.length) {
+            host.innerHTML = '<div class="lb-empty">ჯერ არ არის lookbook ფოტოები. აარჩიე პროდუქტი ზემოთ და ატვირთე ფოტოები ✨</div>';
+            return;
+        }
+        host.innerHTML = productsWithPhotos.map(prod => {
+            const photos = (byInv[prod.id] || []).slice().sort((a, b) => a.position - b.position);
+            const cards = photos.map(p => `
+                <div class="lb-card">
+                    <img src="${p.image_url}" alt="">
+                    <div class="lb-meta">
+                        <input class="lb-pos" type="number" value="${p.position}" title="თანმიმდევრობა" onchange="updateLookbookPosition(${p.id}, this.value)">
+                        <button class="lb-del" onclick="deleteLookbookPhoto(${p.id})" title="წაშლა">🗑</button>
+                    </div>
+                </div>
+            `).join('');
+            const cover = prod.image_url || '';
+            return `
+                <div class="lb-product-block">
+                    <div class="lb-product-head">
+                        ${cover ? `<img src="${cover.startsWith('http') ? cover : API + cover}" alt="">` : '<div style="width:42px;height:42px;background:#f5f5f5;border-radius:6px"></div>'}
+                        <div>
+                            <div class="lb-pname">${(prod.product_name || '').replace(/</g, '&lt;')}</div>
+                            <div class="lb-pcode">${prod.code || '#' + prod.id} · ${photos.length} ფოტო</div>
+                        </div>
+                    </div>
+                    <div class="lb-grid">${cards}</div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function addLookbookPhotos() {
+        const sel = document.getElementById('lb-product');
+        const files = document.getElementById('lb-file').files;
+        const status = document.getElementById('lb-upload-status');
+        const btn = document.getElementById('lb-upload-btn');
+        const invId = parseInt(sel.value, 10);
+        if (!invId) { status.textContent = 'აარჩიე პროდუქტი.'; return; }
+        if (!files || !files.length) { status.textContent = 'აარჩიე ერთი ან რამდენიმე ფოტო.'; return; }
+        btn.disabled = true;
+        try {
+            let done = 0;
+            for (const f of files) {
+                status.textContent = `იტვირთება ${done + 1} / ${files.length}…`;
+                const fd = new FormData();
+                fd.append('inventory_id', String(invId));
+                fd.append('image', f);
+                const r = await fetch(API + '/api/product-gallery', { method: 'POST', body: fd });
+                if (!r.ok) {
+                    const e = await r.json().catch(() => ({}));
+                    throw new Error(e.detail || ('სტატუსი ' + r.status));
+                }
+                done += 1;
+            }
+            status.textContent = `აიტვირთა ${done} ფოტო ✓`;
+            document.getElementById('lb-file').value = '';
+            await loadLookbookData();
+        } catch (e) {
+            status.textContent = 'შეცდომა: ' + e.message;
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    async function updateLookbookPosition(id, value) {
+        const pos = parseInt(value, 10);
+        if (Number.isNaN(pos)) return;
+        try {
+            const r = await fetch(API + '/api/product-gallery/' + id, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ position: pos }),
+            });
+            if (!r.ok) { alert((await r.json()).detail || 'შეცდომა'); return; }
+            await loadLookbookData();
+        } catch (e) { alert('შეცდომა: ' + e.message); }
+    }
+
+    async function deleteLookbookPhoto(id) {
+        if (!confirm('წავშალო ეს ფოტო?')) return;
+        try {
+            const r = await fetch(API + '/api/product-gallery/' + id, { method: 'DELETE' });
+            if (!r.ok) { alert((await r.json()).detail || 'შეცდომა'); return; }
+            await loadLookbookData();
         } catch (e) { alert('შეცდომა: ' + e.message); }
     }
 
