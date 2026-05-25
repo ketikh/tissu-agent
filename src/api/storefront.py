@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from src.db import (
     DEFAULT_TENANT_ID, get_db, get_site_sections,
     list_necklace_options, get_necklace_base_price,
+    list_gallery_photos,
 )
 
 
@@ -327,3 +328,27 @@ async def storefront_necklace_options(
         "fabrics": [_shape_fabric(r) for r in fabrics],
         "charms": [_shape_charm(r) for r in charms],
     }
+
+
+@router.get("/gallery")
+async def storefront_gallery(
+    request: Request,
+    response: Response,
+    tenant_id: str = Depends(_tenant_id),
+):
+    """Public lookbook — lifestyle photos that live outside the product
+    catalog. Returns a flat array sorted by position so the storefront
+    can render the strip without any post-processing."""
+    rows = await list_gallery_photos(tenant_id)
+    response.headers["Cache-Control"] = STOREFRONT_CACHE
+    return [
+        {
+            "id": r["id"],
+            "image_url": r["image_url"],
+            "caption": r.get("caption") or "",
+            "position": int(r.get("position") or 0),
+            "width": r.get("width"),
+            "height": r.get("height"),
+        }
+        for r in rows
+    ]

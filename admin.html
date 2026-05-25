@@ -622,6 +622,10 @@
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="6" r="3"/><path d="M5 21c0-5 3-9 7-9s7 4 7 9"/></svg>
                 ყელსაბამის ვარიანტები
             </button>
+            <button class="nav-item" data-tab="gallery" onclick="showTab('gallery', this)">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                გალერეა
+            </button>
             <button class="nav-item" data-tab="insights" onclick="showTab('insights', this)">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-5"/></svg>
                 ინსაიტები
@@ -972,6 +976,88 @@
                         .nk-card .nk-btn { min-height: 36px; font-size: 16px; }
                         .necklace-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap !important; }
                         .nk-tab { flex-shrink: 0; padding: 9px 14px !important; font-size: 14px; }
+                    }
+                </style>
+            </div>
+
+            <div id="tab-gallery" class="section">
+                <div class="card">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+                        <div>
+                            <h2 style="margin-bottom:2px">🖼 გალერეა / Lookbook</h2>
+                            <p class="hint" style="margin-bottom:0">ცხოვრების სტილის ფოტოები საიტისთვის. ბოტი ამ ფოტოებს არ ხედავს.</p>
+                        </div>
+                    </div>
+
+                    <div class="gl-upload-form">
+                        <label class="gl-upload-field">
+                            <span class="gl-upload-label">წარწერა (არასავალდებულო)</span>
+                            <input id="gl-caption" placeholder="მაგ. ზაფხულის კოლექცია">
+                        </label>
+                        <label class="gl-upload-field">
+                            <span class="gl-upload-label">ფოტო (ერთი ან რამდენიმე)</span>
+                            <input id="gl-file" type="file" accept="image/*" multiple>
+                        </label>
+                        <button class="btn-primary gl-upload-btn" onclick="addGalleryPhotos()" id="gl-upload-btn">+ ფოტოს დამატება</button>
+                    </div>
+                    <p id="gl-upload-status" class="hint" style="margin:0 0 16px 0;min-height:18px"></p>
+
+                    <div id="gallery-grid" class="gl-grid">
+                        <div style="grid-column:1/-1;text-align:center;color:#999;padding:24px">იტვირთება…</div>
+                    </div>
+                </div>
+                <style>
+                    .gl-upload-form {
+                        display:grid; grid-template-columns:1fr 1fr 180px; gap:10px;
+                        align-items:end; margin-bottom:10px; padding:12px;
+                        background:#fafafa; border-radius:8px;
+                    }
+                    .gl-upload-field { display:flex; flex-direction:column; gap:4px; min-width:0; }
+                    .gl-upload-label { font-size:13px; color:#555; }
+                    .gl-upload-field input { padding:8px 10px; border:1px solid #ddd; border-radius:6px; min-width:0; width:100%; box-sizing:border-box; }
+                    .gl-upload-field input[type=file] { padding:6px; }
+                    .gl-upload-btn { padding:9px 16px; }
+
+                    .gl-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; }
+                    .gl-card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; overflow:hidden; min-width:0; box-shadow:0 1px 2px rgba(0,0,0,0.04); display:flex; flex-direction:column; }
+                    .gl-card img { width:100%; aspect-ratio:1; object-fit:cover; display:block; background:#f5f5f5; }
+                    .gl-card .gl-meta { padding:10px 12px; display:flex;flex-direction:column;gap:8px; }
+                    .gl-card .gl-pos {
+                        display:flex; align-items:center; gap:6px; font-size:12px; color:#555;
+                    }
+                    .gl-card .gl-pos input {
+                        width:54px; padding:4px 6px; border:1px solid #d1d5db;
+                        border-radius:5px; font-size:13px;
+                    }
+                    .gl-card .gl-caption {
+                        width:100%; padding:6px 8px; border:1px solid #d1d5db;
+                        border-radius:5px; font-size:13px; box-sizing:border-box;
+                        font-family:inherit;
+                    }
+                    .gl-card .gl-row { display:flex; gap:6px; align-items:center; }
+                    .gl-card .gl-btn {
+                        flex:1; min-height:34px; padding:6px;
+                        font-size:13px; line-height:1;
+                        border-radius:6px; cursor:pointer;
+                        border:1px solid #d1d5db; background:#fff;
+                        color:#111827; transition:background 0.15s, border-color 0.15s;
+                    }
+                    .gl-card .gl-btn:hover { background:#f3f4f6; border-color:#9ca3af; }
+                    .gl-card .gl-btn-primary { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
+                    .gl-card .gl-btn-primary:hover { background:#dbeafe; }
+                    .gl-card .gl-btn-danger { background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
+                    .gl-card .gl-btn-danger:hover { background:#fee2e2; }
+
+                    @media (max-width: 1100px) {
+                        .gl-grid { grid-template-columns: repeat(3, 1fr); }
+                    }
+                    @media (max-width: 760px) {
+                        .gl-upload-form {
+                            grid-template-columns: 1fr; gap: 8px; padding: 10px;
+                        }
+                        .gl-upload-btn { width: 100%; padding: 11px; }
+                        .gl-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+                        .gl-card .gl-meta { padding: 8px 10px; }
                     }
                 </style>
             </div>
@@ -1578,6 +1664,7 @@
         site: 'საიტი',
         pinterest: 'პინტერესტი',
         necklace: 'ყელსაბამის ვარიანტები',
+        gallery: 'გალერეა',
     };
     const PAGE_CRUMBS = {
         dashboard: 'Overview',
@@ -1593,6 +1680,7 @@
         site: 'Settings',
         pinterest: 'Integrations',
         necklace: 'Catalog · ყელსაბამები',
+        gallery: 'Lookbook',
     };
 
     function showTab(tab, btn) {
@@ -1619,6 +1707,7 @@
         if (tab === 'sale') loadSale();
         if (tab === 'promos') loadPromoCodes();
         if (tab === 'necklace') loadNecklaceOptions();
+        if (tab === 'gallery') loadGalleryPhotos();
         if (tab === 'chats') loadChats();
         if (tab === 'insights') loadInsights();
         if (tab === 'bot') loadBotConfig();
@@ -2728,6 +2817,126 @@
             const r = await fetch(API + '/api/necklace-options/' + id, { method: 'DELETE' });
             if (!r.ok) { alert((await r.json()).detail || 'შეცდომა'); return; }
             await loadNecklaceOptions();
+        } catch (e) { alert('შეცდომა: ' + e.message); }
+    }
+
+    // ── Lookbook gallery ─────────────────────────────────────
+    let galleryPhotos = [];
+
+    async function loadGalleryPhotos() {
+        const host = document.getElementById('gallery-grid');
+        try {
+            const r = await fetch(API + '/api/admin/gallery');
+            const d = await r.json();
+            galleryPhotos = d.photos || [];
+            renderGalleryGrid();
+        } catch (e) {
+            host.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#c00;padding:24px">ვერ ჩაიტვირთა: ' + e.message + '</div>';
+        }
+    }
+
+    function renderGalleryGrid() {
+        const host = document.getElementById('gallery-grid');
+        if (!galleryPhotos.length) {
+            host.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#999;padding:24px">ჯერ არ არის ფოტოები. ატვირთე პირველი ✨</div>';
+            return;
+        }
+        host.innerHTML = galleryPhotos.map(p => {
+            const cap = (p.caption || '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+            return `
+            <div class="gl-card" data-id="${p.id}">
+                <img src="${p.image_url}" alt="">
+                <div class="gl-meta">
+                    <div class="gl-pos">
+                        <span>თანმიმდევრობა:</span>
+                        <input type="number" value="${p.position}" onchange="updateGalleryPosition(${p.id}, this.value)">
+                    </div>
+                    <input class="gl-caption" type="text" value="${cap}" placeholder="წარწერა" onchange="updateGalleryCaption(${p.id}, this.value)">
+                    <div class="gl-row">
+                        <label class="gl-btn gl-btn-primary" style="text-align:center">
+                            ჩანაცვლება
+                            <input type="file" accept="image/*" style="display:none" onchange="replaceGalleryImage(${p.id}, this.files)">
+                        </label>
+                        <button class="gl-btn gl-btn-danger" onclick="deleteGalleryPhoto(${p.id})">წაშლა</button>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    async function addGalleryPhotos() {
+        const files = document.getElementById('gl-file').files;
+        const caption = (document.getElementById('gl-caption').value || '').trim();
+        const status = document.getElementById('gl-upload-status');
+        const btn = document.getElementById('gl-upload-btn');
+        if (!files || !files.length) { status.textContent = 'აარჩიე ერთი ან რამდენიმე ფოტო.'; return; }
+        btn.disabled = true;
+        try {
+            let done = 0;
+            for (const f of files) {
+                status.textContent = `იტვირთება ${done + 1} / ${files.length}…`;
+                const fd = new FormData();
+                fd.append('image', f);
+                if (caption) fd.append('caption', caption);
+                const r = await fetch(API + '/api/admin/gallery', { method: 'POST', body: fd });
+                if (!r.ok) {
+                    const e = await r.json().catch(() => ({}));
+                    throw new Error(e.detail || ('სტატუსი ' + r.status));
+                }
+                done += 1;
+            }
+            status.textContent = `აიტვირთა ${done} ფოტო ✓`;
+            document.getElementById('gl-file').value = '';
+            document.getElementById('gl-caption').value = '';
+            await loadGalleryPhotos();
+        } catch (e) {
+            status.textContent = 'შეცდომა: ' + e.message;
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    async function updateGalleryCaption(id, value) {
+        try {
+            await fetch(API + '/api/admin/gallery/' + id, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ caption: value }),
+            });
+        } catch (e) { alert('შეცდომა: ' + e.message); }
+    }
+
+    async function updateGalleryPosition(id, value) {
+        const pos = parseInt(value, 10);
+        if (Number.isNaN(pos)) return;
+        try {
+            const r = await fetch(API + '/api/admin/gallery/' + id, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ position: pos }),
+            });
+            if (!r.ok) { alert((await r.json()).detail || 'შეცდომა'); return; }
+            await loadGalleryPhotos();
+        } catch (e) { alert('შეცდომა: ' + e.message); }
+    }
+
+    async function replaceGalleryImage(id, files) {
+        if (!files || !files.length) return;
+        try {
+            const fd = new FormData();
+            fd.append('image', files[0]);
+            const r = await fetch(API + '/api/admin/gallery/' + id + '/image', { method: 'POST', body: fd });
+            if (!r.ok) { alert((await r.json()).detail || 'შეცდომა'); return; }
+            await loadGalleryPhotos();
+        } catch (e) { alert('შეცდომა: ' + e.message); }
+    }
+
+    async function deleteGalleryPhoto(id) {
+        if (!confirm('წავშალო ეს ფოტო?')) return;
+        try {
+            const r = await fetch(API + '/api/admin/gallery/' + id, { method: 'DELETE' });
+            if (!r.ok) { alert((await r.json()).detail || 'შეცდომა'); return; }
+            await loadGalleryPhotos();
         } catch (e) { alert('შეცდომა: ' + e.message); }
     }
 

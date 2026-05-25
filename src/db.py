@@ -818,6 +818,26 @@ async def init_db():
             "ADD COLUMN IF NOT EXISTS necklace_base_price NUMERIC NOT NULL DEFAULT 19"
         )
 
+        # Lookbook / lifestyle gallery — independent of the product catalog
+        # so the bot never sees these photos. Owner edits via admin, the
+        # storefront reads via /api/storefront/gallery.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS gallery_photos (
+                id          SERIAL PRIMARY KEY,
+                tenant_id   TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+                image_url   TEXT NOT NULL,
+                caption     TEXT NOT NULL DEFAULT '',
+                position    INTEGER NOT NULL DEFAULT 0,
+                width       INTEGER,
+                height      INTEGER,
+                created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_gallery_photos_tenant_pos "
+            "ON gallery_photos (tenant_id, position, id)"
+        )
+
         # Enable RLS on every public table so Supabase REST API (anon key)
         # cannot read or write data. The postgres superuser used by asyncpg
         # bypasses RLS automatically — no policies needed for the backend.
@@ -2040,5 +2060,115 @@ async def delete_necklace_option(tenant_id: str, option_id: int) -> bool:
     result = await pool.execute(
         "DELETE FROM necklace_options WHERE tenant_id = $1 AND id = $2",
         tenant_id, option_id,
+    )
+    return result.endswith("1")
+
+
+# ── Lookbook gallery ─────────────────────────────────────────
+# Lifestyle photos that show the products in real-life contexts.
+# Stored separately from `inventory` so the bot never sees them.
+
+_GALLERY_COLUMNS = "id, image_url, caption, position, width, height, created_at"
+
+
+def _row_to_gallery(row) -> dict:
+    """Shape an asyncpg row into plain JSON-ready types."""
+    d = dict(row)
+    d["caption"] = d.get("caption") or ""
+    d["position"] = int(d.get("position") or 0)
+    d["width"] = int(d["width"]) if d.get("width") is not None else None
+    d["height"] = int(d["height"]) if d.get("height") is not None else None
+    if d.get("created_at") is not None:
+        d["created_at"] = d["created_at"].isoformat()
+    return d
+
+
+async def list_gallery_photos(tenant_id: str) -> list[dict]:
+    """Return every gallery photo for a tenant, sorted by position."""
+    pool = await get_db()
+    rows = await pool.fetch(
+        f"SELECT {_GALLERY_COLUMNS} FROM gallery_photos "
+        f"WHERE tenant_id = $1 ORDER BY position, id",
+        tenant_id,
+    )
+    return [_row_to_gallery(r) for r in rows]
+
+
+async def create_gallery_photo(
+    tenant_id: str, image_url: str,
+    caption: str = "", position: int | None = None,
+    width: int | None = None, height: int | None = None,
+) -> dict:
+    """Insert a new gallery photo. If `position` is None, append at the
+    end (max(position)+1) so new uploads land last in the strip."""
+    pool = await get_db()
+    if position is None:
+        last = await pool.fetchval(
+            "SELECT COALESCE(MAX(position), 0) FROM gallery_photos "
+            "WHERE tenant_id = $1",
+            tenant_id,
+        )
+        position = int(last or 0) + 1
+    row = await pool.fetchrow(
+        f"""INSERT INTO gallery_photos
+              (tenant_id, image_url, caption, position, width, height)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING {_GALLERY_COLUMNS}""",
+        tenant_id, image_url, (caption or "").strip(),
+        int(position), width, height,
+    )
+    return _row_to_gallery(row)
+
+
+async def update_gallery_photo(
+    tenant_id: str, photo_id: int,
+    caption: str | None = None,
+    position: int | None = None,
+    image_url: str | None = None,
+    width: int | None = None,
+    height: int | None = None,
+) -> dict | None:
+    """Patch a single gallery row in place. Pass only fields that change."""
+    sets: list[str] = []
+    params: list = []
+    if caption is not None:
+        sets.append(f"caption = ${len(params)+1}")
+        params.append(caption.strip())
+    if position is not None:
+        sets.append(f"position = ${len(params)+1}")
+        params.append(int(position))
+    if image_url is not None:
+        sets.append(f"image_url = ${len(params)+1}")
+        params.append(image_url)
+    if width is not None:
+        sets.append(f"width = ${len(params)+1}")
+        params.append(int(width))
+    if height is not None:
+        sets.append(f"height = ${len(params)+1}")
+        params.append(int(height))
+    pool = await get_db()
+    if not sets:
+        row = await pool.fetchrow(
+            f"SELECT {_GALLERY_COLUMNS} FROM gallery_photos "
+            f"WHERE tenant_id = $1 AND id = $2",
+            tenant_id, photo_id,
+        )
+        return _row_to_gallery(row) if row else None
+    params.extend([tenant_id, photo_id])
+    row = await pool.fetchrow(
+        f"UPDATE gallery_photos SET {', '.join(sets)} "
+        f"WHERE tenant_id = ${len(params)-1} AND id = ${len(params)} "
+        f"RETURNING {_GALLERY_COLUMNS}",
+        *params,
+    )
+    return _row_to_gallery(row) if row else None
+
+
+async def delete_gallery_photo(tenant_id: str, photo_id: int) -> bool:
+    """Remove a single gallery photo. Returns True if a row was deleted."""
+    pool = await get_db()
+    result = await pool.execute(
+        "DELETE FROM gallery_photos WHERE tenant_id = $1 AND id = $2",
+        tenant_id, photo_id,
     )
     return result.endswith("1")

@@ -39,6 +39,7 @@ from src.db import (
     list_promo_codes, create_promo_code, update_promo_code, delete_promo_code,
     list_necklace_options, create_necklace_option, update_necklace_option, delete_necklace_option,
     get_necklace_base_price, set_necklace_base_price,
+    list_gallery_photos, create_gallery_photo, update_gallery_photo, delete_gallery_photo,
 )
 from src.sessions import IMPERSONATION_SECONDS
 from src.secrets_vault import encrypt_secret, redacted
@@ -1490,8 +1491,11 @@ def _cloudinary_configured() -> bool:
     )
 
 
-def _upload_to_cloudinary(upload: UploadFile, public_id: str):
-    """Upload to Cloudinary and return the secure HTTPS URL. Returns None on failure."""
+def _upload_to_cloudinary(upload: UploadFile, public_id: str, folder: str = "tissu/uploads"):
+    """Upload to Cloudinary and return the secure HTTPS URL. Returns None on failure.
+
+    ``folder`` lets callers segregate uploads (e.g. ``tissu/gallery`` for
+    lookbook photos that should stay out of the product folder)."""
     try:
         import cloudinary
         import cloudinary.uploader
@@ -1516,7 +1520,7 @@ def _upload_to_cloudinary(upload: UploadFile, public_id: str):
             file_obj = buf
         result = cloudinary.uploader.upload(
             file_obj,
-            folder="tissu/uploads",
+            folder=folder,
             public_id=public_id,
             overwrite=True,
             resource_type="image",
@@ -1527,17 +1531,19 @@ def _upload_to_cloudinary(upload: UploadFile, public_id: str):
         return None
 
 
-def save_uploaded_image(upload: UploadFile, prefix: str) -> str:
+def save_uploaded_image(upload: UploadFile, prefix: str, folder: str = "tissu/uploads") -> str:
     """Persist an uploaded image and return a URL the frontend can render.
 
     Prefers Cloudinary when credentials are configured (prod / Railway) so
     images survive deploys; falls back to the local ``static/products``
-    directory for dev environments without Cloudinary set up.
+    directory for dev environments without Cloudinary set up. The optional
+    ``folder`` arg routes Cloudinary uploads into a sibling folder (e.g.
+    ``tissu/gallery`` for lookbook photos).
     """
     filename_base = f"{prefix}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
     if _cloudinary_configured():
-        url = _upload_to_cloudinary(upload, public_id=filename_base)
+        url = _upload_to_cloudinary(upload, public_id=filename_base, folder=folder)
         if url:
             return url
         # Rewind the file pointer so the local fallback still works when
@@ -1897,6 +1903,112 @@ async def api_set_necklace_base_price(
         raise HTTPException(status_code=400, detail="base_price დადებითი უნდა იყოს")
     saved = await set_necklace_base_price(tenant_id, price)
     return {"base_price": saved}
+
+
+# ── Lookbook gallery (admin) ─────────────────────────────────
+# Lifestyle photos shown on the website, kept out of the product
+# catalog so the Messenger bot never sees them.
+
+def _serialize_gallery(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "image_url": row["image_url"],
+        "caption": row.get("caption") or "",
+        "position": int(row.get("position") or 0),
+        "width": row.get("width"),
+        "height": row.get("height"),
+        "created_at": row.get("created_at"),
+    }
+
+
+def _read_image_dimensions(upload: UploadFile):
+    """Best-effort PIL probe of an uploaded image. Rewinds the file
+    pointer so the subsequent upload still gets the full bytes. Returns
+    (None, None) on any failure — width/height are optional in the DB."""
+    try:
+        upload.file.seek(0)
+        with Image.open(upload.file) as img:
+            w, h = img.size
+        return int(w), int(h)
+    except Exception:
+        return None, None
+    finally:
+        try:
+            upload.file.seek(0)
+        except Exception:
+            pass
+
+
+@app.get("/api/admin/gallery")
+async def api_list_gallery(tenant_id: str = Depends(get_tenant_id)):
+    """Admin list — every gallery photo for the current tenant."""
+    rows = await list_gallery_photos(tenant_id)
+    return {"photos": [_serialize_gallery(r) for r in rows]}
+
+
+@app.post("/api/admin/gallery")
+async def api_create_gallery(
+    image: UploadFile = File(...),
+    caption: str = Form(""),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    if not image:
+        raise HTTPException(status_code=400, detail="ფოტო აუცილებელია")
+    width, height = _read_image_dimensions(image)
+    image_url = save_uploaded_image(image, prefix="gallery", folder="tissu/gallery")
+    row = await create_gallery_photo(
+        tenant_id, image_url, caption=caption,
+        width=width, height=height,
+    )
+    return _serialize_gallery(row)
+
+
+@app.put("/api/admin/gallery/{photo_id}")
+async def api_update_gallery(
+    photo_id: int, request: Request, tenant_id: str = Depends(get_tenant_id),
+):
+    """Patch caption and/or position. Send only the fields you want to change."""
+    data = await request.json()
+    kwargs: dict = {}
+    if "caption" in data:
+        kwargs["caption"] = data["caption"] or ""
+    if "position" in data:
+        try:
+            kwargs["position"] = int(data["position"])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="position უნდა იყოს რიცხვი")
+    row = await update_gallery_photo(tenant_id, photo_id, **kwargs)
+    if not row:
+        raise HTTPException(status_code=404, detail="ფოტო ვერ მოიძებნა")
+    return _serialize_gallery(row)
+
+
+@app.post("/api/admin/gallery/{photo_id}/image")
+async def api_replace_gallery_image(
+    photo_id: int,
+    image: UploadFile = File(...),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """Swap the photo of an existing gallery row without changing its
+    position or caption."""
+    if not image:
+        raise HTTPException(status_code=400, detail="ფოტო აუცილებელია")
+    width, height = _read_image_dimensions(image)
+    image_url = save_uploaded_image(image, prefix=f"gallery_{photo_id}", folder="tissu/gallery")
+    row = await update_gallery_photo(
+        tenant_id, photo_id, image_url=image_url, width=width, height=height,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="ფოტო ვერ მოიძებნა")
+    return _serialize_gallery(row)
+
+
+@app.delete("/api/admin/gallery/{photo_id}")
+async def api_delete_gallery(photo_id: int, tenant_id: str = Depends(get_tenant_id)):
+    ok = await delete_gallery_photo(tenant_id, photo_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="ფოტო ვერ მოიძებნა")
+    return {"ok": True}
 
 
 @app.put("/api/inventory/{item_id}/attr")
