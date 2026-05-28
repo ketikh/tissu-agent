@@ -31,7 +31,6 @@ TENANT_SCOPED_TABLES = (
     "confirm_tokens",
     "categories",
     "product_extra_photos",
-    "product_gallery",
     # These tables are created lazily by other modules (image_match,
     # vision_match, the Facebook webhook's photo-hint pipeline). ADD
     # COLUMN will fail if the table isn't there yet, so init_db wraps

@@ -39,6 +39,10 @@ VERIFY_TOKEN = "tissu_verify_2026"
 FB_PAGE_TOKEN = os.getenv("FB_PAGE_TOKEN", "")
 PUBLIC_URL = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
 PAGE_ID = "447377388462459"
+# Instagram Business Account ID for the same Tissu page. Meta sends
+# Instagram DM webhook events with the IG account id (not the FB page
+# id) in entry.id, so the dispatcher has to recognize both.
+IG_PAGE_ID = "17841470239894386"
 
 
 async def _resolve_tenant_context(page_id: str) -> tuple[str, str]:
@@ -58,8 +62,10 @@ async def _resolve_tenant_context(page_id: str) -> tuple[str, str]:
         token = decrypt_secret(tenant["fb_page_token_encrypted"])
         if token:
             return (tenant["tenant_id"], token)
-    # Legacy Tissu page: use env var token.
-    if page_id == PAGE_ID:
+    # Legacy Tissu page (Facebook OR Instagram): use env var token.
+    # Both IDs belong to the same Tissu Page and share the same access
+    # token — Meta's IG Messaging API uses the FB Page token.
+    if page_id == PAGE_ID or page_id == IG_PAGE_ID:
         return (DEFAULT_TENANT_ID, FB_PAGE_TOKEN)
     # Unknown page — log but don't crash. The webhook handler can
     # return 200 so Meta doesn't retry, and the event is dropped.
@@ -68,8 +74,9 @@ async def _resolve_tenant_context(page_id: str) -> tuple[str, str]:
     )
     return ("", "")
 # Instagram Business Account ID — used to filter self-echoes on IG DMs.
-# Set this in Railway env after connecting IG to the Facebook Page.
-IG_USER_ID = os.getenv("IG_USER_ID", "")
+# Defaults to the Tissu IG account id so the filter works out of the
+# box; can be overridden with the IG_USER_ID env var for other tenants.
+IG_USER_ID = os.getenv("IG_USER_ID", IG_PAGE_ID)
 
 _processed_mids: dict[str, float] = {}
 
