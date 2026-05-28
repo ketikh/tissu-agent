@@ -37,12 +37,26 @@ router = APIRouter()
 # dispatcher below prefers those when available.
 VERIFY_TOKEN = "tissu_verify_2026"
 FB_PAGE_TOKEN = os.getenv("FB_PAGE_TOKEN", "")
+# Instagram Business Login token — separate from FB_PAGE_TOKEN because
+# Meta's IG Graph API (graph.instagram.com) only accepts IGAA-prefixed
+# tokens issued through the Instagram Business Login flow. Falls back
+# to FB_PAGE_TOKEN so legacy single-token setups still boot.
+IG_USER_TOKEN = os.getenv("IG_USER_TOKEN", "") or FB_PAGE_TOKEN
 PUBLIC_URL = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
 PAGE_ID = "447377388462459"
 # Instagram Business Account ID for the same Tissu page. Meta sends
 # Instagram DM webhook events with the IG account id (not the FB page
 # id) in entry.id, so the dispatcher has to recognize both.
 IG_PAGE_ID = "17841470239894386"
+
+
+def _channel_token(channel: str) -> str:
+    """Pick the right access token per channel. Instagram DMs use the
+    IG Business Login token (IGAA-prefixed); Facebook Messenger replies
+    use the FB Page token (EAA-prefixed)."""
+    if channel == "instagram_dm":
+        return IG_USER_TOKEN
+    return FB_PAGE_TOKEN
 
 
 async def _resolve_tenant_context(page_id: str) -> tuple[str, str]:
@@ -277,26 +291,27 @@ def _cleanup_old_mids() -> None:
 def _send_url(channel: str) -> str:
     """Pick the correct Graph API endpoint based on channel.
 
-    Instagram DMs MUST go through /{IG_USER_ID}/messages because Meta's
-    modern IG Messaging API issues IG-scoped user ids (IGSID), which
-    /me/messages (Messenger endpoint) rejects with "(#100) No matching
-    user found". Facebook Messenger replies stay on /me/messages.
-    Capability for the IG endpoint is auto-granted to App admins in
-    Development mode and requires App Review for Live mode.
+    Instagram Business Login tokens (IGAA...) are issued by Instagram
+    directly and only work against graph.instagram.com, not
+    graph.facebook.com. Sending an IGAA token to the Facebook host
+    returns "Cannot parse access token" because the FB parser rejects
+    the IG token format. Facebook Messenger replies stay on the
+    Facebook Graph host with /me/messages.
     """
     if channel == "instagram_dm":
-        return f"https://graph.facebook.com/v21.0/{IG_PAGE_ID}/messages"
+        return f"https://graph.instagram.com/v21.0/{IG_PAGE_ID}/messages"
     return "https://graph.facebook.com/v21.0/me/messages"
 
 
 async def _send_typing_on(sender_id: str, channel: str = "facebook_messenger") -> None:
-    if not FB_PAGE_TOKEN:
+    token = _channel_token(channel)
+    if not token:
         return
     try:
         async with httpx.AsyncClient(timeout=5) as client:
             await client.post(
                 _send_url(channel),
-                params={"access_token": FB_PAGE_TOKEN},
+                params={"access_token": token},
                 json={"recipient": {"id": sender_id}, "sender_action": "typing_on"},
             )
     except Exception:
@@ -879,11 +894,12 @@ async def _process_message(
             except Exception as _e:
                 print(f"[MSG] History clear error: {_e}", flush=True)
             greeting_reply = await get_greeting_text(DEFAULT_TENANT_ID)
-            if FB_PAGE_TOKEN:
+            _greeting_token = _channel_token(channel)
+            if _greeting_token:
                 async with httpx.AsyncClient(timeout=30) as _gc:
                     _gr = await _gc.post(
                         _send_url(channel),
-                        params={"access_token": FB_PAGE_TOKEN},
+                        params={"access_token": _greeting_token},
                         json={"recipient": {"id": sender_id}, "message": {"text": greeting_reply}},
                     )
                     print(
@@ -921,12 +937,13 @@ async def _process_message(
             result["_bypass_inventory_dedup"] = True
 
         # ── Send reply ──
-        if not FB_PAGE_TOKEN:
+        _reply_token = _channel_token(channel)
+        if not _reply_token:
             return
 
         async with httpx.AsyncClient(timeout=30) as client:
             fb_api = _send_url(channel)
-            fb_params = {"access_token": FB_PAGE_TOKEN}
+            fb_params = {"access_token": _reply_token}
 
             reply_text = result["reply"].strip()
             reply_text = re.sub(r'\[[^\]]{10,}\]', '', reply_text).strip()
@@ -953,11 +970,12 @@ async def _process_message(
         _tb.print_exc()
         # Always try to respond to customer even on crash
         try:
-            if FB_PAGE_TOKEN and sender_id:
+            _crash_token = _channel_token(channel)
+            if _crash_token and sender_id:
                 async with httpx.AsyncClient(timeout=10) as client:
                     await client.post(
                         _send_url(channel),
-                        params={"access_token": FB_PAGE_TOKEN},
+                        params={"access_token": _crash_token},
                         json={"recipient": {"id": sender_id}, "message": {"text": "ერთი წუთით, გადავამოწმებ ✨"}},
                     )
         except Exception:
