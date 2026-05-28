@@ -866,10 +866,14 @@ async def _process_message(
             greeting_reply = await get_greeting_text(DEFAULT_TENANT_ID)
             if FB_PAGE_TOKEN:
                 async with httpx.AsyncClient(timeout=30) as _gc:
-                    await _gc.post(
+                    _gr = await _gc.post(
                         "https://graph.facebook.com/v21.0/me/messages",
                         params={"access_token": FB_PAGE_TOKEN},
                         json={"recipient": {"id": sender_id}, "message": {"text": greeting_reply}},
+                    )
+                    print(
+                        f"[MSG] Greeting send: {_gr.status_code} {_gr.text[:300]}",
+                        flush=True,
                     )
             return
         # ── Run agent ──
