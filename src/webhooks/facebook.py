@@ -277,13 +277,13 @@ def _cleanup_old_mids() -> None:
 def _send_url(channel: str) -> str:
     """Pick the correct Graph API endpoint based on channel.
 
-    Facebook Messenger replies go through /me/messages, but Instagram
-    DMs need /{IG_USER_ID}/messages — using /me/ for an IG-scoped user
-    id raises "(#100) No matching user found". Both endpoints accept
-    the same Page Access Token; only the path changes.
+    Both Facebook Messenger and Instagram DM go through /me/messages
+    when using the legacy Page-based flow (Facebook login Instagram
+    API). The newer /{IG_USER_ID}/messages endpoint requires the
+    `instagram_business_manage_messages` capability which is only
+    available after App Review — keep the unified path until that
+    review is approved.
     """
-    if channel == "instagram_dm":
-        return f"https://graph.facebook.com/v21.0/{IG_PAGE_ID}/messages"
     return "https://graph.facebook.com/v21.0/me/messages"
 
 
