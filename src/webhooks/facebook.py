@@ -274,13 +274,26 @@ def _cleanup_old_mids() -> None:
             del _processed_mids[key]
 
 
-async def _send_typing_on(sender_id: str) -> None:
+def _send_url(channel: str) -> str:
+    """Pick the correct Graph API endpoint based on channel.
+
+    Facebook Messenger replies go through /me/messages, but Instagram
+    DMs need /{IG_USER_ID}/messages — using /me/ for an IG-scoped user
+    id raises "(#100) No matching user found". Both endpoints accept
+    the same Page Access Token; only the path changes.
+    """
+    if channel == "instagram_dm":
+        return f"https://graph.facebook.com/v21.0/{IG_PAGE_ID}/messages"
+    return "https://graph.facebook.com/v21.0/me/messages"
+
+
+async def _send_typing_on(sender_id: str, channel: str = "facebook_messenger") -> None:
     if not FB_PAGE_TOKEN:
         return
     try:
         async with httpx.AsyncClient(timeout=5) as client:
             await client.post(
-                "https://graph.facebook.com/v21.0/me/messages",
+                _send_url(channel),
                 params={"access_token": FB_PAGE_TOKEN},
                 json={"recipient": {"id": sender_id}, "sender_action": "typing_on"},
             )
@@ -294,7 +307,7 @@ async def _process_message(
 ) -> None:
     print(f"[MSG] START: sender={sender_id}, text={text[:50]}..., image={'YES' if image_url else 'NO'}", flush=True)
     try:
-        await _send_typing_on(sender_id)
+        await _send_typing_on(sender_id, channel)
 
         # ── Photo handling ──
         if image_url:
@@ -318,7 +331,7 @@ async def _process_message(
                     text = "[კლიენტმა გადახდის სქრინი გამოგზავნა. უთხარი 'მადლობა, გადავამოწმებ ✨' და ᲒᲐᲩᲔᲠᲓᲘ. მისამართს ᲐᲠ ეკითხო.]"
                 else:
                     _pending_photos[conversation_id] = image_bytes
-                    await _send_typing_on(sender_id)
+                    await _send_typing_on(sender_id, channel)
 
                     # Log every step to database for debugging
                     _debug_pool = await get_db()
@@ -867,12 +880,12 @@ async def _process_message(
             if FB_PAGE_TOKEN:
                 async with httpx.AsyncClient(timeout=30) as _gc:
                     _gr = await _gc.post(
-                        "https://graph.facebook.com/v21.0/me/messages",
+                        _send_url(channel),
                         params={"access_token": FB_PAGE_TOKEN},
                         json={"recipient": {"id": sender_id}, "message": {"text": greeting_reply}},
                     )
                     print(
-                        f"[MSG] Greeting send: {_gr.status_code} {_gr.text[:300]}",
+                        f"[MSG] Greeting send ({channel}): {_gr.status_code} {_gr.text[:300]}",
                         flush=True,
                     )
             return
@@ -910,7 +923,7 @@ async def _process_message(
             return
 
         async with httpx.AsyncClient(timeout=30) as client:
-            fb_api = "https://graph.facebook.com/v21.0/me/messages"
+            fb_api = _send_url(channel)
             fb_params = {"access_token": FB_PAGE_TOKEN}
 
             reply_text = result["reply"].strip()
@@ -941,7 +954,7 @@ async def _process_message(
             if FB_PAGE_TOKEN and sender_id:
                 async with httpx.AsyncClient(timeout=10) as client:
                     await client.post(
-                        "https://graph.facebook.com/v21.0/me/messages",
+                        _send_url(channel),
                         params={"access_token": FB_PAGE_TOKEN},
                         json={"recipient": {"id": sender_id}, "message": {"text": "ერთი წუთით, გადავამოწმებ ✨"}},
                     )
