@@ -96,14 +96,27 @@ def _extract_sender_id(conv_id: str) -> str:
     return conv_id.replace("facebook_messenger_", "").replace("instagram_dm_", "")
 
 
-async def _send_to_customer(sender_id: str, text: str) -> None:
-    """Send a message to the customer via Facebook Messenger."""
-    if not FB_PAGE_TOKEN or not sender_id:
+async def _send_to_customer(sender_id: str, text: str, conv_id: str = "") -> None:
+    """Send a message to the customer via the right Graph host + token.
+
+    Instagram DMs need the IG Business Login token against
+    graph.instagram.com/{IG_USER_ID}/messages; Facebook Messenger uses
+    the Page token against graph.facebook.com/me/messages. We infer the
+    channel from the conversation_id prefix.
+    """
+    if not sender_id:
+        return
+    from src.webhooks.facebook import (
+        _channel_token, _send_url, IG_PAGE_ID,
+    )
+    channel = "instagram_dm" if conv_id.startswith("instagram_dm_") else "facebook_messenger"
+    token = _channel_token(channel)
+    if not token:
         return
     async with httpx.AsyncClient(timeout=30) as client:
         await client.post(
-            "https://graph.facebook.com/v21.0/me/messages",
-            params={"access_token": FB_PAGE_TOKEN},
+            _send_url(channel),
+            params={"access_token": token},
             json={"recipient": {"id": sender_id}, "message": {"text": text}},
         )
 
@@ -198,18 +211,18 @@ async def wa_webhook_receive(request: Request):
 
                 if "ვადასტურებ" in text_lower and "არ" not in text_lower:
                     reply = await _handle_confirmation(conv_id)
-                    await _send_to_customer(sender_id, reply)
+                    await _send_to_customer(sender_id, reply, conv_id)
 
                 elif "არ ვადასტურებ" in text_lower or ("არ" in text_lower and "ვადასტურებ" in text_lower):
                     reply = await _handle_denial(conv_id)
-                    await _send_to_customer(sender_id, reply)
+                    await _send_to_customer(sender_id, reply, conv_id)
 
                 elif "არ გვაქვს" in text_lower or "არა" == text_lower.strip():
                     # Owner says product not available
                     agent = await get_support_sales_agent(tenant_id)
                     result = await run_agent(agent, "[მფლობელის ინსტრუქცია: ეს მოდელი არ გვაქვს, შესთავაზე სხვა]", conv_id)
                     reply = result["reply"].strip() or "სამწუხაროდ ეს მოდელი ამჟამად არ გვაქვს. სხვა ლამაზი მოდელები გაჩვენოთ? ✨"
-                    await _send_to_customer(sender_id, reply)
+                    await _send_to_customer(sender_id, reply, conv_id)
 
                 elif len(text_upper) <= 5 and any(text_upper.startswith(p) for p in ("FP", "TP", "FD", "TD")):
                     # Owner sent a product code (e.g., "FP3") — send that product to customer
@@ -230,7 +243,7 @@ async def wa_webhook_receive(request: Request):
                             conv_id,
                         )
                         reply = result["reply"].strip() or f"თქვენი ფოტოს მიხედვით ეს ვიპოვე ✨ მოგეწონებათ?"
-                        await _send_to_customer(sender_id, reply)
+                        await _send_to_customer(sender_id, reply, conv_id)
 
                         # Send product photos
                         public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
@@ -286,7 +299,7 @@ async def wa_webhook_receive(request: Request):
                     result = await run_agent(agent, f"[მფლობელის ინსტრუქცია: {text}]", conv_id)
                     reply = result["reply"].strip()
                     if reply:
-                        await _send_to_customer(sender_id, reply)
+                        await _send_to_customer(sender_id, reply, conv_id)
 
     return {"status": "ok"}
 
@@ -299,7 +312,7 @@ async def owner_confirm(token: str):
         return HTMLResponse(_EXPIRED_HTML, status_code=410)
     sender_id = _extract_sender_id(conversation_id)
     reply = await _handle_confirmation(conversation_id)
-    await _send_to_customer(sender_id, reply)
+    await _send_to_customer(sender_id, reply, conversation_id)
     return HTMLResponse("<h1>✅ დადასტურებულია!</h1><p>კლიენტს ეცნობა.</p>")
 
 
@@ -311,7 +324,7 @@ async def owner_deny(token: str):
         return HTMLResponse(_EXPIRED_HTML, status_code=410)
     sender_id = _extract_sender_id(conversation_id)
     reply = await _handle_denial(conversation_id)
-    await _send_to_customer(sender_id, reply)
+    await _send_to_customer(sender_id, reply, conversation_id)
     return HTMLResponse("<h1>❌ უარყოფილია</h1><p>კლიენტს ეცნობა.</p>")
 
 
@@ -322,6 +335,7 @@ async def photo_confirm(token: str):
     if not conversation_id:
         return HTMLResponse(_EXPIRED_HTML, status_code=410)
     sender_id = _extract_sender_id(conversation_id)
+    tenant_id = await _get_conv_tenant_id(conversation_id)
     agent = await get_support_sales_agent(tenant_id)
     result = await run_agent(
         agent,
@@ -329,7 +343,7 @@ async def photo_confirm(token: str):
         conversation_id,
     )
     reply = result["reply"].strip() or "გვაქვს მარაგში ✨ გავაფორმოთ შეკვეთა?"
-    await _send_to_customer(sender_id, reply)
+    await _send_to_customer(sender_id, reply, conversation_id)
     return HTMLResponse("<h1>✅ მარაგშია!</h1><p>კლიენტს ეცნობა.</p>")
 
 
@@ -340,6 +354,7 @@ async def photo_deny(token: str):
     if not conversation_id:
         return HTMLResponse(_EXPIRED_HTML, status_code=410)
     sender_id = _extract_sender_id(conversation_id)
+    tenant_id = await _get_conv_tenant_id(conversation_id)
     agent = await get_support_sales_agent(tenant_id)
     result = await run_agent(
         agent,
@@ -347,5 +362,5 @@ async def photo_deny(token: str):
         conversation_id,
     )
     reply = result["reply"].strip() or "სამწუხაროდ ეს მოდელი ამჟამად აღარ გვაქვს ✨ სხვა ლამაზი მოდელები გაჩვენოთ?"
-    await _send_to_customer(sender_id, reply)
+    await _send_to_customer(sender_id, reply, conversation_id)
     return HTMLResponse("<h1>❌ არ გვაქვს</h1><p>კლიენტს ეცნობა.</p>")
