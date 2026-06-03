@@ -2128,13 +2128,13 @@
         const cat = categoryBySlug(slug);
         editingCategorySlug = slug;
         document.getElementById('cat-modal-title').textContent = `კატეგორიის რედაქტირება: ${cat.name}`;
-        document.getElementById('cat-modal-hint').textContent = 'სახელს, ემოჯის და ველებს შეცვლი; slug-ი უცვლელია. ველი რომ წაშალო, × ღილაკი დააჭირე.';
+        document.getElementById('cat-modal-hint').textContent = 'სახელს, ემოჯის, slug-ს და ველებს შეცვლი. slug-ის ცვლა ცვლის როგორც ბაზაში, ისე იმ პროდუქტებზე რომლებიც ამ კატეგორიაშია.';
         document.getElementById('cat-name').value = cat.name || '';
         document.getElementById('cat-emoji').value = cat.emoji || '📦';
         document.getElementById('cat-slug').value = slug;
-        document.getElementById('cat-slug').disabled = true;
-        document.getElementById('cat-slug-label').style.display = 'none';
-        document.getElementById('cat-slug').style.display = 'none';
+        document.getElementById('cat-slug').disabled = false;
+        document.getElementById('cat-slug-label').style.display = '';
+        document.getElementById('cat-slug').style.display = '';
         document.getElementById('cat-delete-btn').style.display = (slug === 'bag' || slug === 'necklace') ? 'none' : 'inline-flex';
         document.getElementById('cat-save-btn').textContent = 'განახლება';
         const host = document.getElementById('cat-fields');
@@ -2169,16 +2169,21 @@
         }).filter(f => f.key && f.label);
         try {
             if (editingCategorySlug) {
+                const newSlug = (document.getElementById('cat-slug').value || '').trim().toLowerCase();
+                const body = { name, emoji, fields };
+                if (newSlug && newSlug !== editingCategorySlug) {
+                    body.slug = newSlug;
+                }
                 const res = await fetch(API + '/api/categories/' + encodeURIComponent(editingCategorySlug), {
                     method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, emoji, fields }),
+                    body: JSON.stringify(body),
                 });
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({ detail: 'უცნობი შეცდომა' }));
                     await showAlert('შეცდომა: ' + (err.detail || ''), { variant: 'error' });
                     return;
                 }
-                const prevSlug = editingCategorySlug;
+                const prevSlug = body.slug || editingCategorySlug;
                 closeAddCategoryModal();
                 await loadCategories();
                 // Re-render grid with updated category fields (label/keys changed).

@@ -1668,36 +1668,87 @@ async def delete_category(slug: str, tenant_id: str = Depends(get_tenant_id)):
 
 @app.put("/api/categories/{slug}")
 async def update_category(slug: str, request: Request, tenant_id: str = Depends(get_tenant_id)):
-    """Update the name / emoji / fields of an existing category."""
+    """Update name / emoji / fields, and optionally rename the slug.
+
+    Slug rename is a two-table operation: the categories row itself plus
+    every inventory row that points at the old slug. Done in one
+    transaction so the catalog never goes through a state where products
+    point at a non-existent category.
+    """
+    import re as _re
     data = await request.json()
     pool = await get_db()
-    updates = []
-    params: list = []
-    idx = 1
-    for key in ("name", "emoji"):
-        if key in data and data[key] is not None:
-            updates.append(f"{key} = ${idx}")
-            params.append(str(data[key]).strip())
-            idx += 1
-    if "fields" in data and isinstance(data["fields"], list):
-        cleaned = [
-            {"key": str(f["key"]).strip(), "label": str(f["label"]).strip()}
-            for f in data["fields"]
-            if isinstance(f, dict) and f.get("key") and f.get("label")
-        ]
-        updates.append(f"fields = ${idx}::jsonb")
-        params.append(json.dumps(cleaned))
-        idx += 1
-    if not updates:
-        return {"ok": True, "updated": False}
-    params.append(slug)
-    params.append(tenant_id)
-    await pool.execute(
-        f"UPDATE categories SET {', '.join(updates)} "
-        f"WHERE slug = ${idx} AND tenant_id = ${idx + 1}",
-        *params,
-    )
-    return {"ok": True}
+
+    new_slug = data.get("slug")
+    if new_slug is not None:
+        new_slug = str(new_slug).strip().lower()
+        if not _re.match(r"^[a-z0-9_-]{1,40}$", new_slug):
+            raise HTTPException(
+                status_code=400,
+                detail="slug მხოლოდ a-z, 0-9, _ და - სიმბოლოები (1-40 ცალი)",
+            )
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            # Confirm the row exists for this tenant before touching anything.
+            current = await conn.fetchrow(
+                "SELECT slug FROM categories WHERE slug = $1 AND tenant_id = $2",
+                slug, tenant_id,
+            )
+            if not current:
+                raise HTTPException(status_code=404, detail="კატეგორია ვერ მოიძებნა")
+
+            # Slug rename — must come first so the subsequent UPDATE on
+            # name/emoji/fields targets the new key.
+            effective_slug = slug
+            if new_slug and new_slug != slug:
+                clash = await conn.fetchval(
+                    "SELECT 1 FROM categories WHERE slug = $1 AND tenant_id = $2",
+                    new_slug, tenant_id,
+                )
+                if clash:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"slug '{new_slug}' უკვე გამოყენებულია",
+                    )
+                await conn.execute(
+                    "UPDATE categories SET slug = $1 WHERE slug = $2 AND tenant_id = $3",
+                    new_slug, slug, tenant_id,
+                )
+                await conn.execute(
+                    "UPDATE inventory SET category = $1 "
+                    "WHERE category = $2 AND tenant_id = $3",
+                    new_slug, slug, tenant_id,
+                )
+                effective_slug = new_slug
+
+            updates = []
+            params: list = []
+            idx = 1
+            for key in ("name", "emoji"):
+                if key in data and data[key] is not None:
+                    updates.append(f"{key} = ${idx}")
+                    params.append(str(data[key]).strip())
+                    idx += 1
+            if "fields" in data and isinstance(data["fields"], list):
+                cleaned = [
+                    {"key": str(f["key"]).strip(), "label": str(f["label"]).strip()}
+                    for f in data["fields"]
+                    if isinstance(f, dict) and f.get("key") and f.get("label")
+                ]
+                updates.append(f"fields = ${idx}::jsonb")
+                params.append(json.dumps(cleaned))
+                idx += 1
+            if updates:
+                params.append(effective_slug)
+                params.append(tenant_id)
+                await conn.execute(
+                    f"UPDATE categories SET {', '.join(updates)} "
+                    f"WHERE slug = ${idx} AND tenant_id = ${idx + 1}",
+                    *params,
+                )
+
+    return {"ok": True, "slug": effective_slug}
 
 
 # ── Promo codes ──────────────────────────────────────────────────────────────
