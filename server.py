@@ -42,6 +42,10 @@ from src.db import (
     list_gallery_photos, create_gallery_photo, update_gallery_photo, delete_gallery_photo,
     list_product_gallery, create_product_gallery_photo,
     update_product_gallery_photo, delete_product_gallery_photo,
+    create_site_order, list_site_orders, get_site_order,
+    update_site_order_status, ORDER_STATUSES,
+    list_reviews, create_review, update_review,
+    reorder_reviews, delete_review,
 )
 from src.sessions import IMPERSONATION_SECONDS
 from src.secrets_vault import encrypt_secret, redacted
@@ -2090,6 +2094,201 @@ async def api_delete_product_gallery(
     ok = await delete_product_gallery_photo(tenant_id, photo_id)
     if not ok:
         raise HTTPException(status_code=404, detail="ფოტო ვერ მოიძებნა")
+    return {"ok": True}
+
+
+# ── Site orders (storefront checkout) ────────────────────────
+# The website posts new orders here; the operator manages them from the
+# admin panel. Distinct from the bot's /api/orders endpoints.
+
+def _new_order_id() -> str:
+    """Random URL-safe id, matches the cuid-ish ids the site already uses."""
+    import secrets as _s
+    return "ord_" + _s.token_urlsafe(12)
+
+
+def _new_review_id() -> str:
+    import secrets as _s
+    return "rev_" + _s.token_urlsafe(10)
+
+
+@app.post("/api/admin/orders")
+async def api_create_site_order(
+    request: Request, tenant_id: str = Depends(get_tenant_id),
+):
+    """Create a new order from the storefront. Body shape mirrors the
+    site's checkout payload (see CLAUDE.md for the schema)."""
+    data = await request.json()
+    items = data.get("items") or []
+    if not isinstance(items, list) or not items:
+        raise HTTPException(status_code=400, detail="items აუცილებელია")
+    name = (data.get("customer_name") or "").strip()
+    phone = (data.get("customer_phone") or "").strip()
+    if not name or not phone:
+        raise HTTPException(
+            status_code=400, detail="customer_name და customer_phone აუცილებელია",
+        )
+    status = (data.get("status") or "pending_confirmation").strip()
+    if status not in ORDER_STATUSES:
+        raise HTTPException(status_code=400, detail=f"არასწორი status: {status}")
+    order = await create_site_order(
+        tenant_id, _new_order_id(),
+        customer_name=name,
+        customer_phone=phone,
+        address_street=(data.get("address_street") or "").strip(),
+        address_city=(data.get("address_city") or "").strip(),
+        items=items,
+        status=status,
+        subtotal=float(data.get("subtotal") or 0),
+        shipping=float(data.get("shipping") or 0),
+        discount=float(data.get("discount") or 0),
+        total=float(data.get("total") or 0),
+        payment_method=(data.get("payment_method") or "undecided"),
+        contact_method=(data.get("contact_method") or "phone"),
+        customer_email=(data.get("customer_email") or None),
+        address_zone=data.get("address_zone") or {},
+        notes=(data.get("notes") or None),
+    )
+    return order
+
+
+@app.get("/api/admin/orders")
+async def api_list_site_orders(
+    status: str = "", limit: int = 200,
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """List orders, optionally filtered by status."""
+    status_arg = status.strip() or None
+    if status_arg and status_arg not in ORDER_STATUSES:
+        raise HTTPException(status_code=400, detail=f"არასწორი status: {status_arg}")
+    rows = await list_site_orders(tenant_id, status=status_arg, limit=limit)
+    return {"orders": rows}
+
+
+@app.get("/api/admin/orders/{order_id}")
+async def api_get_site_order(
+    order_id: str, tenant_id: str = Depends(get_tenant_id),
+):
+    order = await get_site_order(tenant_id, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="შეკვეთა ვერ მოიძებნა")
+    return order
+
+
+@app.patch("/api/admin/orders/{order_id}")
+async def api_patch_site_order(
+    order_id: str, request: Request,
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """Change order status. Stock is debited / refunded when crossing the
+    reserved boundary (see update_site_order_status)."""
+    data = await request.json()
+    new_status = (data.get("status") or "").strip()
+    if not new_status:
+        raise HTTPException(status_code=400, detail="status აუცილებელია")
+    if new_status not in ORDER_STATUSES:
+        raise HTTPException(status_code=400, detail=f"არასწორი status: {new_status}")
+    order = await update_site_order_status(tenant_id, order_id, new_status)
+    if not order:
+        raise HTTPException(status_code=404, detail="შეკვეთა ვერ მოიძებნა")
+    return order
+
+
+# ── Reviews ──────────────────────────────────────────────────
+
+def _serialize_review(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "name": row.get("name") or "",
+        "comment": row.get("comment") or "",
+        "photo_url": row.get("photo_url"),
+        "product_id": row.get("product_id"),
+        "position": int(row.get("position") or 0),
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at"),
+    }
+
+
+@app.get("/api/admin/reviews")
+async def api_list_reviews(tenant_id: str = Depends(get_tenant_id)):
+    rows = await list_reviews(tenant_id)
+    return {"reviews": [_serialize_review(r) for r in rows]}
+
+
+@app.post("/api/admin/reviews")
+async def api_create_review(
+    request: Request, tenant_id: str = Depends(get_tenant_id),
+):
+    """Create a review. JSON body — photo_url is optional; for direct
+    upload use POST /api/admin/reviews/upload instead."""
+    data = await request.json()
+    name = (data.get("name") or "").strip()
+    comment = (data.get("comment") or "").strip()
+    if not comment:
+        raise HTTPException(status_code=400, detail="comment აუცილებელია")
+    row = await create_review(
+        tenant_id, _new_review_id(),
+        name=name, comment=comment,
+        photo_url=(data.get("photo_url") or None),
+        product_id=(data.get("product_id") or None),
+    )
+    return _serialize_review(row)
+
+
+@app.post("/api/admin/reviews/upload")
+async def api_upload_review_photo(
+    image: UploadFile = File(...),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """Upload a review photo to Cloudinary tissu/reviews/ and return the
+    URL — the frontend then posts the URL via /api/admin/reviews."""
+    if not image:
+        raise HTTPException(status_code=400, detail="ფოტო აუცილებელია")
+    image_url = save_uploaded_image(image, prefix="review", folder="tissu/reviews")
+    return {"image_url": image_url}
+
+
+@app.patch("/api/admin/reviews/{review_id}")
+async def api_update_review(
+    review_id: str, request: Request,
+    tenant_id: str = Depends(get_tenant_id),
+):
+    data = await request.json()
+    kwargs: dict = {}
+    for key in ("name", "comment", "photo_url", "product_id"):
+        if key in data:
+            kwargs[key] = data[key]
+    if "position" in data:
+        try:
+            kwargs["position"] = int(data["position"])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="position უნდა იყოს რიცხვი")
+    row = await update_review(tenant_id, review_id, **kwargs)
+    if not row:
+        raise HTTPException(status_code=404, detail="რევიუ ვერ მოიძებნა")
+    return _serialize_review(row)
+
+
+@app.put("/api/admin/reviews/order")
+async def api_reorder_reviews(
+    request: Request, tenant_id: str = Depends(get_tenant_id),
+):
+    """Apply a new ordering. Body: { ids: ["rev_aaa", "rev_bbb", ...] }"""
+    data = await request.json()
+    ids = data.get("ids")
+    if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+        raise HTTPException(status_code=400, detail="ids უნდა იყოს string მასივი")
+    updated = await reorder_reviews(tenant_id, ids)
+    return {"updated": updated}
+
+
+@app.delete("/api/admin/reviews/{review_id}")
+async def api_delete_review(
+    review_id: str, tenant_id: str = Depends(get_tenant_id),
+):
+    ok = await delete_review(tenant_id, review_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="რევიუ ვერ მოიძებნა")
     return {"ok": True}
 
 

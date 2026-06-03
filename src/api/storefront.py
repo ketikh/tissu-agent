@@ -22,6 +22,7 @@ from src.db import (
     list_necklace_options, get_necklace_base_price,
     list_gallery_photos,
     list_product_gallery, list_product_gallery_for_ids,
+    list_reviews,
 )
 
 
@@ -349,6 +350,28 @@ async def storefront_necklace_options(
         "fabrics": [_shape_fabric(r) for r in fabrics],
         "charms": [_shape_charm(r) for r in charms],
     }
+
+
+@router.get("/reviews")
+async def storefront_reviews(
+    request: Request,
+    response: Response,
+    tenant_id: str = Depends(_tenant_id),
+):
+    """Public reviews list — sorted by position ascending, ready for the
+    storefront to render. Only includes fields the website actually needs."""
+    rows = await list_reviews(tenant_id)
+    response.headers["Cache-Control"] = STOREFRONT_CACHE
+    return [
+        {
+            "id": r["id"],
+            "name": r.get("name") or "",
+            "comment": r.get("comment") or "",
+            "photo_url": r.get("photo_url"),
+            "product_id": r.get("product_id"),
+        }
+        for r in rows
+    ]
 
 
 @router.get("/gallery")

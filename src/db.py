@@ -818,6 +818,87 @@ async def init_db():
             "ADD COLUMN IF NOT EXISTS necklace_base_price NUMERIC NOT NULL DEFAULT 19"
         )
 
+        # Site-originated orders. Distinct from `orders` (which the bot
+        # creates from Messenger / IG conversations) because the storefront
+        # captures a different shape: structured address, zone metadata,
+        # itemised line totals, and an enum status the operator drives by
+        # hand. The bot's own checkout flow stays on the legacy `orders`
+        # table.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS site_orders (
+                id              TEXT PRIMARY KEY,
+                tenant_id       TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+                status          TEXT NOT NULL DEFAULT 'pending_confirmation',
+                subtotal        NUMERIC NOT NULL DEFAULT 0,
+                shipping        NUMERIC NOT NULL DEFAULT 0,
+                discount        NUMERIC NOT NULL DEFAULT 0,
+                total           NUMERIC NOT NULL DEFAULT 0,
+                payment_method  TEXT NOT NULL DEFAULT 'undecided',
+                contact_method  TEXT NOT NULL DEFAULT 'phone',
+                customer_name   TEXT NOT NULL,
+                customer_phone  TEXT NOT NULL,
+                customer_email  TEXT,
+                address_street  TEXT NOT NULL DEFAULT '',
+                address_city    TEXT NOT NULL DEFAULT '',
+                address_zone    JSONB NOT NULL DEFAULT '{}'::jsonb,
+                notes           TEXT,
+                stock_reserved  BOOLEAN NOT NULL DEFAULT false,
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_site_orders_tenant_status "
+            "ON site_orders (tenant_id, status, created_at DESC)"
+        )
+
+        # Line items for site_orders. product_id / variant_id are kept as
+        # opaque text because the site's product catalogue is keyed by
+        # cuids that don't match our integer inventory ids; we snapshot
+        # name + image at order time so the row stays readable even if the
+        # underlying product is later renamed or deleted.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS site_order_items (
+                id                SERIAL PRIMARY KEY,
+                order_id          TEXT NOT NULL REFERENCES site_orders(id) ON DELETE CASCADE,
+                product_id        TEXT NOT NULL,
+                variant_id        TEXT,
+                quantity          INTEGER NOT NULL DEFAULT 1,
+                price             NUMERIC NOT NULL DEFAULT 0,
+                product_name_ka   TEXT NOT NULL DEFAULT '',
+                product_name_en   TEXT NOT NULL DEFAULT '',
+                variant_name_ka   TEXT NOT NULL DEFAULT '',
+                variant_name_en   TEXT NOT NULL DEFAULT '',
+                image_url         TEXT NOT NULL DEFAULT ''
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_site_order_items_order "
+            "ON site_order_items (order_id)"
+        )
+
+        # Customer reviews shown on the storefront. position drives the
+        # display order so the operator can drag-to-reorder. product_id is
+        # nullable — a review can be either anchored to a specific product
+        # or be a general "I love Tissu" testimonial.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS reviews (
+                id          TEXT PRIMARY KEY,
+                tenant_id   TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+                name        TEXT NOT NULL DEFAULT '',
+                comment     TEXT NOT NULL DEFAULT '',
+                photo_url   TEXT,
+                product_id  TEXT,
+                position    INTEGER NOT NULL DEFAULT 0,
+                created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_reviews_tenant_pos "
+            "ON reviews (tenant_id, position, created_at)"
+        )
+
         # Per-product lookbook photos — used by the website product page
         # ("On model") and the Pinterest agent. Kept separate from
         # `inventory.image_url / image_url_back` (which the Messenger bot
@@ -2320,5 +2401,368 @@ async def delete_product_gallery_photo(
     result = await pool.execute(
         "DELETE FROM product_gallery WHERE tenant_id = $1 AND id = $2",
         tenant_id, photo_id,
+    )
+    return result.endswith("1")
+
+
+# ── Site orders (storefront checkout) ─────────────────────────
+# Orders submitted by the public website. Distinct from the bot's
+# `orders` table; see schema comment in init_db() for the rationale.
+
+# Statuses where stock is held against the customer. Anything from
+# `preparing` onward implies the warehouse has set the bag aside.
+RESERVED_STATUSES = frozenset({"preparing", "shipped", "completed"})
+
+ORDER_STATUSES = frozenset({
+    "pending_confirmation", "confirmed", "awaiting_payment", "paid",
+    "preparing", "shipped", "completed", "cancelled",
+})
+
+_SO_COLUMNS = (
+    "id, status, subtotal, shipping, discount, total, payment_method, "
+    "contact_method, customer_name, customer_phone, customer_email, "
+    "address_street, address_city, address_zone, notes, stock_reserved, "
+    "created_at, updated_at"
+)
+
+_SOI_COLUMNS = (
+    "id, order_id, product_id, variant_id, quantity, price, "
+    "product_name_ka, product_name_en, variant_name_ka, variant_name_en, "
+    "image_url"
+)
+
+
+def _row_to_order(row) -> dict:
+    """Coerce an asyncpg site_orders row into JSON-ready types."""
+    d = dict(row)
+    for key in ("subtotal", "shipping", "discount", "total"):
+        d[key] = float(d.get(key) or 0)
+    zone = d.get("address_zone")
+    if isinstance(zone, str):
+        try:
+            d["address_zone"] = json.loads(zone)
+        except Exception:
+            d["address_zone"] = {}
+    elif zone is None:
+        d["address_zone"] = {}
+    for key in ("created_at", "updated_at"):
+        if d.get(key) is not None:
+            d[key] = d[key].isoformat()
+    return d
+
+
+def _row_to_order_item(row) -> dict:
+    d = dict(row)
+    d["price"] = float(d.get("price") or 0)
+    d["quantity"] = int(d.get("quantity") or 0)
+    return d
+
+
+async def create_site_order(
+    tenant_id: str, order_id: str, *,
+    customer_name: str, customer_phone: str,
+    address_street: str, address_city: str,
+    items: list[dict],
+    status: str = "pending_confirmation",
+    subtotal: float = 0, shipping: float = 0,
+    discount: float = 0, total: float = 0,
+    payment_method: str = "undecided",
+    contact_method: str = "phone",
+    customer_email: str | None = None,
+    address_zone: dict | None = None,
+    notes: str | None = None,
+) -> dict:
+    """Insert a new site order with its line items in one transaction."""
+    if status not in ORDER_STATUSES:
+        raise ValueError(f"invalid status: {status}")
+    pool = await get_db()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                f"""INSERT INTO site_orders
+                      (id, tenant_id, status, subtotal, shipping, discount,
+                       total, payment_method, contact_method,
+                       customer_name, customer_phone, customer_email,
+                       address_street, address_city, address_zone, notes,
+                       stock_reserved)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+                            $10, $11, $12, $13, $14, $15::jsonb, $16, $17)
+                    RETURNING {_SO_COLUMNS}""",
+                order_id, tenant_id, status,
+                float(subtotal), float(shipping), float(discount), float(total),
+                payment_method, contact_method,
+                customer_name, customer_phone, customer_email,
+                address_street, address_city,
+                json.dumps(address_zone or {}), notes,
+                status in RESERVED_STATUSES,
+            )
+            order = _row_to_order(row)
+            order_items = []
+            for it in items:
+                item_row = await conn.fetchrow(
+                    f"""INSERT INTO site_order_items
+                          (order_id, product_id, variant_id, quantity, price,
+                           product_name_ka, product_name_en,
+                           variant_name_ka, variant_name_en, image_url)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                        RETURNING {_SOI_COLUMNS}""",
+                    order_id, str(it.get("product_id") or ""),
+                    (it.get("variant_id") or None),
+                    int(it.get("quantity") or 1),
+                    float(it.get("price") or 0),
+                    str(it.get("product_name_ka") or ""),
+                    str(it.get("product_name_en") or ""),
+                    str(it.get("variant_name_ka") or ""),
+                    str(it.get("variant_name_en") or ""),
+                    str(it.get("image_url") or ""),
+                )
+                order_items.append(_row_to_order_item(item_row))
+            order["items"] = order_items
+            return order
+
+
+async def list_site_orders(
+    tenant_id: str, status: str | None = None, limit: int = 200,
+) -> list[dict]:
+    """List orders for a tenant, optionally filtered by status."""
+    pool = await get_db()
+    sql = f"SELECT {_SO_COLUMNS} FROM site_orders WHERE tenant_id = $1"
+    params: list = [tenant_id]
+    if status:
+        sql += " AND status = $2"
+        params.append(status)
+    sql += f" ORDER BY created_at DESC LIMIT {int(limit)}"
+    rows = await pool.fetch(sql, *params)
+    orders = [_row_to_order(r) for r in rows]
+    if not orders:
+        return orders
+    # Batch-fetch items so we don't N+1 on the list view.
+    ids = [o["id"] for o in orders]
+    items = await pool.fetch(
+        f"SELECT {_SOI_COLUMNS} FROM site_order_items "
+        f"WHERE order_id = ANY($1::text[]) ORDER BY id",
+        ids,
+    )
+    by_order: dict[str, list[dict]] = {}
+    for it in items:
+        by_order.setdefault(it["order_id"], []).append(_row_to_order_item(it))
+    for o in orders:
+        o["items"] = by_order.get(o["id"], [])
+    return orders
+
+
+async def get_site_order(tenant_id: str, order_id: str) -> dict | None:
+    """Return a single order with its items, or None when not found."""
+    pool = await get_db()
+    row = await pool.fetchrow(
+        f"SELECT {_SO_COLUMNS} FROM site_orders "
+        f"WHERE tenant_id = $1 AND id = $2",
+        tenant_id, order_id,
+    )
+    if not row:
+        return None
+    order = _row_to_order(row)
+    items = await pool.fetch(
+        f"SELECT {_SOI_COLUMNS} FROM site_order_items "
+        f"WHERE order_id = $1 ORDER BY id",
+        order_id,
+    )
+    order["items"] = [_row_to_order_item(it) for it in items]
+    return order
+
+
+async def update_site_order_status(
+    tenant_id: str, order_id: str, new_status: str,
+) -> dict | None:
+    """Patch order status; adjust inventory stock when crossing the
+    reserved boundary. Returns the updated order or None when not found.
+
+    Transitions handled:
+      * any → preparing/shipped/completed (first time crossing): deduct
+        each line item's quantity from inventory.stock.
+      * reserved status → cancelled: refund the deducted stock.
+    """
+    if new_status not in ORDER_STATUSES:
+        raise ValueError(f"invalid status: {new_status}")
+
+    pool = await get_db()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            current = await conn.fetchrow(
+                "SELECT status, stock_reserved FROM site_orders "
+                "WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
+                tenant_id, order_id,
+            )
+            if not current:
+                return None
+
+            was_reserved = bool(current["stock_reserved"])
+            will_reserve = new_status in RESERVED_STATUSES
+            cancelling = new_status == "cancelled"
+
+            # Compute the stock delta to apply per-line. Positive deducts,
+            # negative refunds. No-op when the order stays within or
+            # outside the reserved set with no cancellation.
+            delta = 0
+            if not was_reserved and will_reserve:
+                delta = -1  # deduct
+            elif was_reserved and cancelling:
+                delta = 1   # refund
+
+            if delta != 0:
+                items = await conn.fetch(
+                    "SELECT product_id, quantity FROM site_order_items "
+                    "WHERE order_id = $1",
+                    order_id,
+                )
+                for it in items:
+                    qty = int(it["quantity"] or 0)
+                    pid = (it["product_id"] or "").strip()
+                    if not pid or qty <= 0:
+                        continue
+                    # The site stores product_id as either our inventory
+                    # integer or a cuid. Only adjust stock when we can
+                    # resolve it to a numeric inventory row.
+                    try:
+                        inv_id = int(pid)
+                    except (TypeError, ValueError):
+                        continue
+                    await conn.execute(
+                        "UPDATE inventory SET stock = GREATEST(stock + $1, 0) "
+                        "WHERE id = $2 AND tenant_id = $3",
+                        delta * qty, inv_id, tenant_id,
+                    )
+
+            new_reserved = will_reserve and not cancelling
+            row = await conn.fetchrow(
+                f"""UPDATE site_orders
+                       SET status = $1,
+                           stock_reserved = $2,
+                           updated_at = now()
+                     WHERE tenant_id = $3 AND id = $4
+                     RETURNING {_SO_COLUMNS}""",
+                new_status, new_reserved, tenant_id, order_id,
+            )
+            order = _row_to_order(row)
+            items_rows = await conn.fetch(
+                f"SELECT {_SOI_COLUMNS} FROM site_order_items "
+                f"WHERE order_id = $1 ORDER BY id",
+                order_id,
+            )
+            order["items"] = [_row_to_order_item(r) for r in items_rows]
+            return order
+
+
+# ── Reviews (storefront testimonials) ─────────────────────────
+
+_RV_COLUMNS = (
+    "id, name, comment, photo_url, product_id, position, "
+    "created_at, updated_at"
+)
+
+
+def _row_to_review(row) -> dict:
+    d = dict(row)
+    d["position"] = int(d.get("position") or 0)
+    for key in ("created_at", "updated_at"):
+        if d.get(key) is not None:
+            d[key] = d[key].isoformat()
+    return d
+
+
+async def list_reviews(tenant_id: str) -> list[dict]:
+    """Return reviews sorted by position then created_at."""
+    pool = await get_db()
+    rows = await pool.fetch(
+        f"SELECT {_RV_COLUMNS} FROM reviews WHERE tenant_id = $1 "
+        f"ORDER BY position, created_at",
+        tenant_id,
+    )
+    return [_row_to_review(r) for r in rows]
+
+
+async def create_review(
+    tenant_id: str, review_id: str, *,
+    name: str = "", comment: str = "",
+    photo_url: str | None = None, product_id: str | None = None,
+    position: int | None = None,
+) -> dict:
+    """Insert a review. Position defaults to last when None."""
+    pool = await get_db()
+    if position is None:
+        last = await pool.fetchval(
+            "SELECT COALESCE(MAX(position), 0) FROM reviews WHERE tenant_id = $1",
+            tenant_id,
+        )
+        position = int(last or 0) + 1
+    row = await pool.fetchrow(
+        f"""INSERT INTO reviews
+              (id, tenant_id, name, comment, photo_url, product_id, position)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING {_RV_COLUMNS}""",
+        review_id, tenant_id, name.strip(), comment.strip(),
+        photo_url, product_id, int(position),
+    )
+    return _row_to_review(row)
+
+
+async def update_review(
+    tenant_id: str, review_id: str, **fields,
+) -> dict | None:
+    """Patch a single review. Accepts name, comment, photo_url, product_id,
+    position. Pass only the fields you want to change."""
+    sets: list[str] = []
+    params: list = []
+    for key in ("name", "comment", "photo_url", "product_id"):
+        if key in fields:
+            sets.append(f"{key} = ${len(params)+1}")
+            params.append(fields[key])
+    if "position" in fields:
+        sets.append(f"position = ${len(params)+1}")
+        params.append(int(fields["position"]))
+    pool = await get_db()
+    if not sets:
+        row = await pool.fetchrow(
+            f"SELECT {_RV_COLUMNS} FROM reviews "
+            f"WHERE tenant_id = $1 AND id = $2",
+            tenant_id, review_id,
+        )
+        return _row_to_review(row) if row else None
+    sets.append("updated_at = now()")
+    params.extend([tenant_id, review_id])
+    row = await pool.fetchrow(
+        f"UPDATE reviews SET {', '.join(sets)} "
+        f"WHERE tenant_id = ${len(params)-1} AND id = ${len(params)} "
+        f"RETURNING {_RV_COLUMNS}",
+        *params,
+    )
+    return _row_to_review(row) if row else None
+
+
+async def reorder_reviews(tenant_id: str, ordered_ids: list[str]) -> int:
+    """Apply a new ordering. Each id gets position equal to its index in
+    the list (1-based). Returns the number of rows updated."""
+    if not ordered_ids:
+        return 0
+    pool = await get_db()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            updated = 0
+            for idx, rid in enumerate(ordered_ids, start=1):
+                result = await conn.execute(
+                    "UPDATE reviews SET position = $1, updated_at = now() "
+                    "WHERE tenant_id = $2 AND id = $3",
+                    idx, tenant_id, rid,
+                )
+                if result.endswith("1"):
+                    updated += 1
+            return updated
+
+
+async def delete_review(tenant_id: str, review_id: str) -> bool:
+    pool = await get_db()
+    result = await pool.execute(
+        "DELETE FROM reviews WHERE tenant_id = $1 AND id = $2",
+        tenant_id, review_id,
     )
     return result.endswith("1")
