@@ -265,6 +265,26 @@ async def init_db():
                AND fields = '[{"key": "length", "label": "სიგრძე"}, {"key": "material", "label": "მასალა"}]'::jsonb"""
         )
 
+        # Bilingual labels — the storefront renders filter chips in either
+        # Georgian or English depending on the active locale. `name` keeps
+        # the legacy Georgian value so existing admin code doesn't break;
+        # `name_en` defaults to empty and the storefront falls back to the
+        # slug when it's blank.
+        await conn.execute(
+            "ALTER TABLE categories "
+            "ADD COLUMN IF NOT EXISTS name_en TEXT NOT NULL DEFAULT ''"
+        )
+        # Seed reasonable English labels for the built-in slugs; idempotent
+        # because we only touch rows that are still empty.
+        await conn.execute(
+            "UPDATE categories SET name_en = 'Bags' "
+            "WHERE slug = 'bag' AND name_en = ''"
+        )
+        await conn.execute(
+            "UPDATE categories SET name_en = 'Necklaces' "
+            "WHERE slug = 'necklace' AND name_en = ''"
+        )
+
         # ── Multi-tenant migration ─────────────────────────────
         # Every tenant-scoped table gets a tenant_id column with the default
         # 'default'. This is idempotent: ADD COLUMN IF NOT EXISTS is a no-op

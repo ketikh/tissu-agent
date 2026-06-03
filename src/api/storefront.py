@@ -352,6 +352,42 @@ async def storefront_necklace_options(
     }
 
 
+@router.get("/categories")
+async def storefront_categories(
+    request: Request,
+    response: Response,
+    tenant_id: str = Depends(_tenant_id),
+):
+    """Public category list — drives the filter chips on the storefront.
+    Returns bilingual labels plus product counts so the UI can hide
+    empty categories without an extra query."""
+    pool = await get_db()
+    rows = await pool.fetch("""
+        SELECT c.slug, c.name, c.name_en, c.emoji, c.sort_order,
+               COALESCE(cnt.n, 0) AS count
+        FROM categories c
+        LEFT JOIN (
+            SELECT category, COUNT(*) AS n FROM inventory
+            WHERE tenant_id = $1 AND stock > 0
+            GROUP BY category
+        ) cnt ON cnt.category = c.slug
+        WHERE c.tenant_id = $1
+        ORDER BY c.sort_order ASC, c.name ASC
+    """, tenant_id)
+    response.headers["Cache-Control"] = STOREFRONT_CACHE
+    return [
+        {
+            "slug": r["slug"],
+            "name_ka": r["name"],
+            "name_en": r["name_en"] or "",
+            "emoji": r["emoji"],
+            "sort_order": int(r["sort_order"] or 0),
+            "count": int(r["count"] or 0),
+        }
+        for r in rows
+    ]
+
+
 @router.get("/reviews")
 async def storefront_reviews(
     request: Request,

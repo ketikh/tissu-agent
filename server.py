@@ -1584,7 +1584,7 @@ async def list_categories(tenant_id: str = Depends(get_tenant_id)):
     sidebar the moment they're inserted."""
     pool = await get_db()
     rows = await pool.fetch("""
-        SELECT c.slug, c.name, c.emoji, c.fields, c.sort_order,
+        SELECT c.slug, c.name, c.name_en, c.emoji, c.fields, c.sort_order,
                COALESCE(cnt.n, 0) AS count
         FROM categories c
         LEFT JOIN (
@@ -1606,6 +1606,8 @@ async def list_categories(tenant_id: str = Depends(get_tenant_id)):
         out.append({
             "slug": r["slug"],
             "name": r["name"],
+            "name_ka": r["name"],
+            "name_en": r["name_en"] or "",
             "emoji": r["emoji"],
             "fields": fields,
             "sort_order": r["sort_order"],
@@ -1622,7 +1624,9 @@ async def add_category(request: Request, tenant_id: str = Depends(get_tenant_id)
     import re as _re
     data = await request.json()
     slug = (data.get("slug") or "").strip().lower()
-    name = (data.get("name") or "").strip()
+    # Accept either name (legacy) or name_ka (new bilingual API).
+    name = (data.get("name_ka") or data.get("name") or "").strip()
+    name_en = (data.get("name_en") or "").strip()
     emoji = (data.get("emoji") or "📦").strip()[:8]
     fields = data.get("fields") or []
     if not slug or not name:
@@ -1637,9 +1641,9 @@ async def add_category(request: Request, tenant_id: str = Depends(get_tenant_id)
     now = datetime.now(timezone.utc).isoformat()
     try:
         await pool.execute(
-            """INSERT INTO categories (slug, name, emoji, fields, sort_order, tenant_id, created_at)
-               VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)""",
-            slug, name, emoji, json.dumps(cleaned_fields), 100, tenant_id, now,
+            """INSERT INTO categories (slug, name, name_en, emoji, fields, sort_order, tenant_id, created_at)
+               VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)""",
+            slug, name, name_en, emoji, json.dumps(cleaned_fields), 100, tenant_id, now,
         )
     except asyncpg.exceptions.UniqueViolationError:
         raise HTTPException(status_code=409, detail="ეს slug უკვე არსებობს")
@@ -1725,7 +1729,10 @@ async def update_category(slug: str, request: Request, tenant_id: str = Depends(
             updates = []
             params: list = []
             idx = 1
-            for key in ("name", "emoji"):
+            # name_ka is the bilingual alias for the legacy `name` column.
+            if "name_ka" in data and data["name_ka"] is not None and "name" not in data:
+                data["name"] = data["name_ka"]
+            for key in ("name", "name_en", "emoji"):
                 if key in data and data[key] is not None:
                     updates.append(f"{key} = ${idx}")
                     params.append(str(data[key]).strip())
