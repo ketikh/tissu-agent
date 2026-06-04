@@ -1515,8 +1515,9 @@
         <label>კატეგორიის სახელი (ინგლისურად)</label>
         <input type="text" id="cat-name-en" placeholder="e.g. Belts">
         <p class="hint" style="margin-top:-4px;margin-bottom:8px">ეს ლეიბლი გამოჩნდება საიტზე როცა მნახველი ინგლისურ ენას აირჩევს. ცარიელიც დასაშვებია.</p>
-        <label id="cat-slug-label">Slug (ინგლისურად, უნიკალური)</label>
-        <input type="text" id="cat-slug" placeholder="belts">
+        <label id="cat-slug-label">Slug (ტექნიკური, URL-ისთვის)</label>
+        <input type="text" id="cat-slug" placeholder="kids-bag" oninput="normalizeCatSlug(this)">
+        <p class="hint" style="margin-top:-4px;margin-bottom:8px">მხოლოდ პატარა ლათინური ასოები, ციფრები, "-" ან "_". სივრცე გადაიქცევა "-"-ად. მაგ: "Kids Bag" → "kids-bag".</p>
         <label>ველები (ტეგები)</label>
         <p class="hint" style="margin-top:-4px;margin-bottom:8px">აქ ის ველებია რომელიც ავტომატურად ჩანს ყველა პროდუქტის კარტაზე. მაგ: ფერი, მასალა, სტილი. ცარიელი დატოვე თუ არ გინდა.</p>
         <div id="cat-fields"></div>
@@ -2110,6 +2111,25 @@
 
     // ── Category modal (add or edit) ────────────
     let editingCategorySlug = null;
+
+    // Normalize what the operator types in the slug field so they can't
+    // produce a value that POST /api/categories will reject. Strips out
+    // anything that isn't a-z/0-9/_/-, lowercases the rest, and collapses
+    // runs of dashes — "Kids Bag" becomes "kids-bag" live as you type.
+    function normalizeCatSlug(el) {
+        const start = el.selectionStart;
+        const before = el.value;
+        const after = before
+            .toLowerCase()
+            .replace(/\s+/g, '-')
+            .replace(/[^a-z0-9_-]/g, '')
+            .replace(/-+/g, '-');
+        if (after !== before) {
+            el.value = after;
+            const delta = after.length - before.length;
+            try { el.setSelectionRange(start + delta, start + delta); } catch (_) {}
+        }
+    }
 
     function openAddCategoryModal() {
         editingCategorySlug = null;
