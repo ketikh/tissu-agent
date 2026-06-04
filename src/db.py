@@ -2706,8 +2706,13 @@ async def create_review(
     name: str = "", comment: str = "",
     photo_url: str | None = None, product_id: str | None = None,
     position: int | None = None,
+    created_at: str | None = None,
 ) -> dict:
-    """Insert a review. Position defaults to last when None."""
+    """Insert a review. Position defaults to last when None.
+
+    ``created_at`` accepts an ISO timestamp string for data migrations
+    that need to preserve the original timestamp; pass None to let the
+    DB default to now()."""
     pool = await get_db()
     if position is None:
         last = await pool.fetchval(
@@ -2715,14 +2720,31 @@ async def create_review(
             tenant_id,
         )
         position = int(last or 0) + 1
-    row = await pool.fetchrow(
-        f"""INSERT INTO reviews
-              (id, tenant_id, name, comment, photo_url, product_id, position)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING {_RV_COLUMNS}""",
-        review_id, tenant_id, name.strip(), comment.strip(),
-        photo_url, product_id, int(position),
-    )
+    created_dt = None
+    if created_at:
+        try:
+            created_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            created_dt = None
+    if created_dt is not None:
+        row = await pool.fetchrow(
+            f"""INSERT INTO reviews
+                  (id, tenant_id, name, comment, photo_url, product_id,
+                   position, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
+                RETURNING {_RV_COLUMNS}""",
+            review_id, tenant_id, name.strip(), comment.strip(),
+            photo_url, product_id, int(position), created_dt,
+        )
+    else:
+        row = await pool.fetchrow(
+            f"""INSERT INTO reviews
+                  (id, tenant_id, name, comment, photo_url, product_id, position)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                RETURNING {_RV_COLUMNS}""",
+            review_id, tenant_id, name.strip(), comment.strip(),
+            photo_url, product_id, int(position),
+        )
     return _row_to_review(row)
 
 

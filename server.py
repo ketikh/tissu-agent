@@ -2306,6 +2306,68 @@ async def api_upload_review_photo(
     return {"image_url": image_url}
 
 
+@app.post("/api/admin/reviews/{review_id}/photo")
+async def api_upload_review_photo_inline(
+    review_id: str,
+    file: UploadFile = File(...),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """Upload a photo and attach it to an existing review in one call.
+    Mirrors the storefront's expected migration path."""
+    if not file:
+        raise HTTPException(status_code=400, detail="ფოტო აუცილებელია")
+    image_url = save_uploaded_image(file, prefix=f"review_{review_id}", folder="tissu/reviews")
+    row = await update_review(tenant_id, review_id, photo_url=image_url)
+    if not row:
+        raise HTTPException(status_code=404, detail="რევიუ ვერ მოიძებნა")
+    return {"photo_url": image_url, "review": _serialize_review(row)}
+
+
+@app.post("/api/admin/reviews/bulk-import")
+async def api_bulk_import_reviews(
+    request: Request, tenant_id: str = Depends(get_tenant_id),
+):
+    """Import an array of reviews in one call, preserving created_at and
+    position when present. Idempotent at the row level via a content
+    hash check (name + first 60 chars of comment) so re-runs don't
+    duplicate. Returns counts so the caller knows what happened."""
+    data = await request.json()
+    rows = data if isinstance(data, list) else data.get("reviews") or []
+    if not isinstance(rows, list) or not rows:
+        raise HTTPException(status_code=400, detail="reviews მასივი აუცილებელია")
+
+    pool = await get_db()
+    existing = await pool.fetch(
+        "SELECT name, LEFT(comment, 60) AS cprefix FROM reviews WHERE tenant_id = $1",
+        tenant_id,
+    )
+    seen = {(r["name"].strip(), (r["cprefix"] or "").strip()) for r in existing}
+
+    inserted = 0
+    skipped = 0
+    for item in rows:
+        name = (item.get("name") or "").strip()
+        comment = (item.get("comment") or "").strip()
+        if not name or not comment:
+            skipped += 1
+            continue
+        key = (name, comment[:60].strip())
+        if key in seen:
+            skipped += 1
+            continue
+        await create_review(
+            tenant_id, _new_review_id(),
+            name=name, comment=comment,
+            photo_url=(item.get("photo_url") or None),
+            product_id=(str(item.get("product_id")) if item.get("product_id") is not None else None),
+            position=(int(item["position"]) if item.get("position") is not None else None),
+            created_at=item.get("created_at"),
+        )
+        seen.add(key)
+        inserted += 1
+    return {"inserted": inserted, "skipped": skipped, "total": len(rows)}
+
+
 @app.patch("/api/admin/reviews/{review_id}")
 async def api_update_review(
     review_id: str, request: Request,

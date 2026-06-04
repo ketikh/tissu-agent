@@ -630,6 +630,10 @@
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21V8a2 2 0 0 0-2-2h-3l-2-3H7a2 2 0 0 0-2 2v16"/><circle cx="12" cy="13" r="3"/></svg>
                 Lookbook
             </button>
+            <button class="nav-item" data-tab="reviews" onclick="showTab('reviews', this)">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                მიმოხილვები
+            </button>
             <button class="nav-item" data-tab="insights" onclick="showTab('insights', this)">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-5"/></svg>
                 ინსაიტები
@@ -1152,6 +1156,132 @@
                         .lb-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
                     }
                 </style>
+            </div>
+
+            <div id="tab-reviews" class="section">
+                <div class="card">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+                        <div>
+                            <h2 style="margin-bottom:2px">⭐ მიმოხილვები</h2>
+                            <p class="hint" style="margin-bottom:0">საიტზე გამოჩენილი მომხმარებლების შეფასებები. ჩავლება და გადააჯვარდინე ღია ღილაკიდან რომ თანმიმდევრობა შეცვალო.</p>
+                        </div>
+                        <button class="btn-primary rv-new-btn" onclick="openReviewModal()" style="padding:10px 16px">+ ახალი მიმოხილვა</button>
+                    </div>
+                    <div id="reviews-list" class="rv-list">
+                        <div class="rv-empty">იტვირთება…</div>
+                    </div>
+                </div>
+                <style>
+                    .rv-list {
+                        display: flex; flex-direction: column; gap: 10px;
+                    }
+                    .rv-empty {
+                        text-align: center; color: #999; padding: 30px;
+                        background: #fafafa; border: 1px dashed #e5e7eb;
+                        border-radius: 8px;
+                    }
+                    .rv-card {
+                        background: #fff; border: 1px solid #e5e7eb;
+                        border-radius: 10px; padding: 12px;
+                        display: grid; grid-template-columns: 30px 80px 1fr auto;
+                        gap: 12px; align-items: start;
+                    }
+                    .rv-card.dragging { opacity: 0.4; }
+                    .rv-card.drag-over {
+                        border-top: 2px solid #2563eb;
+                        padding-top: 10px;
+                    }
+                    .rv-handle {
+                        cursor: grab; color: #9ca3af; user-select: none;
+                        display: flex; align-items: center; justify-content: center;
+                        font-size: 20px; line-height: 1;
+                        background: #f9fafb; border-radius: 6px;
+                        height: 60px;
+                    }
+                    .rv-handle:active { cursor: grabbing; }
+                    .rv-photo {
+                        width: 80px; aspect-ratio: 1; border-radius: 8px;
+                        object-fit: cover; background: #f5f5f5;
+                        border: 1px solid #e5e7eb;
+                    }
+                    .rv-photo-none {
+                        width: 80px; aspect-ratio: 1; border-radius: 8px;
+                        background: #f5f5f5; border: 1px dashed #d1d5db;
+                        display: flex; align-items: center; justify-content: center;
+                        color: #9ca3af; font-size: 11px; text-align: center;
+                    }
+                    .rv-meta {
+                        display: flex; flex-direction: column; gap: 4px;
+                        min-width: 0;
+                    }
+                    .rv-name { font-weight: 600; font-size: 14px; color: #111; }
+                    .rv-comment {
+                        font-size: 13px; color: #555; line-height: 1.5;
+                        white-space: pre-wrap; word-break: break-word;
+                    }
+                    .rv-pos {
+                        font-size: 11px; color: #9ca3af; margin-top: 4px;
+                    }
+                    .rv-actions {
+                        display: flex; flex-direction: column; gap: 4px;
+                    }
+                    .rv-actions button {
+                        padding: 5px 10px; font-size: 12px; border-radius: 5px;
+                        border: 1px solid #d1d5db; background: #fff;
+                        cursor: pointer; min-width: 70px;
+                    }
+                    .rv-actions .rv-btn-edit:hover { background: #eff6ff; }
+                    .rv-actions .rv-btn-del { color: #b91c1c; border-color: #fecaca; }
+                    .rv-actions .rv-btn-del:hover { background: #fef2f2; }
+                    @media (max-width: 760px) {
+                        .rv-card { grid-template-columns: 24px 64px 1fr; }
+                        .rv-photo, .rv-photo-none { width: 64px; }
+                        .rv-actions {
+                            grid-column: 1 / -1; flex-direction: row;
+                            border-top: 1px solid #f1f1f1; padding-top: 8px;
+                        }
+                        .rv-actions button { flex: 1; }
+                    }
+                </style>
+            </div>
+
+            <!-- Review create/edit modal — same form for both flows. -->
+            <div class="modal-backdrop" id="rv-modal" onclick="if(event.target===this) closeReviewModal()">
+                <div class="modal" style="max-width:560px">
+                    <h2 id="rv-modal-title">ახალი მიმოხილვა</h2>
+                    <p class="hint" id="rv-modal-hint">სახელი და კომენტარი აუცილებელია. ფოტო — არასავალდებულო.</p>
+                    <label>სახელი</label>
+                    <input type="text" id="rv-name" placeholder="მაგ: ნინო">
+                    <label>კომენტარი</label>
+                    <textarea id="rv-comment" rows="4" placeholder="რა გითხრა მომხმარებელმა?" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit"></textarea>
+                    <label style="margin-top:10px">ფოტო (არასავალდებულო)</label>
+                    <div id="rv-photo-preview" style="margin-bottom:8px"></div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-ghost btn-sm" type="button" onclick="document.getElementById('rv-file').click()">📷 ფაილის ატვირთვა</button>
+                        <button class="btn btn-ghost btn-sm" type="button" onclick="openReviewProductPicker()">🛍 პროდუქტიდან არჩევა</button>
+                        <button class="btn btn-ghost btn-sm" type="button" onclick="clearReviewPhoto()" id="rv-clear-photo-btn" style="display:none;color:#b91c1c">წაშლა</button>
+                        <input type="file" id="rv-file" accept="image/*" style="display:none" onchange="onReviewFilePick(this)">
+                    </div>
+                    <p id="rv-modal-status" class="hint" style="margin-top:8px;min-height:18px"></p>
+                    <div class="modal-actions">
+                        <button class="btn btn-ghost" onclick="closeReviewModal()">გაუქმება</button>
+                        <button class="btn btn-primary" id="rv-save-btn" onclick="submitReview()">შენახვა</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Product picker for review photo. Reuses inventory state. -->
+            <div class="modal-backdrop" id="rv-product-picker" onclick="if(event.target===this) closeReviewProductPicker()">
+                <div class="modal" style="max-width:760px;max-height:80vh;display:flex;flex-direction:column">
+                    <h2>აირჩიე პროდუქტი</h2>
+                    <p class="hint">პროდუქტის ფოტო გამოყენდება ამ მიმოხილვისთვის.</p>
+                    <div id="rv-picker-grid" style="overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;padding:6px 0">
+                        <div style="grid-column:1/-1;text-align:center;color:#999;padding:24px">იტვირთება…</div>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn btn-ghost" onclick="closeReviewProductPicker()">გაუქმება</button>
+                    </div>
+                </div>
             </div>
 
             <div id="tab-insights" class="section">
@@ -1762,6 +1892,7 @@
         necklace: 'ყელსაბამის ვარიანტები',
         gallery: 'გალერეა',
         lookbook: 'Lookbook (პროდუქტებზე)',
+        reviews: 'მიმოხილვები',
     };
     const PAGE_CRUMBS = {
         dashboard: 'Overview',
@@ -1779,6 +1910,7 @@
         necklace: 'Catalog · ყელსაბამები',
         gallery: 'Lookbook',
         lookbook: 'Catalog · Lookbook',
+        reviews: 'Storefront · Reviews',
     };
 
     function showTab(tab, btn) {
@@ -1807,6 +1939,7 @@
         if (tab === 'necklace') loadNecklaceOptions();
         if (tab === 'gallery') loadGalleryPhotos();
         if (tab === 'lookbook') loadLookbookData();
+        if (tab === 'reviews') loadReviewsData();
         if (tab === 'chats') loadChats();
         if (tab === 'insights') loadInsights();
         if (tab === 'bot') loadBotConfig();
@@ -3186,6 +3319,261 @@
             const r = await fetch(API + '/api/product-gallery/' + id, { method: 'DELETE' });
             if (!r.ok) { alert((await r.json()).detail || 'შეცდომა'); return; }
             await loadLookbookData();
+        } catch (e) { alert('შეცდომა: ' + e.message); }
+    }
+
+    // ── Reviews tab ──────────────────────────────────────────
+    // Live editor for the storefront review carousel: drag-to-reorder,
+    // inline photo upload, optional "pick from product" picker that
+    // reuses the inventory image as the review photo.
+
+    let reviewsState = [];
+    let reviewEditingId = null;
+    let reviewPendingPhotoUrl = null;
+    let reviewPendingPhotoFile = null;
+    let rvDragId = null;
+
+    async function loadReviewsData() {
+        const host = document.getElementById('reviews-list');
+        try {
+            const r = await fetch(API + '/api/admin/reviews');
+            const d = await r.json();
+            reviewsState = d.reviews || [];
+            renderReviewsList();
+        } catch (e) {
+            host.innerHTML = '<div class="rv-empty" style="color:#c00">ვერ ჩაიტვირთა: ' + e.message + '</div>';
+        }
+    }
+
+    function rvEscape(s) {
+        return String(s || '').replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+        })[c]);
+    }
+
+    function renderReviewsList() {
+        const host = document.getElementById('reviews-list');
+        if (!reviewsState.length) {
+            host.innerHTML = '<div class="rv-empty">ჯერ არ არის მიმოხილვები. დაამატე პირველი ✨</div>';
+            return;
+        }
+        host.innerHTML = reviewsState.map(r => {
+            const photo = r.photo_url
+                ? `<img class="rv-photo" src="${rvEscape(r.photo_url)}" alt="">`
+                : `<div class="rv-photo-none">ფოტო არ აქვს</div>`;
+            return `
+                <div class="rv-card" draggable="true" data-id="${r.id}"
+                     ondragstart="onRvDragStart(event, '${r.id}')"
+                     ondragend="onRvDragEnd(event)"
+                     ondragover="onRvDragOver(event)"
+                     ondragleave="onRvDragLeave(event)"
+                     ondrop="onRvDrop(event, '${r.id}')">
+                    <div class="rv-handle" title="გადააქანე და გადაიტანე">⋮⋮</div>
+                    ${photo}
+                    <div class="rv-meta">
+                        <div class="rv-name">${rvEscape(r.name)}</div>
+                        <div class="rv-comment">${rvEscape(r.comment)}</div>
+                        <div class="rv-pos">პოზიცია: ${r.position}</div>
+                    </div>
+                    <div class="rv-actions">
+                        <button class="rv-btn-edit" onclick="openReviewModal('${r.id}')">რედაქტ</button>
+                        <button class="rv-btn-del" onclick="deleteReview('${r.id}')">წაშლა</button>
+                    </div>
+                </div>`;
+        }).join('');
+    }
+
+    // Drag-reorder — uses the same one-shot PUT /reviews/order endpoint.
+    function onRvDragStart(ev, id) {
+        rvDragId = id;
+        ev.currentTarget.classList.add('dragging');
+        try { ev.dataTransfer.effectAllowed = 'move'; } catch (_) {}
+    }
+    function onRvDragEnd(ev) {
+        ev.currentTarget.classList.remove('dragging');
+        document.querySelectorAll('.rv-card.drag-over').forEach(el => el.classList.remove('drag-over'));
+        rvDragId = null;
+    }
+    function onRvDragOver(ev) {
+        ev.preventDefault();
+        ev.currentTarget.classList.add('drag-over');
+        try { ev.dataTransfer.dropEffect = 'move'; } catch (_) {}
+    }
+    function onRvDragLeave(ev) {
+        ev.currentTarget.classList.remove('drag-over');
+    }
+    async function onRvDrop(ev, targetId) {
+        ev.preventDefault();
+        ev.currentTarget.classList.remove('drag-over');
+        if (!rvDragId || rvDragId === targetId) return;
+        const fromIdx = reviewsState.findIndex(r => r.id === rvDragId);
+        const toIdx = reviewsState.findIndex(r => r.id === targetId);
+        if (fromIdx < 0 || toIdx < 0) return;
+        const [moved] = reviewsState.splice(fromIdx, 1);
+        reviewsState.splice(toIdx, 0, moved);
+        // Renumber locally so the UI doesn't flash, then sync with backend.
+        reviewsState.forEach((r, i) => { r.position = i + 1; });
+        renderReviewsList();
+        try {
+            const r = await fetch(API + '/api/admin/reviews/order', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: reviewsState.map(x => x.id) }),
+            });
+            if (!r.ok) { alert((await r.json()).detail || 'შეცდომა გადანომრვისას'); await loadReviewsData(); }
+        } catch (e) { alert('შეცდომა: ' + e.message); await loadReviewsData(); }
+    }
+
+    // ── Modal ────────────────────────────────────────────────
+    function openReviewModal(id) {
+        reviewEditingId = id || null;
+        reviewPendingPhotoUrl = null;
+        reviewPendingPhotoFile = null;
+        const title = id ? 'მიმოხილვის რედაქტირება' : 'ახალი მიმოხილვა';
+        document.getElementById('rv-modal-title').textContent = title;
+        if (id) {
+            const r = reviewsState.find(x => x.id === id);
+            if (!r) return;
+            document.getElementById('rv-name').value = r.name || '';
+            document.getElementById('rv-comment').value = r.comment || '';
+            reviewPendingPhotoUrl = r.photo_url || null;
+        } else {
+            document.getElementById('rv-name').value = '';
+            document.getElementById('rv-comment').value = '';
+        }
+        renderReviewPhotoPreview();
+        document.getElementById('rv-modal-status').textContent = '';
+        document.getElementById('rv-modal').classList.add('open');
+    }
+
+    function closeReviewModal() {
+        document.getElementById('rv-modal').classList.remove('open');
+        reviewEditingId = null;
+        reviewPendingPhotoUrl = null;
+        reviewPendingPhotoFile = null;
+        document.getElementById('rv-file').value = '';
+    }
+
+    function renderReviewPhotoPreview() {
+        const host = document.getElementById('rv-photo-preview');
+        const clearBtn = document.getElementById('rv-clear-photo-btn');
+        if (!reviewPendingPhotoUrl && !reviewPendingPhotoFile) {
+            host.innerHTML = '<div style="color:#999;font-size:12px">ფოტო ჯერ არ აქვს</div>';
+            clearBtn.style.display = 'none';
+            return;
+        }
+        const src = reviewPendingPhotoFile
+            ? URL.createObjectURL(reviewPendingPhotoFile)
+            : reviewPendingPhotoUrl;
+        host.innerHTML = `<img src="${src}" style="width:100px;aspect-ratio:1;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb">`;
+        clearBtn.style.display = '';
+    }
+
+    function onReviewFilePick(input) {
+        if (input.files && input.files[0]) {
+            reviewPendingPhotoFile = input.files[0];
+            reviewPendingPhotoUrl = null;
+            renderReviewPhotoPreview();
+        }
+    }
+
+    function clearReviewPhoto() {
+        reviewPendingPhotoFile = null;
+        reviewPendingPhotoUrl = null;
+        document.getElementById('rv-file').value = '';
+        renderReviewPhotoPreview();
+    }
+
+    // Product picker — pulls from the same /api/inventory cache the
+    // inventory tab already loads.
+    async function openReviewProductPicker() {
+        document.getElementById('rv-product-picker').classList.add('open');
+        const host = document.getElementById('rv-picker-grid');
+        try {
+            const inv = await (await fetch(API + '/api/inventory')).json();
+            const items = (inv.inventory || []).filter(p => p.image_url);
+            if (!items.length) {
+                host.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#999;padding:24px">პროდუქტი ფოტოთი ვერ მოვძებნე</div>';
+                return;
+            }
+            host.innerHTML = items.map(p => {
+                const url = p.image_url.startsWith('http') ? p.image_url : (API + p.image_url);
+                return `
+                    <div style="cursor:pointer;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:#fff"
+                         onclick="pickReviewProduct('${rvEscape(url)}')">
+                        <img src="${rvEscape(url)}" style="width:100%;aspect-ratio:1;object-fit:cover;display:block">
+                        <div style="padding:6px 8px;font-size:11px;color:#555">${rvEscape(p.code || p.product_name || '')}</div>
+                    </div>`;
+            }).join('');
+        } catch (e) {
+            host.innerHTML = '<div style="grid-column:1/-1;color:#c00">ვერ ჩაიტვირთა: ' + e.message + '</div>';
+        }
+    }
+
+    function closeReviewProductPicker() {
+        document.getElementById('rv-product-picker').classList.remove('open');
+    }
+
+    function pickReviewProduct(url) {
+        reviewPendingPhotoUrl = url;
+        reviewPendingPhotoFile = null;
+        renderReviewPhotoPreview();
+        closeReviewProductPicker();
+    }
+
+    async function submitReview() {
+        const name = document.getElementById('rv-name').value.trim();
+        const comment = document.getElementById('rv-comment').value.trim();
+        const status = document.getElementById('rv-modal-status');
+        const btn = document.getElementById('rv-save-btn');
+        if (!name) { status.textContent = 'სახელი შეავსე'; return; }
+        if (!comment) { status.textContent = 'კომენტარი შეავსე'; return; }
+        btn.disabled = true;
+        try {
+            // Upload pending file first when one is selected, so the
+            // saved review row carries the final Cloudinary URL.
+            let photoUrl = reviewPendingPhotoUrl;
+            if (reviewPendingPhotoFile) {
+                status.textContent = 'ფოტო იტვირთება…';
+                const fd = new FormData();
+                fd.append('image', reviewPendingPhotoFile);
+                const ur = await fetch(API + '/api/admin/reviews/upload', { method: 'POST', body: fd });
+                if (!ur.ok) throw new Error((await ur.json()).detail || 'ფოტოს ატვირთვა ვერ შესრულდა');
+                photoUrl = (await ur.json()).image_url;
+            }
+
+            if (reviewEditingId) {
+                status.textContent = 'შენახვა…';
+                const r = await fetch(API + '/api/admin/reviews/' + reviewEditingId, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, comment, photo_url: photoUrl || null }),
+                });
+                if (!r.ok) throw new Error((await r.json()).detail || 'შენახვა ვერ შესრულდა');
+            } else {
+                status.textContent = 'შენახვა…';
+                const r = await fetch(API + '/api/admin/reviews', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, comment, photo_url: photoUrl || null }),
+                });
+                if (!r.ok) throw new Error((await r.json()).detail || 'შენახვა ვერ შესრულდა');
+            }
+            closeReviewModal();
+            await loadReviewsData();
+        } catch (e) {
+            status.textContent = 'შეცდომა: ' + e.message;
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    async function deleteReview(id) {
+        if (!confirm('წაიშალოს ეს მიმოხილვა?')) return;
+        try {
+            const r = await fetch(API + '/api/admin/reviews/' + id, { method: 'DELETE' });
+            if (!r.ok) { alert((await r.json()).detail || 'შეცდომა'); return; }
+            await loadReviewsData();
         } catch (e) { alert('შეცდომა: ' + e.message); }
     }
 
