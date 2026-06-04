@@ -108,13 +108,21 @@ def _effective_price(row: dict) -> float:
         return 0.0
 
 
-def _serialize(row: dict, gallery_images: list[str] | None = None) -> dict:
+def _serialize(
+    row: dict,
+    gallery_images: list[str] | None = None,
+    category_labels: dict[str, dict] | None = None,
+) -> dict:
     """Turn an inventory row into the public response shape.
 
     ``gallery_images`` is the pre-fetched lookbook for this product. Pass
     an empty list (or None — coerced to []) when the product has no
     lifestyle photos. The website checks for a non-empty array to decide
     whether to render the "On model" section.
+
+    ``category_labels`` is ``{slug: {name_ka, name_en}}`` so the response
+    can carry the human-readable filter chip text inline. The site falls
+    back to the slug when a label is missing.
     """
     stock = int(row.get("stock") or 0)
     effective = _effective_price(row)
@@ -148,9 +156,37 @@ def _serialize(row: dict, gallery_images: list[str] | None = None) -> dict:
         "image_front": row.get("image_url") or "",
         "image_back": row.get("image_url_back") or "",
         "category": _map_category(row.get("category")),
+        "category_slug": row.get("category") or "",
+        "category_name_ka": (
+            (category_labels or {}).get(row.get("category") or "", {}).get("name_ka")
+            or row.get("category") or ""
+        ),
+        "category_name_en": (
+            (category_labels or {}).get(row.get("category") or "", {}).get("name_en")
+            or ""
+        ),
         "tags": _parse_tags(row.get("tags")),
         "gallery_images": list(gallery_images or []),
         "updated_at": row.get("updated_at") or row.get("created_at") or "",
+    }
+
+
+async def _fetch_category_labels(tenant_id: str) -> dict[str, dict]:
+    """Return ``{slug: {name_ka, name_en}}`` for every category this
+    tenant owns. Used to enrich product responses inline so the
+    storefront doesn't need a second round-trip just to label filter
+    chips."""
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT slug, name, name_en FROM categories WHERE tenant_id = $1",
+        tenant_id,
+    )
+    return {
+        r["slug"]: {
+            "name_ka": r["name"] or "",
+            "name_en": r["name_en"] or "",
+        }
+        for r in rows
     }
 
 
@@ -200,12 +236,18 @@ async def list_products(
     rows = await pool.fetch(sql, *params)
     rows = [dict(r) for r in rows]
     # Batch-fetch lookbook photos for every product in this page so the
-    # response includes them without an N+1 query loop.
+    # response includes them without an N+1 query loop. Category labels
+    # come from a single query keyed by slug.
     gallery_by_id = await list_product_gallery_for_ids(
         tenant_id, [r["id"] for r in rows]
     )
+    category_labels = await _fetch_category_labels(tenant_id)
     products = [
-        _serialize(r, gallery_images=gallery_by_id.get(r["id"], []))
+        _serialize(
+            r,
+            gallery_images=gallery_by_id.get(r["id"], []),
+            category_labels=category_labels,
+        )
         for r in rows
     ]
     response.headers["Cache-Control"] = STOREFRONT_CACHE
@@ -236,10 +278,12 @@ async def get_product(
         raise HTTPException(status_code=404, detail="not found")
 
     gallery = await list_product_gallery(tenant_id, inventory_id=id_int)
+    category_labels = await _fetch_category_labels(tenant_id)
     response.headers["Cache-Control"] = STOREFRONT_CACHE
     return _serialize(
         dict(row),
         gallery_images=[g["image_url"] for g in gallery],
+        category_labels=category_labels,
     )
 
 
