@@ -140,10 +140,19 @@ def _serialize(
     description = row.get("description")
     if description is not None:
         description = str(description).strip() or None
+    # Storefront name resolution: explicit product_name first (owner can
+    # set a marketing label like "ბავშვის რანცი"); if blank, build one
+    # from model + size; final fallback is the product code so the card
+    # is never nameless.
+    explicit_name = (row.get("product_name") or "").strip()
+    model_part = (row.get("model") or "").strip()
+    size_part = (row.get("size") or "").strip()
+    fallback_name = " ".join(p for p in (model_part, size_part) if p).strip()
+    resolved_name = explicit_name or fallback_name or (row.get("code") or "")
     return {
         "id": str(row["id"]),
         "code": row.get("code") or "",
-        "name": row.get("product_name") or "",
+        "name": resolved_name,
         "model": row.get("model") or "",
         "size": row.get("size") or "",
         "color": row.get("color") or "",

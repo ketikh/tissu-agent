@@ -2660,6 +2660,11 @@
                 ${isSoldOut ? `<div class="sold-overlay"><span>Sold out</span><button onclick="event.stopPropagation();restock(${i.id})">დაბრუნება</button></div>` : ''}
                 ${photosBlock}
                 <div class="info">
+                    <input type="text" value="${escapeHtml(i.product_name || '')}"
+                        placeholder="${escapeHtml(productNameFallback(i))}"
+                        title="საიტზე გამოჩენილი სახელი. თუ ცარიელია, აიღება მოდელი + ზომა"
+                        style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;margin-bottom:6px;box-sizing:border-box;font-weight:600"
+                        onchange="setProductName(${i.id}, this.value)">
                     ${renderTagChips(i.tags)}
                     <input type="text" value="${i.tags || ''}" placeholder="ტეგების დამატება (მძიმით) — ფერი, სტილი…"
                         onchange="setLabel(${i.id},'tags',this.value); renderGrid()" title="მაგ: ყვითელი, ზოლებიანი, კლასიკური">
@@ -3752,6 +3757,26 @@
             group.classList.add('saved');
             setTimeout(() => group.classList.remove('saved'), 900);
         }
+    }
+
+    function productNameFallback(item) {
+        // Mirrors the storefront's _serialize() fallback chain so the
+        // placeholder shown in the empty input matches what the site
+        // will actually render: model + size, else code.
+        const parts = [(item.model || '').trim(), (item.size || '').trim()].filter(Boolean);
+        return parts.join(' ') || item.code || '';
+    }
+
+    async function setProductName(id, value) {
+        const trimmed = (value || '').trim();
+        try {
+            const r = await fetch(API + '/api/inventory/' + id + '?product_name=' + encodeURIComponent(trimmed), {
+                method: 'PUT',
+            });
+            if (!r.ok) throw new Error((await r.json()).detail || 'შენახვა ვერ შესრულდა');
+            const item = allInventory.find(i => i.id === id);
+            if (item) item.product_name = trimmed;
+        } catch (e) { alert('შეცდომა: ' + e.message); }
     }
 
     async function setDescription(id, value) {

@@ -2577,7 +2577,7 @@ async def update_inventory(
     stock: int = None, price: float = None, model: str = None,
     size: str = None, color: str = None, tags: str = None,
     on_sale: bool = None, sale_price: float = None,
-    description: str = None,
+    description: str = None, product_name: str = None,
     tenant_id: str = Depends(get_tenant_id),
 ):
     pool = await get_db()
@@ -2606,6 +2606,11 @@ async def update_inventory(
         # storefront treats it as "no description" rather than blank.
         cleaned = description.strip() or None
         await pool.execute("UPDATE inventory SET description = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", cleaned, now, item_id, tenant_id)
+    if product_name is not None:
+        # Empty string clears the override → the storefront falls back
+        # to model + size (see _serialize in src/api/storefront.py).
+        cleaned = product_name.strip() or ""
+        await pool.execute("UPDATE inventory SET product_name = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", cleaned, now, item_id, tenant_id)
     return {"message": f"Item #{item_id} updated"}
 
 
