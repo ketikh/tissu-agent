@@ -2440,14 +2440,21 @@ async def list_inventory(category: str = "", tenant_id: str = Depends(get_tenant
     Each row gets an `angles` field with the product's extra angle photos
     (rows from product_extra_photos where photo_type='angle')."""
     pool = await get_db()
+    # `id ASC` as the final tiebreaker keeps the order stable: products
+    # with the same model + size used to swap positions every time the
+    # operator uploaded or deleted a photo, because Postgres has no
+    # implicit row order. Sorting by id last freezes the relative order
+    # within each (model, size) group to creation order.
     if category:
         rows = await pool.fetch(
-            "SELECT * FROM inventory WHERE tenant_id = $1 AND category = $2 ORDER BY model, size",
+            "SELECT * FROM inventory WHERE tenant_id = $1 AND category = $2 "
+            "ORDER BY model, size, id",
             tenant_id, category,
         )
     else:
         rows = await pool.fetch(
-            "SELECT * FROM inventory WHERE tenant_id = $1 ORDER BY model, size",
+            "SELECT * FROM inventory WHERE tenant_id = $1 "
+            "ORDER BY model, size, id",
             tenant_id,
         )
 
