@@ -2570,6 +2570,7 @@ async def update_inventory(
     stock: int = None, price: float = None, model: str = None,
     size: str = None, color: str = None, tags: str = None,
     on_sale: bool = None, sale_price: float = None,
+    description: str = None,
     tenant_id: str = Depends(get_tenant_id),
 ):
     pool = await get_db()
@@ -2593,6 +2594,11 @@ async def update_inventory(
         # Passing a literal 0 or negative clears the sale price back to null.
         sp = sale_price if sale_price > 0 else None
         await pool.execute("UPDATE inventory SET sale_price = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", sp, now, item_id, tenant_id)
+    if description is not None:
+        # Empty string clears the description back to NULL so the
+        # storefront treats it as "no description" rather than blank.
+        cleaned = description.strip() or None
+        await pool.execute("UPDATE inventory SET description = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", cleaned, now, item_id, tenant_id)
     return {"message": f"Item #{item_id} updated"}
 
 

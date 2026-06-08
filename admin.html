@@ -2697,6 +2697,14 @@
                         <button class="plus" onclick="chg(${i.id},${i.stock+1})">+</button>
                         <button class="soldout-btn" onclick="chg(${i.id},0)">Sold out</button>
                     </div>
+                    <div class="desc-row" style="margin-top:8px">
+                        <textarea
+                            id="desc-${i.id}"
+                            placeholder="აღწერა (ზომა, მასალა, დეტალები…) — ჩანს საიტზე პროდუქტის გვერდზე"
+                            rows="2"
+                            style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit;font-size:12.5px;line-height:1.4;resize:vertical;min-height:48px;box-sizing:border-box"
+                            onchange="setDescription(${i.id}, this.value)">${escapeHtml(i.description || '')}</textarea>
+                    </div>
                 </div>
                 <div class="actions">
                     <button class="btn btn-danger btn-sm" onclick="del(${i.id})">წაშლა</button>
@@ -3743,6 +3751,27 @@
         if (group) {
             group.classList.add('saved');
             setTimeout(() => group.classList.remove('saved'), 900);
+        }
+    }
+
+    async function setDescription(id, value) {
+        // Description can contain newlines, line breaks, & — JSON body
+        // keeps it intact where a querystring PUT would mangle it.
+        const ta = document.getElementById('desc-' + id);
+        try {
+            const r = await fetch(API + '/api/inventory/' + id + '?description=' + encodeURIComponent(value), {
+                method: 'PUT',
+            });
+            if (!r.ok) throw new Error((await r.json()).detail || 'შენახვა ვერ შესრულდა');
+            const item = allInventory.find(i => i.id === id);
+            if (item) item.description = value.trim() || null;
+            if (ta) {
+                ta.style.borderColor = '#16a34a';
+                setTimeout(() => { ta.style.borderColor = '#d1d5db'; }, 900);
+            }
+        } catch (e) {
+            if (ta) ta.style.borderColor = '#dc2626';
+            alert('შეცდომა: ' + e.message);
         }
     }
 
