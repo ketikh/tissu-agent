@@ -4143,13 +4143,14 @@
     const CMS_DEFS = {
         home: [
             { key: 'hero', label: 'Hero', sub: 'მთავარი ბანერი — სათაური, ლიდ-ტექსტი, ღილაკი', icon: 'M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z', fields: [
-                { k:'eyebrow',   bi:true,  label:'Eyebrow (პატარა ზედა ტექსტი)', hint:'მაგ: "ხელნაკეთი თბილისიდან"' },
-                { k:'title',     bi:true,  label:'სათაური',        hint:'მთავარი H1, ~60 სიმბოლო' },
+                { k:'eyebrow',   bi:true,  label:'Eyebrow (პატარა ზედა ტექსტი)', hint:'მაგ: "ხელნაკეთი თბილისიდან"', def_ka:'ახალი კოლექცია · გაზაფხული \'26', def_en:'New collection · Spring \'26' },
+                { k:'title',     bi:true,  label:'სათაური',        hint:'მთავარი H1, ~60 სიმბოლო', def_ka:'ცოტა ფერადი', def_en:'A little colour' },
                 { k:'italic',    bi:true,  label:'Italic accent',  hint:'დახრილი ხაზი სათაურის ქვეშ' },
-                { k:'lead',      bi:true,  label:'პარაგრაფი',      hint:'~120 სიმბოლო' },
-                { k:'cta_text',  bi:true,  label:'"შოპი" ღილაკის ტექსტი' },
-                { k:'cta_link',  bi:false, label:'ღილაკის ბმული', hint:'მაგ: /shop' },
-                { k:'hero_image_url', bi:false, label:'Hero ფოტოს URL', hint:'Cloudinary-დან' },
+                { k:'title_line2', bi:true, label:'სათაური — მეორე ხაზი', def_ka:'ყოველდღიურობა', def_en:'every day' },
+                { k:'lead',      bi:true,  label:'პარაგრაფი',      hint:'~120 სიმბოლო', def_ka:'შექმნილია საქართველოში', def_en:'Made in Georgia' },
+                { k:'cta_text',  bi:true,  label:'"შოპი" ღილაკის ტექსტი', def_ka:'კოლექციის ნახვა', def_en:'Shop the drop' },
+                { k:'cta_link',  bi:false, label:'ღილაკის ბმული', hint:'მაგ: /shop', def:'/ka/shop' },
+                { k:'hero_image_url', bi:false, label:'Hero ფოტოს URL', hint:'Cloudinary-დან', def:'/background.png' },
             ]},
             { key: 'marquee', label: 'Marquee', sub: 'გადარბენი ლენტა გამოსახულებებით', icon: 'M4 6h16M4 12h16M4 18h16', fields: [
                 { k:'phrases', bi:true, label:'ფრაზები', hint:'5–8 მოკლე ფრაზა, ლენტში ბრუნავს', type:'repeater' },
@@ -4189,7 +4190,7 @@
         ],
         shop: [
             { key: 'hero', label: 'Shop Hero', sub: 'მაღაზიის გვერდის ზედა ბანერი', icon: 'M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z', fields: [
-                { k:'title', bi:true, label:'სათაური' },
+                { k:'title', bi:true, label:'სათაური', def_ka:'პროდუქცია.', def_en:'Products.' },
                 { k:'sub',   bi:true, label:'ქვეტექსტი' },
             ]},
         ],
@@ -4285,8 +4286,11 @@
         const hint = f.hint ? `<div class="cms-desc">${f.hint}</div>` : '';
 
         if (fieldType === 'bilingual') {
-            const ka = payload[`${f.k}_ka`] || '';
-            const en = payload[`${f.k}_en`] || '';
+            // Pre-fill with the current site text (f.def_ka / f.def_en) when
+            // nothing has been saved yet, so the form opens populated instead
+            // of blank. Saved values always win.
+            const ka = payload[`${f.k}_ka`] || f.def_ka || '';
+            const en = payload[`${f.k}_en`] || f.def_en || '';
             const isLong = f.k === 'body' || f.k === 'lead';
             const inputKa = isLong
                 ? `<textarea id="${id}_ka" data-field="${f.k}_ka" rows="3">${ka}</textarea>`
@@ -4298,7 +4302,7 @@
         }
 
         if (fieldType === 'text') {
-            const val = payload[f.k] || '';
+            const val = payload[f.k] || f.def || '';
             return `<div class="cms-field"><label>${f.label}</label>${hint}<input type="text" id="${id}" data-field="${f.k}" value="${val.replace(/"/g,'&quot;')}"></div>`;
         }
 
