@@ -350,6 +350,19 @@ async def init_db():
                 datetime.now(timezone.utc).isoformat(),
             )
 
+        # Pinterest / AI-content agent key — write access to the per-
+        # product lookbook only. Seeded from PINTEREST_API_KEY so the
+        # operator can rotate it from Railway without touching the DB.
+        pinterest_key = os.environ.get("PINTEREST_API_KEY", "").strip()
+        if pinterest_key:
+            await conn.execute(
+                """INSERT INTO api_keys (key, tenant_id, label, scope, created_at)
+                   VALUES ($1, $2, $3, 'media', $4)
+                   ON CONFLICT (key) DO NOTHING""",
+                pinterest_key, DEFAULT_TENANT_ID, "bootstrap-pinterest",
+                datetime.now(timezone.utc).isoformat(),
+            )
+
         # Product description — per-row copy the storefront renders on
         # the /product/[id] detail page. Nullable text, defaults to empty
         # so existing rows don't need a backfill.

@@ -189,6 +189,26 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
                 status_code=403,
             )
 
+        # 'media' scope — the Pinterest / AI-content agent. Read access
+        # to the public product list (so it can pick an inventory_id to
+        # attach to) and full CRUD on the per-product lookbook so it can
+        # upload, reorder, and remove generated photos. Cannot touch
+        # inventory rows themselves, orders, settings, or anything else.
+        # We intentionally do NOT include /api/inventory because it
+        # exposes write endpoints (POST/PUT/DELETE) we don't want a
+        # third-party agent to call.
+        if scope == "media" and not (
+            path.startswith("/api/storefront/")
+            or path == "/api/products"
+            or path.startswith("/api/products/")
+            or path == "/api/product-gallery"
+            or path.startswith("/api/product-gallery/")
+        ):
+            return JSONResponse(
+                {"error": "forbidden", "reason": "key is media scope — limited to products read + product-gallery write"},
+                status_code=403,
+            )
+
         # Suspended tenants are read/write blocked. We still allow
         # health checks and the storefront (customers of the shop
         # shouldn't see the frontend break when the shop falls behind
