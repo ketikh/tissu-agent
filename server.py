@@ -1127,7 +1127,7 @@ _VALID_CMS_SECTIONS: dict[str, frozenset[str]] = {
     "faq":     frozenset({"items"}),
     "shop":    frozenset({"hero"}),
     "about":   frozenset({"hero", "two_sides", "process", "cta"}),
-    "contact": frozenset({"hero", "info", "wholesale_card"}),
+    "contact": frozenset({"hero", "info", "wholesale_card", "details"}),
 }
 
 
