@@ -4157,8 +4157,8 @@
                 { k:'phrases', bi:true, label:'ფრაზები', hint:'5–8 მოკლე ფრაზა, ლენტში ბრუნავს', type:'repeater' },
             ]},
             { key: 'products_grid', label: 'პროდუქტების Grid', sub: 'მთავარ გვერდზე ნაჩვენები ჩანთები (max 6)', icon: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z', fields: [
-                { k:'title', bi:true, label:'სათაური' },
-                { k:'sub',   bi:true, label:'ქვესათაური' },
+                { k:'title', bi:true, label:'სათაური', def_ka:'ერთი ჩანთა ორი განწყობა', def_en:'One bag, two moods' },
+                { k:'sub',   bi:true, label:'ქვესათაური', def_ka:'ორმხრივი ჩანთები მათთვის, ვისაც ცვალებადი ხასიათი აქვს', def_en:'Reversible bags for the ever-changing mood' },
                 { k:'attached_product_ids', bi:false, label:'პროდუქტები (max 6)', type:'product_picker', max:6 },
             ]},
             { key: 'necklace_grid', label: 'Necklace Grid', sub: 'ყელსაბამების სექცია (max 2)', icon: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 4a6 6 0 0 1 0 12', fields: [
@@ -4166,10 +4166,10 @@
                 { k:'attached_product_ids', bi:false, label:'პროდუქტები (max 2)', type:'product_picker', max:2 },
             ]},
             { key: 'about', label: 'How it works', sub: '"გადაბრუნე" სექცია — ნაბიჯები', icon: 'M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z', fields: [
-                { k:'title',    bi:true,  label:'სათაური' },
+                { k:'title',    bi:true,  label:'სათაური', def_ka:'ჩვენი ბრენდი ორიგინალური გახდა სწორედ ორმხრივი ჩანთების დამსახურებით.', def_en:'What makes our brand unique is its reversible bags.' },
                 { k:'body',     bi:true,  label:'პარაგრაფი', hint:'~150 სიმბოლო' },
                 { k:'steps',    bi:true,  label:'3 ნაბიჯი', type:'steps', hint:'ზუსტად 3 ელემენტი' },
-                { k:'cta_text', bi:true,  label:'ღილაკის ტექსტი' },
+                { k:'cta_text', bi:true,  label:'ღილაკის ტექსტი', def_ka:'დაათვალიერე', def_en:'Browse the shop' },
                 { k:'cta_link', bi:false, label:'ღილაკის ბმული' },
                 { k:'photo_front_url', bi:false, label:'წინა ფოტოს URL' },
                 { k:'photo_back_url',  bi:false, label:'უკანა ფოტოს URL' },
@@ -4186,7 +4186,14 @@
         ],
         faq: [
             { key: 'items', label: 'კითხვა-პასუხები', sub: 'FAQ სიაში ნაჩვენები ყველა კითხვა', icon: 'M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01', fields: [
-                { k:'questions', bi:true, label:'კითხვა-პასუხები', type:'faq_items' },
+                { k:'questions', bi:true, label:'კითხვა-პასუხები', type:'faq_items', def: [
+                    { q_ka:'როგორ ვაკეთებ შეკვეთას?', q_en:'How do I place an order?', a_ka:'ჩანთას ვირჩევთ, ვამატებთ კალათში და "შეკვეთის გაგზავნა"-ზე ვაჭერთ. შეგვიყვანე საკონტაქტო ინფორმაცია — ჩვენ თვითონ დაგიკავშირდებით გადახდისა და მიწოდების შესათანხმებლად.', a_en:'Add a bag to the cart and tap "Place order request". Enter your contact details — we\'ll reach out to agree on payment and delivery.', category:'' },
+                    { q_ka:'როგორ ვიხდი?', q_en:'How do I pay?', a_ka:'ონლაინ გადახდა საიტზე არ ხდება. შენი მოთხოვნის მიღების შემდეგ დაგიკავშირდებით და შევთანხმდებით საბანკო გადარიცხვაზე ან მიწოდებისას ნაღდით გადახდაზე.', a_en:'There is no online payment on the site. After we receive your request we\'ll get in touch and agree on bank transfer or cash on delivery.', category:'' },
+                    { q_ka:'რამდენ ხანში დაგიკავშირდებით?', q_en:'How quickly will you contact me?', a_ka:'ჩვეულებრივ 24 საათში გიპასუხებთ — შენ მიერ მითითებული არხით (ზარი, WhatsApp, Messenger ან Instagram).', a_en:'Usually within 24 hours via the channel you chose (phone, WhatsApp, Messenger or Instagram).', category:'' },
+                    { q_ka:'შესაძლებელია საერთაშორისო გადაზიდვა?', q_en:'Is international shipping available?', a_ka:'ამჟამად ვაწვდით მხოლოდ საქართველოს მასშტაბით. წლის ბოლომდე ვგეგმავთ საერთაშორისო მიწოდების დამატებას.', a_en:'We currently ship within Georgia only. International shipping is planned later this year.', category:'' },
+                    { q_ka:'როგორია დაბრუნების პოლიტიკა?', q_en:'What is the return policy?', a_ka:'ნივთის დაბრუნება შესაძლებელია 3 დღის განმავლობაში, თუ ის გამოუყენებელია და თავდაპირველ მდგომარეობაშია. დაბრუნებას მომხმარებელი თავად უზრუნველყოფს — მისამართი: მოსკოვის გამზირი 14, თბილისი.', a_en:'Items can be returned within 3 days if unused and in their original condition. The customer arranges the return themselves — address: 14 Moscow Avenue, Tbilisi.', category:'' },
+                    { q_ka:'შეიძლება ჩასადების სარეცხ მანქანაში გარეცხვა?', q_en:'Can I machine wash the sleeve?', a_ka:'კი — ჩვენი ჩანთები შეიძლება გაირეცხოს მანქანაში დაბალ ბრუნვაზე და დაბალ ტემპერატურაზე, ხელით რეცხვის რეჟიმზე.', a_en:'Yes — our bags can be machine washed on a low spin and low temperature, on the hand-wash cycle.', category:'' },
+                ] },
             ]},
         ],
         shop: [
@@ -4377,7 +4384,8 @@
         }
 
         if (fieldType === 'faq_items') {
-            const questions = payload['questions'] || [];
+            // Pre-fill with the current site FAQ (f.def) until the admin saves edits.
+            const questions = (payload['questions'] && payload['questions'].length) ? payload['questions'] : (f.def || []);
             return `<div class="cms-field"><label>${f.label}</label>${hint}
                 <div id="${id}_list">
                     ${questions.map((q,i) => cmsFaqRow(id, i, q)).join('')}
