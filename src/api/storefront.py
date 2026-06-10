@@ -23,6 +23,7 @@ from src.db import (
     list_gallery_photos,
     list_product_gallery, list_product_gallery_for_ids,
     list_reviews,
+    size_variant_map_for_ids,
 )
 
 
@@ -112,6 +113,7 @@ def _serialize(
     row: dict,
     gallery_images: list[str] | None = None,
     category_labels: dict[str, dict] | None = None,
+    size_sibling: dict | None = None,
 ) -> dict:
     """Turn an inventory row into the public response shape.
 
@@ -182,6 +184,7 @@ def _serialize(
         ),
         "tags": _parse_tags(row.get("tags")),
         "gallery_images": list(gallery_images or []),
+        "size_sibling": size_sibling,
         "updated_at": row.get("updated_at") or row.get("created_at") or "",
     }
 
@@ -257,11 +260,15 @@ async def list_products(
         tenant_id, [r["id"] for r in rows]
     )
     category_labels = await _fetch_category_labels(tenant_id)
+    sibling_map = await size_variant_map_for_ids(
+        tenant_id, [r["id"] for r in rows]
+    )
     products = [
         _serialize(
             r,
             gallery_images=gallery_by_id.get(r["id"], []),
             category_labels=category_labels,
+            size_sibling=sibling_map.get(r["id"]),
         )
         for r in rows
     ]
@@ -294,11 +301,13 @@ async def get_product(
 
     gallery = await list_product_gallery(tenant_id, inventory_id=id_int)
     category_labels = await _fetch_category_labels(tenant_id)
+    sibling_map = await size_variant_map_for_ids(tenant_id, [id_int])
     response.headers["Cache-Control"] = STOREFRONT_CACHE
     return _serialize(
         dict(row),
         gallery_images=[g["image_url"] for g in gallery],
         category_labels=category_labels,
+        size_sibling=sibling_map.get(id_int),
     )
 
 

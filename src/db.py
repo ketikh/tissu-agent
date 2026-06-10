@@ -379,6 +379,35 @@ async def init_db():
             "ADD COLUMN IF NOT EXISTS product_name_en TEXT NOT NULL DEFAULT ''"
         )
 
+        # Size-variant links: the operator keeps separate inventory rows
+        # for the small + big version of the same design (different
+        # codes, photos, prices, stock). This table tells the storefront
+        # which two ids belong together so it can render one card with a
+        # size toggle instead of two duplicate cards. Different from
+        # product_pairs (which the bot uses for fuzzy photo matching).
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS size_variants (
+                id          SERIAL PRIMARY KEY,
+                tenant_id   TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+                small_id    INTEGER NOT NULL REFERENCES inventory(id) ON DELETE CASCADE,
+                big_id      INTEGER NOT NULL REFERENCES inventory(id) ON DELETE CASCADE,
+                created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+                UNIQUE (tenant_id, small_id, big_id)
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_size_variants_tenant "
+            "ON size_variants (tenant_id)"
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_size_variants_small "
+            "ON size_variants (small_id)"
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_size_variants_big "
+            "ON size_variants (big_id)"
+        )
+
         # ── Tenants registry ───────────────────────────────────
         # Central table of all customers (shops) on the platform. The
         # tenant_id column on every other table points here. Status /
@@ -2830,3 +2859,127 @@ async def delete_review(tenant_id: str, review_id: str) -> bool:
         tenant_id, review_id,
     )
     return result.endswith("1")
+
+
+# ── Size variants ────────────────────────────────────────────
+# Manual links between a "small" and "big" version of the same design.
+# The storefront uses these to render one product card with a size
+# toggle instead of two duplicate cards.
+
+async def list_size_variants(tenant_id: str) -> list[dict]:
+    """Return all size pairs for a tenant, each enriched with code,
+    photo, and price snapshots so admin renders without a second
+    inventory lookup."""
+    pool = await get_db()
+    rows = await pool.fetch(
+        """
+        SELECT
+            sv.id, sv.small_id, sv.big_id, sv.created_at,
+            s.code AS small_code, s.image_url AS small_image,
+            s.price AS small_price, s.stock AS small_stock,
+            s.product_name AS small_name,
+            b.code AS big_code, b.image_url AS big_image,
+            b.price AS big_price, b.stock AS big_stock,
+            b.product_name AS big_name
+        FROM size_variants sv
+        LEFT JOIN inventory s ON s.id = sv.small_id
+        LEFT JOIN inventory b ON b.id = sv.big_id
+        WHERE sv.tenant_id = $1
+        ORDER BY sv.created_at DESC, sv.id DESC
+        """,
+        tenant_id,
+    )
+    return [
+        {
+            "id": r["id"],
+            "small": {
+                "id": r["small_id"],
+                "code": r["small_code"],
+                "image_url": r["small_image"],
+                "price": float(r["small_price"] or 0),
+                "stock": int(r["small_stock"] or 0),
+                "name": r["small_name"] or "",
+            },
+            "big": {
+                "id": r["big_id"],
+                "code": r["big_code"],
+                "image_url": r["big_image"],
+                "price": float(r["big_price"] or 0),
+                "stock": int(r["big_stock"] or 0),
+                "name": r["big_name"] or "",
+            },
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+        }
+        for r in rows
+    ]
+
+
+async def create_size_variant(
+    tenant_id: str, small_id: int, big_id: int,
+) -> dict:
+    """Link a small + big pair. Validates both rows belong to the
+    tenant and that the pair doesn't already exist (in either
+    direction). Returns the inserted row id."""
+    if small_id == big_id:
+        raise ValueError("small_id და big_id ერთნაირი ვერ იქნება")
+    pool = await get_db()
+    # Confirm tenant ownership of both
+    owns = await pool.fetchval(
+        "SELECT COUNT(*) FROM inventory "
+        "WHERE id = ANY($1::int[]) AND tenant_id = $2",
+        [small_id, big_id], tenant_id,
+    )
+    if (owns or 0) < 2:
+        raise ValueError("ერთ-ერთი პროდუქტი ვერ მოიძებნა")
+    # Prevent duplicate in either direction
+    existing = await pool.fetchval(
+        "SELECT id FROM size_variants "
+        "WHERE tenant_id = $1 AND ("
+        "  (small_id = $2 AND big_id = $3) OR "
+        "  (small_id = $3 AND big_id = $2)"
+        ")",
+        tenant_id, small_id, big_id,
+    )
+    if existing:
+        return {"id": existing, "already_linked": True}
+    row = await pool.fetchrow(
+        "INSERT INTO size_variants (tenant_id, small_id, big_id) "
+        "VALUES ($1, $2, $3) RETURNING id",
+        tenant_id, small_id, big_id,
+    )
+    return {"id": row["id"], "already_linked": False}
+
+
+async def delete_size_variant(tenant_id: str, link_id: int) -> bool:
+    pool = await get_db()
+    result = await pool.execute(
+        "DELETE FROM size_variants WHERE tenant_id = $1 AND id = $2",
+        tenant_id, link_id,
+    )
+    return result.endswith("1")
+
+
+async def size_variant_map_for_ids(
+    tenant_id: str, inventory_ids: list[int],
+) -> dict[int, dict]:
+    """Given a set of inventory ids, return ``{inventory_id: {sibling_id,
+    role}}`` where role is 'small' or 'big' (the role of the id passed
+    in). Used by the storefront so each product can carry a
+    `size_sibling` field without N+1 queries."""
+    if not inventory_ids:
+        return {}
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT small_id, big_id FROM size_variants "
+        "WHERE tenant_id = $1 AND (small_id = ANY($2::int[]) OR big_id = ANY($2::int[]))",
+        tenant_id, list(inventory_ids),
+    )
+    out: dict[int, dict] = {}
+    for r in rows:
+        out[int(r["small_id"])] = {
+            "sibling_id": int(r["big_id"]), "role": "small",
+        }
+        out[int(r["big_id"])] = {
+            "sibling_id": int(r["small_id"]), "role": "big",
+        }
+    return out

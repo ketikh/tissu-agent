@@ -121,6 +121,7 @@ def test_serialize_matches_task_contract():
         "category_name_en": "",
         "tags": ["new"],
         "gallery_images": [],
+        "size_sibling": None,
         "updated_at": "2026-04-23T12:34:56Z",
     }
 

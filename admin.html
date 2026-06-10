@@ -634,6 +634,10 @@
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
                 მიმოხილვები
             </button>
+            <button class="nav-item" data-tab="sizes" onclick="showTab('sizes', this)">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="9" width="6" height="6" rx="1"/><rect x="14" y="5" width="8" height="14" rx="1"/><path d="M9 12h5"/></svg>
+                ზომების წყვილები
+            </button>
             <button class="nav-item" data-tab="insights" onclick="showTab('insights', this)">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-5"/></svg>
                 ინსაიტები
@@ -1284,6 +1288,108 @@
                 </div>
             </div>
 
+            <div id="tab-sizes" class="section">
+                <div class="card">
+                    <div style="margin-bottom:14px">
+                        <h2 style="margin-bottom:2px">📏 ზომების წყვილები</h2>
+                        <p class="hint" style="margin-bottom:0">დაუკავშირე პატარა და დიდი ერთნაირი მოდელის ჩანთები — საიტი ერთად ჩანის გაჩვენებს ზომის გადამრთველით. პროდუქტი ფილტრში „პატარა" / „დიდი"-ის გარეშე ცალკეც დარჩება.</p>
+                    </div>
+
+                    <div class="sv-pick-row">
+                        <div class="sv-pick-col">
+                            <h3 style="font-size:14px;margin:0 0 8px 0;color:#555">პატარა ვერსია</h3>
+                            <select id="sv-small-select" style="width:100%;padding:9px;border:1px solid #ddd;border-radius:6px">
+                                <option value="">აირჩიე პატარა მოდელი…</option>
+                            </select>
+                            <div id="sv-small-preview" class="sv-preview"></div>
+                        </div>
+                        <div class="sv-pick-arrow">↔</div>
+                        <div class="sv-pick-col">
+                            <h3 style="font-size:14px;margin:0 0 8px 0;color:#555">დიდი ვერსია</h3>
+                            <select id="sv-big-select" style="width:100%;padding:9px;border:1px solid #ddd;border-radius:6px">
+                                <option value="">აირჩიე დიდი მოდელი…</option>
+                            </select>
+                            <div id="sv-big-preview" class="sv-preview"></div>
+                        </div>
+                    </div>
+                    <div style="margin-top:12px;display:flex;justify-content:flex-end;gap:8px;align-items:center">
+                        <span id="sv-status" class="hint" style="margin:0"></span>
+                        <button class="btn btn-primary" onclick="linkSizeVariant()" id="sv-link-btn">დაკავშირება</button>
+                    </div>
+
+                    <hr style="margin:18px 0;border:0;border-top:1px solid #eee">
+                    <h3 style="font-size:14px;margin:0 0 10px 0;color:#555">არსებული წყვილები</h3>
+                    <div id="sv-existing-list" class="sv-list">
+                        <div class="sv-empty">იტვირთება…</div>
+                    </div>
+                </div>
+                <style>
+                    .sv-pick-row {
+                        display: grid;
+                        grid-template-columns: 1fr 40px 1fr;
+                        gap: 12px; align-items: start;
+                    }
+                    .sv-pick-arrow {
+                        text-align: center;
+                        font-size: 28px; color: #2563eb;
+                        line-height: 1; padding-top: 30px;
+                    }
+                    .sv-preview {
+                        margin-top: 8px;
+                        min-height: 80px;
+                        background: #fafafa;
+                        border: 1px solid #eee;
+                        border-radius: 6px;
+                        display: flex; gap: 10px; align-items: center;
+                        padding: 8px;
+                    }
+                    .sv-preview img {
+                        width: 64px; height: 64px; object-fit: cover;
+                        border-radius: 6px; background: #f5f5f5;
+                    }
+                    .sv-preview .sv-info {
+                        font-size: 12.5px; color: #555; line-height: 1.4;
+                    }
+                    .sv-preview .sv-empty-line { color: #aaa; font-size: 12px; }
+                    .sv-list { display: flex; flex-direction: column; gap: 10px; }
+                    .sv-empty { color: #999; padding: 20px; text-align: center; background: #fafafa; border-radius: 8px; }
+                    .sv-link-row {
+                        display: grid;
+                        grid-template-columns: 1fr 30px 1fr auto;
+                        gap: 10px; align-items: center;
+                        padding: 8px; background: #fff;
+                        border: 1px solid #e5e7eb; border-radius: 8px;
+                    }
+                    .sv-link-side {
+                        display: flex; gap: 10px; align-items: center;
+                        min-width: 0;
+                    }
+                    .sv-link-side img {
+                        width: 50px; height: 50px; object-fit: cover;
+                        border-radius: 6px; background: #f5f5f5;
+                        flex-shrink: 0;
+                    }
+                    .sv-link-info {
+                        font-size: 12.5px; color: #333; min-width: 0;
+                    }
+                    .sv-link-info b { font-size: 13px; color: #111; }
+                    .sv-link-info .sv-link-meta {
+                        color: #777; font-size: 11px;
+                    }
+                    .sv-link-arrow { text-align: center; font-size: 18px; color: #2563eb; }
+                    @media (max-width: 760px) {
+                        .sv-pick-row {
+                            grid-template-columns: 1fr;
+                        }
+                        .sv-pick-arrow { padding: 0; transform: rotate(90deg); }
+                        .sv-link-row {
+                            grid-template-columns: 1fr;
+                        }
+                        .sv-link-arrow { transform: rotate(90deg); }
+                    }
+                </style>
+            </div>
+
             <div id="tab-insights" class="section">
                 <div class="card">
                     <h2>ხარვეზები / უკმაყოფილო კლიენტები</h2>
@@ -1894,6 +2000,7 @@
         gallery: 'გალერეა',
         lookbook: 'Lookbook (პროდუქტებზე)',
         reviews: 'მიმოხილვები',
+        sizes: 'ზომების წყვილები',
     };
     const PAGE_CRUMBS = {
         dashboard: 'Overview',
@@ -1912,6 +2019,7 @@
         gallery: 'Lookbook',
         lookbook: 'Catalog · Lookbook',
         reviews: 'Storefront · Reviews',
+        sizes: 'Catalog · ზომების წყვილები',
     };
 
     function showTab(tab, btn) {
@@ -1941,6 +2049,7 @@
         if (tab === 'gallery') loadGalleryPhotos();
         if (tab === 'lookbook') loadLookbookData();
         if (tab === 'reviews') loadReviewsData();
+        if (tab === 'sizes') loadSizeVariants();
         if (tab === 'chats') loadChats();
         if (tab === 'insights') loadInsights();
         if (tab === 'bot') loadBotConfig();
@@ -3593,6 +3702,163 @@
             const r = await fetch(API + '/api/admin/reviews/' + id, { method: 'DELETE' });
             if (!r.ok) { alert((await r.json()).detail || 'შეცდომა'); return; }
             await loadReviewsData();
+        } catch (e) { alert('შეცდომა: ' + e.message); }
+    }
+
+    // ── Size variants tab ───────────────────────────────────
+    // Manual links between a small + big version of the same design.
+    // Two dropdowns auto-filtered by inventory.size (პატარა / დიდი),
+    // pick one of each, hit დაკავშირება. Existing pairs render below.
+
+    let svLinks = [];
+    let svBagInventory = [];
+
+    function svIsSmall(item) {
+        const s = (item.size || '').toLowerCase();
+        return s.includes('პატარა') || /\b(small|sm|s)\b/i.test(item.size || '');
+    }
+    function svIsBig(item) {
+        const s = (item.size || '').toLowerCase();
+        return s.includes('დიდი') || /\b(large|big|lg|l)\b/i.test(item.size || '');
+    }
+
+    async function loadSizeVariants() {
+        try {
+            const [invR, lnR] = await Promise.all([
+                fetch(API + '/api/inventory'),
+                fetch(API + '/api/admin/size-variants'),
+            ]);
+            const inv = await invR.json();
+            const ln = await lnR.json();
+            svBagInventory = (inv.inventory || []).filter(i => (i.category || 'bag') === 'bag');
+            svLinks = ln.links || [];
+            renderSvDropdowns();
+            renderSvExisting();
+        } catch (e) {
+            document.getElementById('sv-existing-list').innerHTML =
+                '<div class="sv-empty" style="color:#c00">ვერ ჩაიტვირთა: ' + e.message + '</div>';
+        }
+    }
+
+    function renderSvDropdowns() {
+        // Hide ids that are already linked (in either role) so the same
+        // product can't be paired twice and the operator sees only
+        // candidates that still need a sibling.
+        const linkedIds = new Set();
+        svLinks.forEach(l => { linkedIds.add(l.small.id); linkedIds.add(l.big.id); });
+
+        const small = svBagInventory.filter(i => svIsSmall(i) && !linkedIds.has(i.id));
+        const big   = svBagInventory.filter(i => svIsBig(i)   && !linkedIds.has(i.id));
+
+        const opt = (i) => {
+            const label = (i.product_name || '').trim() || (i.model || '') + ' ' + (i.size || '');
+            return `<option value="${i.id}">${i.code || '#' + i.id} — ${escapeHtml(label.trim())}</option>`;
+        };
+        document.getElementById('sv-small-select').innerHTML =
+            '<option value="">აირჩიე პატარა მოდელი…</option>' + small.map(opt).join('');
+        document.getElementById('sv-big-select').innerHTML =
+            '<option value="">აირჩიე დიდი მოდელი…</option>' + big.map(opt).join('');
+
+        document.getElementById('sv-small-select').onchange = () => svRenderPreview('small');
+        document.getElementById('sv-big-select').onchange   = () => svRenderPreview('big');
+        svRenderPreview('small');
+        svRenderPreview('big');
+        document.getElementById('sv-status').textContent = '';
+    }
+
+    function svRenderPreview(role) {
+        const sel = document.getElementById(`sv-${role}-select`);
+        const host = document.getElementById(`sv-${role}-preview`);
+        const id = parseInt(sel.value, 10);
+        if (!id) {
+            host.innerHTML = '<div class="sv-empty-line">პროდუქტი ჯერ არ არჩეული</div>';
+            return;
+        }
+        const item = svBagInventory.find(x => x.id === id);
+        if (!item) {
+            host.innerHTML = '<div class="sv-empty-line">პროდუქტი ვერ მოიძებნა</div>';
+            return;
+        }
+        const img = item.image_url ? (item.image_url.startsWith('http') ? item.image_url : API + item.image_url) : '';
+        const label = (item.product_name || '').trim() || ((item.model || '') + ' ' + (item.size || '')).trim();
+        host.innerHTML = `
+            ${img ? `<img src="${img}" alt="">` : '<div style="width:64px;height:64px;background:#eee;border-radius:6px"></div>'}
+            <div class="sv-info">
+                <b>${item.code || '#' + item.id}</b><br>
+                ${escapeHtml(label)}<br>
+                <span style="color:#999">${item.size || ''} · ${item.price || 0}₾</span>
+            </div>
+        `;
+    }
+
+    async function linkSizeVariant() {
+        const smallId = parseInt(document.getElementById('sv-small-select').value, 10);
+        const bigId = parseInt(document.getElementById('sv-big-select').value, 10);
+        const status = document.getElementById('sv-status');
+        const btn = document.getElementById('sv-link-btn');
+        if (!smallId || !bigId) {
+            status.textContent = 'ორივე მხარეს აარჩიე პროდუქტი';
+            return;
+        }
+        btn.disabled = true;
+        status.textContent = 'ვინახავ…';
+        try {
+            const r = await fetch(API + '/api/admin/size-variants', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ small_id: smallId, big_id: bigId }),
+            });
+            if (!r.ok) {
+                const e = await r.json();
+                throw new Error(e.detail || 'შენახვა ვერ შესრულდა');
+            }
+            const d = await r.json();
+            status.textContent = d.already_linked ? 'უკვე დაკავშირებული იყო' : 'დაკავშირდა ✓';
+            await loadSizeVariants();
+        } catch (e) {
+            status.textContent = 'შეცდომა: ' + e.message;
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    function renderSvExisting() {
+        const host = document.getElementById('sv-existing-list');
+        if (!svLinks.length) {
+            host.innerHTML = '<div class="sv-empty">ჯერ არცერთი წყვილი არ არის. აარჩიე პატარა + დიდი ზემოთ და დააწექი დაკავშირება.</div>';
+            return;
+        }
+        host.innerHTML = svLinks.map(l => {
+            const sideHtml = (p) => {
+                const img = p.image_url ? (p.image_url.startsWith('http') ? p.image_url : API + p.image_url) : '';
+                return `
+                    <div class="sv-link-side">
+                        ${img ? `<img src="${img}" alt="">` : '<div style="width:50px;height:50px;background:#eee;border-radius:6px"></div>'}
+                        <div class="sv-link-info">
+                            <b>${p.code || '#' + p.id}</b><br>
+                            <span class="sv-link-meta">${escapeHtml(p.name || '')}</span><br>
+                            <span class="sv-link-meta">${p.price || 0}₾ · მარაგი: ${p.stock || 0}</span>
+                        </div>
+                    </div>
+                `;
+            };
+            return `
+                <div class="sv-link-row">
+                    ${sideHtml(l.small)}
+                    <div class="sv-link-arrow">↔</div>
+                    ${sideHtml(l.big)}
+                    <button class="btn btn-danger btn-sm" onclick="unlinkSizeVariant(${l.id})">წაშლა</button>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function unlinkSizeVariant(linkId) {
+        if (!confirm('წაიშალოს ეს ლინკი? პროდუქტები დარჩება ცალცალკე.')) return;
+        try {
+            const r = await fetch(API + '/api/admin/size-variants/' + linkId, { method: 'DELETE' });
+            if (!r.ok) { alert((await r.json()).detail || 'შეცდომა'); return; }
+            await loadSizeVariants();
         } catch (e) { alert('შეცდომა: ' + e.message); }
     }
 

@@ -46,6 +46,8 @@ from src.db import (
     update_site_order_status, ORDER_STATUSES,
     list_reviews, create_review, update_review,
     reorder_reviews, delete_review,
+    list_size_variants, create_size_variant, delete_size_variant,
+    size_variant_map_for_ids,
 )
 from src.sessions import IMPERSONATION_SECONDS
 from src.secrets_vault import encrypt_secret, redacted
@@ -2409,6 +2411,43 @@ async def api_delete_review(
     ok = await delete_review(tenant_id, review_id)
     if not ok:
         raise HTTPException(status_code=404, detail="რევიუ ვერ მოიძებნა")
+    return {"ok": True}
+
+
+# ── Size variant links (small + big of the same design) ─────
+
+@app.get("/api/admin/size-variants")
+async def api_list_size_variants(tenant_id: str = Depends(get_tenant_id)):
+    """All pairs for the operator UI. Each entry already includes
+    enough product detail (code, image, price) to render the row."""
+    return {"links": await list_size_variants(tenant_id)}
+
+
+@app.post("/api/admin/size-variants")
+async def api_create_size_variant(
+    request: Request, tenant_id: str = Depends(get_tenant_id),
+):
+    """Link a small and a big inventory row. Body: {small_id, big_id}."""
+    data = await request.json()
+    try:
+        small_id = int(data.get("small_id"))
+        big_id = int(data.get("big_id"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="small_id და big_id რიცხვები უნდა იყოს")
+    try:
+        result = await create_size_variant(tenant_id, small_id, big_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
+
+
+@app.delete("/api/admin/size-variants/{link_id}")
+async def api_delete_size_variant(
+    link_id: int, tenant_id: str = Depends(get_tenant_id),
+):
+    ok = await delete_size_variant(tenant_id, link_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="ლინკი ვერ მოიძებნა")
     return {"ok": True}
 
 
