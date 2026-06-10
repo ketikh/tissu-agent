@@ -2578,6 +2578,7 @@ async def update_inventory(
     size: str = None, color: str = None, tags: str = None,
     on_sale: bool = None, sale_price: float = None,
     description: str = None, product_name: str = None,
+    product_name_en: str = None,
     tenant_id: str = Depends(get_tenant_id),
 ):
     pool = await get_db()
@@ -2611,6 +2612,9 @@ async def update_inventory(
         # to model + size (see _serialize in src/api/storefront.py).
         cleaned = product_name.strip() or ""
         await pool.execute("UPDATE inventory SET product_name = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", cleaned, now, item_id, tenant_id)
+    if product_name_en is not None:
+        cleaned = product_name_en.strip() or ""
+        await pool.execute("UPDATE inventory SET product_name_en = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", cleaned, now, item_id, tenant_id)
     return {"message": f"Item #{item_id} updated"}
 
 

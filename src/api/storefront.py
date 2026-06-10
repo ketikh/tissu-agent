@@ -143,16 +143,22 @@ def _serialize(
     # Storefront name resolution: explicit product_name first (owner can
     # set a marketing label like "ბავშვის რანცი"); if blank, build one
     # from model + size; final fallback is the product code so the card
-    # is never nameless.
+    # is never nameless. English variant gets the same chain; if the
+    # operator hasn't set an English name yet, it falls back to the
+    # Georgian one so the site never renders an empty label.
     explicit_name = (row.get("product_name") or "").strip()
+    explicit_name_en = (row.get("product_name_en") or "").strip()
     model_part = (row.get("model") or "").strip()
     size_part = (row.get("size") or "").strip()
     fallback_name = " ".join(p for p in (model_part, size_part) if p).strip()
     resolved_name = explicit_name or fallback_name or (row.get("code") or "")
+    resolved_name_en = explicit_name_en or resolved_name
     return {
         "id": str(row["id"]),
         "code": row.get("code") or "",
         "name": resolved_name,
+        "name_ka": resolved_name,
+        "name_en": resolved_name_en,
         "model": row.get("model") or "",
         "size": row.get("size") or "",
         "color": row.get("color") or "",

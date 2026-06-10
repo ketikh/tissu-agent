@@ -102,6 +102,8 @@ def test_serialize_matches_task_contract():
         "id": "31",
         "code": "FP1",
         "name": "Tissu without strap #1",
+        "name_ka": "Tissu without strap #1",
+        "name_en": "Tissu without strap #1",
         "model": "ფხრიწიანი",
         "size": "პატარა (33x25)",
         "color": "",

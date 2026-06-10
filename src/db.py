@@ -370,6 +370,15 @@ async def init_db():
             "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS description TEXT"
         )
 
+        # English product name — paired with the existing `product_name`
+        # (Georgian) so the storefront can render localised titles. The
+        # admin UI now writes both; storefront responses expose them as
+        # name_ka / name_en, falling back to model+size when blank.
+        await conn.execute(
+            "ALTER TABLE inventory "
+            "ADD COLUMN IF NOT EXISTS product_name_en TEXT NOT NULL DEFAULT ''"
+        )
+
         # ── Tenants registry ───────────────────────────────────
         # Central table of all customers (shops) on the platform. The
         # tenant_id column on every other table points here. Status /
