@@ -1297,22 +1297,22 @@
 
                     <div class="sv-pick-row">
                         <div class="sv-pick-col">
-                            <h3 style="font-size:14px;margin:0 0 8px 0;color:#555">პატარა ვერსია</h3>
-                            <select id="sv-small-select" style="width:100%;padding:9px;border:1px solid #ddd;border-radius:6px">
-                                <option value="">აირჩიე პატარა მოდელი…</option>
-                            </select>
-                            <div id="sv-small-preview" class="sv-preview"></div>
+                            <h3 style="font-size:14px;margin:0 0 8px 0;color:#555">📦 პატარა ვერსია</h3>
+                            <input id="sv-small-search" type="text" placeholder="ძიება კოდით / სახელით…"
+                                oninput="renderSvGrid('small')"
+                                style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;margin-bottom:8px;box-sizing:border-box">
+                            <div id="sv-small-grid" class="sv-grid"></div>
                         </div>
                         <div class="sv-pick-arrow">↔</div>
                         <div class="sv-pick-col">
-                            <h3 style="font-size:14px;margin:0 0 8px 0;color:#555">დიდი ვერსია</h3>
-                            <select id="sv-big-select" style="width:100%;padding:9px;border:1px solid #ddd;border-radius:6px">
-                                <option value="">აირჩიე დიდი მოდელი…</option>
-                            </select>
-                            <div id="sv-big-preview" class="sv-preview"></div>
+                            <h3 style="font-size:14px;margin:0 0 8px 0;color:#555">📦 დიდი ვერსია</h3>
+                            <input id="sv-big-search" type="text" placeholder="ძიება კოდით / სახელით…"
+                                oninput="renderSvGrid('big')"
+                                style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;margin-bottom:8px;box-sizing:border-box">
+                            <div id="sv-big-grid" class="sv-grid"></div>
                         </div>
                     </div>
-                    <div style="margin-top:12px;display:flex;justify-content:flex-end;gap:8px;align-items:center">
+                    <div style="margin-top:14px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
                         <span id="sv-status" class="hint" style="margin:0"></span>
                         <button class="btn btn-primary" onclick="linkSizeVariant()" id="sv-link-btn">დაკავშირება</button>
                     </div>
@@ -1332,25 +1332,61 @@
                     .sv-pick-arrow {
                         text-align: center;
                         font-size: 28px; color: #2563eb;
-                        line-height: 1; padding-top: 30px;
+                        line-height: 1; padding-top: 80px;
                     }
-                    .sv-preview {
-                        margin-top: 8px;
-                        min-height: 80px;
+                    .sv-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+                        gap: 8px;
+                        max-height: 420px;
+                        overflow-y: auto;
+                        padding: 6px;
                         background: #fafafa;
                         border: 1px solid #eee;
                         border-radius: 6px;
-                        display: flex; gap: 10px; align-items: center;
-                        padding: 8px;
                     }
-                    .sv-preview img {
-                        width: 64px; height: 64px; object-fit: cover;
-                        border-radius: 6px; background: #f5f5f5;
+                    .sv-tile {
+                        cursor: pointer;
+                        background: #fff;
+                        border: 2px solid transparent;
+                        border-radius: 8px;
+                        overflow: hidden;
+                        text-align: center;
+                        transition: transform 0.1s, border-color 0.15s;
                     }
-                    .sv-preview .sv-info {
-                        font-size: 12.5px; color: #555; line-height: 1.4;
+                    .sv-tile:hover { transform: translateY(-1px); border-color: #c7d2fe; }
+                    .sv-tile.selected {
+                        border-color: #2563eb;
+                        box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
                     }
-                    .sv-preview .sv-empty-line { color: #aaa; font-size: 12px; }
+                    .sv-tile img {
+                        width: 100%;
+                        aspect-ratio: 1;
+                        object-fit: cover;
+                        display: block;
+                        background: #f5f5f5;
+                    }
+                    .sv-tile .sv-tile-info {
+                        padding: 5px 4px;
+                        font-size: 11px;
+                        color: #444;
+                        line-height: 1.3;
+                    }
+                    .sv-tile .sv-tile-info b {
+                        font-size: 11.5px;
+                        color: #111;
+                        display: block;
+                    }
+                    .sv-tile .sv-tile-info .sv-tile-price {
+                        color: #777; font-size: 10.5px;
+                    }
+                    .sv-grid-empty {
+                        grid-column: 1 / -1;
+                        text-align: center;
+                        color: #999;
+                        padding: 30px;
+                        font-size: 13px;
+                    }
                     .sv-list { display: flex; flex-direction: column; gap: 10px; }
                     .sv-empty { color: #999; padding: 20px; text-align: center; background: #fafafa; border-radius: 8px; }
                     .sv-link-row {
@@ -3712,6 +3748,8 @@
 
     let svLinks = [];
     let svBagInventory = [];
+    let svSelectedSmall = null;
+    let svSelectedBig = null;
 
     function svIsSmall(item) {
         const s = (item.size || '').toLowerCase();
@@ -3732,68 +3770,70 @@
             const ln = await lnR.json();
             svBagInventory = (inv.inventory || []).filter(i => (i.category || 'bag') === 'bag');
             svLinks = ln.links || [];
-            renderSvDropdowns();
+            svSelectedSmall = null;
+            svSelectedBig = null;
+            renderSvGrid('small');
+            renderSvGrid('big');
             renderSvExisting();
+            document.getElementById('sv-status').textContent = '';
         } catch (e) {
             document.getElementById('sv-existing-list').innerHTML =
                 '<div class="sv-empty" style="color:#c00">ვერ ჩაიტვირთა: ' + e.message + '</div>';
         }
     }
 
-    function renderSvDropdowns() {
+    function renderSvGrid(role) {
         // Hide ids that are already linked (in either role) so the same
         // product can't be paired twice and the operator sees only
         // candidates that still need a sibling.
         const linkedIds = new Set();
         svLinks.forEach(l => { linkedIds.add(l.small.id); linkedIds.add(l.big.id); });
 
-        const small = svBagInventory.filter(i => svIsSmall(i) && !linkedIds.has(i.id));
-        const big   = svBagInventory.filter(i => svIsBig(i)   && !linkedIds.has(i.id));
+        const pool = svBagInventory.filter(i =>
+            (role === 'small' ? svIsSmall(i) : svIsBig(i)) && !linkedIds.has(i.id)
+        );
+        const q = (document.getElementById(`sv-${role}-search`).value || '').trim().toLowerCase();
+        const items = q ? pool.filter(i => {
+            const hay = [i.code, i.product_name, i.model, i.size, i.tags]
+                .filter(Boolean).join(' ').toLowerCase();
+            return hay.includes(q);
+        }) : pool;
 
-        const opt = (i) => {
-            const label = (i.product_name || '').trim() || (i.model || '') + ' ' + (i.size || '');
-            return `<option value="${i.id}">${i.code || '#' + i.id} — ${escapeHtml(label.trim())}</option>`;
-        };
-        document.getElementById('sv-small-select').innerHTML =
-            '<option value="">აირჩიე პატარა მოდელი…</option>' + small.map(opt).join('');
-        document.getElementById('sv-big-select').innerHTML =
-            '<option value="">აირჩიე დიდი მოდელი…</option>' + big.map(opt).join('');
+        const host = document.getElementById(`sv-${role}-grid`);
+        if (!items.length) {
+            host.innerHTML = `<div class="sv-grid-empty">${pool.length ? 'ვერაფერი მოიძებნა ამ ძიებით' : 'ამ ზომაში თავისუფალი პროდუქტი არ არის'}</div>`;
+            return;
+        }
+        const selectedId = role === 'small' ? svSelectedSmall : svSelectedBig;
+        host.innerHTML = items.map(i => {
+            const img = i.image_url
+                ? (i.image_url.startsWith('http') ? i.image_url : API + i.image_url)
+                : '';
+            const label = (i.product_name || '').trim() || (i.model || '');
+            const sel = (i.id === selectedId) ? ' selected' : '';
+            return `
+                <div class="sv-tile${sel}" onclick="svPick('${role}', ${i.id})" title="${escapeHtml(i.size || '')}">
+                    ${img ? `<img src="${img}" alt="">` : '<div style="width:100%;aspect-ratio:1;background:#eee"></div>'}
+                    <div class="sv-tile-info">
+                        <b>${i.code || '#' + i.id}</b>
+                        ${escapeHtml(label).slice(0, 30)}
+                        <div class="sv-tile-price">${i.price || 0}₾</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
 
-        document.getElementById('sv-small-select').onchange = () => svRenderPreview('small');
-        document.getElementById('sv-big-select').onchange   = () => svRenderPreview('big');
-        svRenderPreview('small');
-        svRenderPreview('big');
+    function svPick(role, id) {
+        if (role === 'small') svSelectedSmall = id;
+        else svSelectedBig = id;
+        renderSvGrid(role);
         document.getElementById('sv-status').textContent = '';
     }
 
-    function svRenderPreview(role) {
-        const sel = document.getElementById(`sv-${role}-select`);
-        const host = document.getElementById(`sv-${role}-preview`);
-        const id = parseInt(sel.value, 10);
-        if (!id) {
-            host.innerHTML = '<div class="sv-empty-line">პროდუქტი ჯერ არ არჩეული</div>';
-            return;
-        }
-        const item = svBagInventory.find(x => x.id === id);
-        if (!item) {
-            host.innerHTML = '<div class="sv-empty-line">პროდუქტი ვერ მოიძებნა</div>';
-            return;
-        }
-        const img = item.image_url ? (item.image_url.startsWith('http') ? item.image_url : API + item.image_url) : '';
-        const label = (item.product_name || '').trim() || ((item.model || '') + ' ' + (item.size || '')).trim();
-        host.innerHTML = `
-            ${img ? `<img src="${img}" alt="">` : '<div style="width:64px;height:64px;background:#eee;border-radius:6px"></div>'}
-            <div class="sv-info">
-                <b>${item.code || '#' + item.id}</b><br>
-                ${escapeHtml(label)}<br>
-                <span style="color:#999">${item.size || ''} · ${item.price || 0}₾</span>
-            </div>
-        `;
-    }
-
     async function linkSizeVariant() {
-        const smallId = parseInt(document.getElementById('sv-small-select').value, 10);
-        const bigId = parseInt(document.getElementById('sv-big-select').value, 10);
+        const smallId = svSelectedSmall;
+        const bigId = svSelectedBig;
         const status = document.getElementById('sv-status');
         const btn = document.getElementById('sv-link-btn');
         if (!smallId || !bigId) {
