@@ -351,9 +351,13 @@ async def init_db():
             )
 
         # Pinterest / AI-content agent key — write access to the per-
-        # product lookbook only. Seeded from PINTEREST_API_KEY so the
-        # operator can rotate it from Railway without touching the DB.
-        pinterest_key = os.environ.get("PINTEREST_API_KEY", "").strip()
+        # product lookbook + read access to inspirations only. Accepts
+        # either PINTEREST_API_KEY or INSPIRATIONS_API_KEY so the
+        # operator can pick whichever name fits their mental model.
+        pinterest_key = (
+            os.environ.get("PINTEREST_API_KEY", "").strip()
+            or os.environ.get("INSPIRATIONS_API_KEY", "").strip()
+        )
         if pinterest_key:
             await conn.execute(
                 """INSERT INTO api_keys (key, tenant_id, label, scope, created_at)
