@@ -638,6 +638,10 @@
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="9" width="6" height="6" rx="1"/><rect x="14" y="5" width="8" height="14" rx="1"/><path d="M9 12h5"/></svg>
                 ზომების წყვილები
             </button>
+            <button class="nav-item" data-tab="inspirations" onclick="showTab('inspirations', this)">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.39 4.84 5.34.78-3.86 3.77.91 5.31L12 14.27 7.22 16.7l.91-5.31L4.27 7.62l5.34-.78z"/></svg>
+                რეფერენსები (AI)
+            </button>
             <button class="nav-item" data-tab="insights" onclick="showTab('insights', this)">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-5"/></svg>
                 ინსაიტები
@@ -1426,6 +1430,120 @@
                 </style>
             </div>
 
+            <div id="tab-inspirations" class="section">
+                <div class="card">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+                        <div>
+                            <h2 style="margin-bottom:2px">⭐ რეფერენსები (Pinterest agent)</h2>
+                            <p class="hint" style="margin-bottom:0">ფოტოები რომელსაც AI-აგენტი იყენებს ვიზუალურ რეფერენსად ახალი დიზაინის გენერაციისთვის. <b>საიტზე არ ჩანს</b> — მხოლოდ Pinterest agent ხედავს.</p>
+                        </div>
+                    </div>
+
+                    <div class="ins-tabs">
+                        <button class="ins-tab active" data-category="necklace" onclick="switchInspirationCat('necklace', this)">📿 ყელსაბამები <span id="ins-count-necklace" style="color:#999;margin-left:4px">0</span></button>
+                        <button class="ins-tab" data-category="bag" onclick="switchInspirationCat('bag', this)">💼 ჩანთები <span id="ins-count-bag" style="color:#999;margin-left:4px">0</span></button>
+                    </div>
+
+                    <div class="ins-upload-form">
+                        <label class="ins-upload-field">
+                            <span class="ins-upload-label">წარწერა (არასავალდებულო)</span>
+                            <input id="ins-caption" placeholder="მაგ. ვინტაჯური სტილი">
+                        </label>
+                        <label class="ins-upload-field">
+                            <span class="ins-upload-label">ფოტო (ერთი ან რამდენიმე)</span>
+                            <input id="ins-file" type="file" accept="image/*" multiple>
+                        </label>
+                        <button class="btn-primary ins-upload-btn" onclick="addInspirations()" id="ins-upload-btn">+ ფოტოს დამატება</button>
+                    </div>
+                    <p id="ins-upload-status" class="hint" style="margin:0 0 16px 0;min-height:18px"></p>
+
+                    <div id="inspirations-grid" class="ins-grid">
+                        <div style="grid-column:1/-1;text-align:center;color:#999;padding:24px">იტვირთება…</div>
+                    </div>
+                </div>
+                <style>
+                    .ins-tabs {
+                        display: flex; gap: 4px;
+                        border-bottom: 1px solid #eee;
+                        margin-bottom: 16px;
+                    }
+                    .ins-tab {
+                        padding: 10px 18px;
+                        border: 0; background: transparent;
+                        border-bottom: 2px solid transparent;
+                        cursor: pointer; font-weight: 500; font-size: 14px;
+                    }
+                    .ins-tab.active {
+                        border-bottom-color: #2563eb;
+                        color: #2563eb;
+                    }
+                    .ins-upload-form {
+                        display: grid;
+                        grid-template-columns: 1fr 1fr 180px;
+                        gap: 10px; align-items: end;
+                        margin-bottom: 10px;
+                        padding: 12px;
+                        background: #fafafa; border-radius: 8px;
+                    }
+                    .ins-upload-field {
+                        display: flex; flex-direction: column;
+                        gap: 4px; min-width: 0;
+                    }
+                    .ins-upload-label { font-size: 13px; color: #555; }
+                    .ins-upload-field input {
+                        padding: 8px 10px;
+                        border: 1px solid #ddd; border-radius: 6px;
+                        min-width: 0; width: 100%;
+                        box-sizing: border-box;
+                    }
+                    .ins-upload-field input[type=file] { padding: 6px; }
+                    .ins-upload-btn { padding: 9px 16px; }
+                    .ins-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+                        gap: 12px;
+                    }
+                    .ins-card {
+                        background: #fff;
+                        border: 1px solid #e5e7eb;
+                        border-radius: 10px;
+                        overflow: hidden;
+                        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+                    }
+                    .ins-card img {
+                        width: 100%; aspect-ratio: 1;
+                        object-fit: cover; display: block;
+                        background: #f5f5f5;
+                    }
+                    .ins-card .ins-meta {
+                        padding: 8px 10px;
+                        display: flex; flex-direction: column; gap: 6px;
+                    }
+                    .ins-card input.ins-caption {
+                        padding: 5px 7px; font-size: 12px;
+                        border: 1px solid #d1d5db; border-radius: 5px;
+                        width: 100%; box-sizing: border-box;
+                        font-family: inherit;
+                    }
+                    .ins-card .ins-actions {
+                        display: flex; gap: 5px;
+                    }
+                    .ins-card .ins-del {
+                        flex: 1;
+                        padding: 5px 8px; font-size: 12px;
+                        border: 1px solid #fecaca; background: #fef2f2;
+                        color: #b91c1c; border-radius: 5px;
+                        cursor: pointer;
+                    }
+                    .ins-card .ins-del:hover { background: #fee2e2; }
+                    @media (max-width: 760px) {
+                        .ins-upload-form { grid-template-columns: 1fr; gap: 8px; padding: 10px; }
+                        .ins-upload-btn { width: 100%; padding: 11px; }
+                        .ins-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+                    }
+                </style>
+            </div>
+
             <div id="tab-insights" class="section">
                 <div class="card">
                     <h2>ხარვეზები / უკმაყოფილო კლიენტები</h2>
@@ -2037,6 +2155,7 @@
         lookbook: 'Lookbook (პროდუქტებზე)',
         reviews: 'მიმოხილვები',
         sizes: 'ზომების წყვილები',
+        inspirations: 'რეფერენსები (Pinterest agent)',
     };
     const PAGE_CRUMBS = {
         dashboard: 'Overview',
@@ -2056,6 +2175,7 @@
         lookbook: 'Catalog · Lookbook',
         reviews: 'Storefront · Reviews',
         sizes: 'Catalog · ზომების წყვილები',
+        inspirations: 'AI · რეფერენსები',
     };
 
     function showTab(tab, btn) {
@@ -2086,6 +2206,7 @@
         if (tab === 'lookbook') loadLookbookData();
         if (tab === 'reviews') loadReviewsData();
         if (tab === 'sizes') loadSizeVariants();
+        if (tab === 'inspirations') loadInspirations();
         if (tab === 'chats') loadChats();
         if (tab === 'insights') loadInsights();
         if (tab === 'bot') loadBotConfig();
@@ -3899,6 +4020,116 @@
             const r = await fetch(API + '/api/admin/size-variants/' + linkId, { method: 'DELETE' });
             if (!r.ok) { alert((await r.json()).detail || 'შეცდომა'); return; }
             await loadSizeVariants();
+        } catch (e) { alert('შეცდომა: ' + e.message); }
+    }
+
+    // ── Inspirations tab (Pinterest agent reference photos) ──
+    let inspirationsState = [];
+    let currentInspirationCategory = 'necklace';
+
+    async function loadInspirations() {
+        const host = document.getElementById('inspirations-grid');
+        try {
+            const r = await fetch(API + '/api/admin/inspirations');
+            const d = await r.json();
+            inspirationsState = d.photos || [];
+            updateInspirationCounts();
+            renderInspirationsGrid();
+        } catch (e) {
+            host.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#c00;padding:24px">ვერ ჩაიტვირთა: ' + e.message + '</div>';
+        }
+    }
+
+    function updateInspirationCounts() {
+        const counts = {};
+        inspirationsState.forEach(p => {
+            counts[p.category] = (counts[p.category] || 0) + 1;
+        });
+        const necklaceEl = document.getElementById('ins-count-necklace');
+        const bagEl = document.getElementById('ins-count-bag');
+        if (necklaceEl) necklaceEl.textContent = counts.necklace || 0;
+        if (bagEl) bagEl.textContent = counts.bag || 0;
+    }
+
+    function switchInspirationCat(cat, btn) {
+        currentInspirationCategory = cat;
+        document.querySelectorAll('.ins-tab').forEach(b => b.classList.toggle('active', b === btn));
+        renderInspirationsGrid();
+    }
+
+    function renderInspirationsGrid() {
+        const host = document.getElementById('inspirations-grid');
+        const items = inspirationsState.filter(p => p.category === currentInspirationCategory);
+        if (!items.length) {
+            host.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#999;padding:24px">ჯერ არ არის ფოტოები ამ კატეგორიაში. აიტვირთე ზემოთ ✨</div>';
+            return;
+        }
+        host.innerHTML = items.map(p => {
+            const cap = (p.caption || '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+            return `
+                <div class="ins-card" data-id="${p.id}">
+                    <img src="${p.image_url}" alt="">
+                    <div class="ins-meta">
+                        <input class="ins-caption" type="text" value="${cap}" placeholder="წარწერა"
+                            onchange="updateInspirationCaption(${p.id}, this.value)">
+                        <div class="ins-actions">
+                            <button class="ins-del" onclick="deleteInspiration(${p.id})">წაშლა</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function addInspirations() {
+        const files = document.getElementById('ins-file').files;
+        const caption = (document.getElementById('ins-caption').value || '').trim();
+        const status = document.getElementById('ins-upload-status');
+        const btn = document.getElementById('ins-upload-btn');
+        if (!files || !files.length) { status.textContent = 'აარჩიე ერთი ან რამდენიმე ფოტო.'; return; }
+        btn.disabled = true;
+        try {
+            let done = 0;
+            for (const f of files) {
+                status.textContent = `იტვირთება ${done + 1} / ${files.length}…`;
+                const fd = new FormData();
+                fd.append('image', f);
+                fd.append('category', currentInspirationCategory);
+                if (caption) fd.append('caption', caption);
+                const r = await fetch(API + '/api/admin/inspirations', { method: 'POST', body: fd });
+                if (!r.ok) {
+                    const e = await r.json().catch(() => ({}));
+                    throw new Error(e.detail || ('სტატუსი ' + r.status));
+                }
+                done += 1;
+            }
+            status.textContent = `აიტვირთა ${done} ფოტო ✓`;
+            document.getElementById('ins-file').value = '';
+            document.getElementById('ins-caption').value = '';
+            await loadInspirations();
+        } catch (e) {
+            status.textContent = 'შეცდომა: ' + e.message;
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    async function updateInspirationCaption(id, value) {
+        try {
+            await fetch(API + '/api/admin/inspirations/' + id, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ caption: value }),
+            });
+        } catch (e) { alert('შეცდომა: ' + e.message); }
+    }
+
+    async function deleteInspiration(id) {
+        if (!confirm('წაიშალოს ეს ფოტო?')) return;
+        try {
+            const r = await fetch(API + '/api/admin/inspirations/' + id, { method: 'DELETE' });
+            if (!r.ok) { alert((await r.json()).detail || 'შეცდომა'); return; }
+            await loadInspirations();
         } catch (e) { alert('შეცდომა: ' + e.message); }
     }
 

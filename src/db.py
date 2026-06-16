@@ -379,6 +379,28 @@ async def init_db():
             "ADD COLUMN IF NOT EXISTS product_name_en TEXT NOT NULL DEFAULT ''"
         )
 
+        # Inspiration photos for the Pinterest / AI-content agent.
+        # The operator uploads reference images per category (necklaces
+        # first, more later) that the agent picks as visual references
+        # when generating new designs. Deliberately kept outside the
+        # storefront — these never render on the public site, only the
+        # media-scope key can read them.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS inspiration_photos (
+                id          SERIAL PRIMARY KEY,
+                tenant_id   TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+                category    TEXT NOT NULL DEFAULT 'necklace',
+                image_url   TEXT NOT NULL,
+                caption     TEXT NOT NULL DEFAULT '',
+                position    INTEGER NOT NULL DEFAULT 0,
+                created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inspiration_photos_tenant_cat "
+            "ON inspiration_photos (tenant_id, category, position, id)"
+        )
+
         # Size-variant links: the operator keeps separate inventory rows
         # for the small + big version of the same design (different
         # codes, photos, prices, stock). This table tells the storefront
@@ -2955,6 +2977,110 @@ async def delete_size_variant(tenant_id: str, link_id: int) -> bool:
     result = await pool.execute(
         "DELETE FROM size_variants WHERE tenant_id = $1 AND id = $2",
         tenant_id, link_id,
+    )
+    return result.endswith("1")
+
+
+# ── Inspiration photos (Pinterest agent references) ─────────
+
+_IP_COLUMNS = "id, category, image_url, caption, position, created_at"
+
+
+def _row_to_inspiration(row) -> dict:
+    d = dict(row)
+    d["position"] = int(d.get("position") or 0)
+    if d.get("created_at") is not None:
+        d["created_at"] = d["created_at"].isoformat()
+    return d
+
+
+async def list_inspiration_photos(
+    tenant_id: str, category: str | None = None,
+) -> list[dict]:
+    """Return every inspiration photo for a tenant. Filter by category
+    when provided so the Pinterest agent can pull only necklace refs."""
+    pool = await get_db()
+    if category:
+        rows = await pool.fetch(
+            f"SELECT {_IP_COLUMNS} FROM inspiration_photos "
+            f"WHERE tenant_id = $1 AND category = $2 "
+            f"ORDER BY position, id",
+            tenant_id, category,
+        )
+    else:
+        rows = await pool.fetch(
+            f"SELECT {_IP_COLUMNS} FROM inspiration_photos "
+            f"WHERE tenant_id = $1 ORDER BY category, position, id",
+            tenant_id,
+        )
+    return [_row_to_inspiration(r) for r in rows]
+
+
+async def create_inspiration_photo(
+    tenant_id: str, image_url: str, *,
+    category: str = "necklace", caption: str = "",
+    position: int | None = None,
+) -> dict:
+    """Insert a new inspiration photo. Position defaults to last in
+    its category when None."""
+    pool = await get_db()
+    if position is None:
+        last = await pool.fetchval(
+            "SELECT COALESCE(MAX(position), 0) FROM inspiration_photos "
+            "WHERE tenant_id = $1 AND category = $2",
+            tenant_id, category,
+        )
+        position = int(last or 0) + 1
+    row = await pool.fetchrow(
+        f"""INSERT INTO inspiration_photos
+              (tenant_id, category, image_url, caption, position)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING {_IP_COLUMNS}""",
+        tenant_id, category, image_url, (caption or "").strip(), int(position),
+    )
+    return _row_to_inspiration(row)
+
+
+async def update_inspiration_photo(
+    tenant_id: str, photo_id: int,
+    caption: str | None = None,
+    position: int | None = None,
+    image_url: str | None = None,
+) -> dict | None:
+    sets: list[str] = []
+    params: list = []
+    if caption is not None:
+        sets.append(f"caption = ${len(params)+1}")
+        params.append(caption.strip())
+    if position is not None:
+        sets.append(f"position = ${len(params)+1}")
+        params.append(int(position))
+    if image_url is not None:
+        sets.append(f"image_url = ${len(params)+1}")
+        params.append(image_url)
+    pool = await get_db()
+    if not sets:
+        row = await pool.fetchrow(
+            f"SELECT {_IP_COLUMNS} FROM inspiration_photos "
+            f"WHERE tenant_id = $1 AND id = $2",
+            tenant_id, photo_id,
+        )
+        return _row_to_inspiration(row) if row else None
+    params.extend([tenant_id, photo_id])
+    row = await pool.fetchrow(
+        f"UPDATE inspiration_photos SET {', '.join(sets)} "
+        f"WHERE tenant_id = ${len(params)-1} AND id = ${len(params)} "
+        f"RETURNING {_IP_COLUMNS}",
+        *params,
+    )
+    return _row_to_inspiration(row) if row else None
+
+
+async def delete_inspiration_photo(tenant_id: str, photo_id: int) -> bool:
+    pool = await get_db()
+    result = await pool.execute(
+        "DELETE FROM inspiration_photos WHERE tenant_id = $1 AND id = $2",
+        tenant_id, photo_id,
     )
     return result.endswith("1")
 

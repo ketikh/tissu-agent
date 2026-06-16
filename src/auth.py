@@ -196,16 +196,19 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         # inventory rows themselves, orders, settings, or anything else.
         # We intentionally do NOT include /api/inventory because it
         # exposes write endpoints (POST/PUT/DELETE) we don't want a
-        # third-party agent to call.
+        # third-party agent to call. /api/inspirations is read-only
+        # in this scope — the operator-uploaded reference photos the
+        # agent uses as visual inspiration when generating new designs.
         if scope == "media" and not (
             path.startswith("/api/storefront/")
             or path == "/api/products"
             or path.startswith("/api/products/")
             or path == "/api/product-gallery"
             or path.startswith("/api/product-gallery/")
+            or (path == "/api/inspirations" and request.method == "GET")
         ):
             return JSONResponse(
-                {"error": "forbidden", "reason": "key is media scope — limited to products read + product-gallery write"},
+                {"error": "forbidden", "reason": "key is media scope — limited to products read + product-gallery write + inspirations read"},
                 status_code=403,
             )
 

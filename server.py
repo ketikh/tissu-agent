@@ -48,6 +48,8 @@ from src.db import (
     reorder_reviews, delete_review,
     list_size_variants, create_size_variant, delete_size_variant,
     size_variant_map_for_ids,
+    list_inspiration_photos, create_inspiration_photo,
+    update_inspiration_photo, delete_inspiration_photo,
 )
 from src.sessions import IMPERSONATION_SECONDS
 from src.secrets_vault import encrypt_secret, redacted
@@ -2449,6 +2451,94 @@ async def api_delete_size_variant(
     if not ok:
         raise HTTPException(status_code=404, detail="ლინკი ვერ მოიძებნა")
     return {"ok": True}
+
+
+# ── Inspiration photos (Pinterest agent references) ─────────
+# Operator-uploaded reference images the AI-content agent pulls as
+# visual inspiration when generating new designs. NEVER rendered on
+# the public storefront — admin uploads, media-scope reads.
+
+def _serialize_inspiration(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "category": row.get("category") or "necklace",
+        "image_url": row["image_url"],
+        "caption": row.get("caption") or "",
+        "position": int(row.get("position") or 0),
+        "created_at": row.get("created_at"),
+    }
+
+
+@app.get("/api/admin/inspirations")
+async def api_list_inspirations_admin(
+    category: str = "",
+    tenant_id: str = Depends(get_tenant_id),
+):
+    cat = category.strip() or None
+    rows = await list_inspiration_photos(tenant_id, category=cat)
+    return {"photos": [_serialize_inspiration(r) for r in rows]}
+
+
+@app.post("/api/admin/inspirations")
+async def api_create_inspiration(
+    image: UploadFile = File(...),
+    category: str = Form("necklace"),
+    caption: str = Form(""),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    if not image:
+        raise HTTPException(status_code=400, detail="ფოტო აუცილებელია")
+    cat = (category or "necklace").strip() or "necklace"
+    image_url = save_uploaded_image(
+        image, prefix=f"inspiration_{cat}", folder=f"tissu/inspirations/{cat}",
+    )
+    row = await create_inspiration_photo(
+        tenant_id, image_url, category=cat, caption=caption,
+    )
+    return _serialize_inspiration(row)
+
+
+@app.patch("/api/admin/inspirations/{photo_id}")
+async def api_update_inspiration(
+    photo_id: int, request: Request,
+    tenant_id: str = Depends(get_tenant_id),
+):
+    data = await request.json()
+    kwargs: dict = {}
+    if "caption" in data:
+        kwargs["caption"] = data["caption"] or ""
+    if "position" in data:
+        try:
+            kwargs["position"] = int(data["position"])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="position უნდა იყოს რიცხვი")
+    row = await update_inspiration_photo(tenant_id, photo_id, **kwargs)
+    if not row:
+        raise HTTPException(status_code=404, detail="ფოტო ვერ მოიძებნა")
+    return _serialize_inspiration(row)
+
+
+@app.delete("/api/admin/inspirations/{photo_id}")
+async def api_delete_inspiration(
+    photo_id: int, tenant_id: str = Depends(get_tenant_id),
+):
+    ok = await delete_inspiration_photo(tenant_id, photo_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="ფოტო ვერ მოიძებნა")
+    return {"ok": True}
+
+
+@app.get("/api/inspirations")
+async def api_list_inspirations_for_agent(
+    request: Request,
+    category: str = "",
+    tenant_id: str = Depends(get_tenant_id),
+):
+    """Pinterest agent read endpoint — returns the same shape the admin
+    list does but lives at a media-scope-allowed path."""
+    cat = category.strip() or None
+    rows = await list_inspiration_photos(tenant_id, category=cat)
+    return {"photos": [_serialize_inspiration(r) for r in rows]}
 
 
 @app.put("/api/inventory/{item_id}/attr")
