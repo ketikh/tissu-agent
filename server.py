@@ -4,6 +4,7 @@ AI-powered sales agent for Tissu Shop. Facebook Messenger bot with
 Gemini Vision, WhatsApp owner notifications, and admin panel.
 """
 import os
+import asyncio
 import json
 import shutil
 from pathlib import Path
@@ -438,6 +439,71 @@ def _send_or_log_reset_email(to_email: str, link: str) -> None:
             s.send_message(msg)
     except Exception as e:
         print(f"[password-reset] SMTP send failed: {e}", flush=True)
+
+
+def _send_email(to_email: str, subject: str, body: str) -> bool:
+    """Send a plain-text email via SMTP. Returns False (and logs) when SMTP
+    isn't configured or the send fails — callers must treat email as best-effort
+    so an outbound-mail problem never breaks the surrounding request."""
+    smtp_host = os.getenv("SMTP_HOST", "").strip()
+    to_email = (to_email or "").strip()
+    if not smtp_host or not to_email:
+        print(f"[email] skipped (smtp set: {bool(smtp_host)}, to: {to_email or '—'}): {subject}", flush=True)
+        return False
+    try:
+        import smtplib
+        from email.message import EmailMessage
+        msg = EmailMessage()
+        msg["From"] = os.getenv("SMTP_FROM", "no-reply@tissu.local")
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        msg.set_content(body)
+        port = int(os.getenv("SMTP_PORT", "587"))
+        user = os.getenv("SMTP_USER", "")
+        password = os.getenv("SMTP_PASSWORD", "")
+        with smtplib.SMTP(smtp_host, port, timeout=10) as s:
+            s.starttls()
+            if user and password:
+                s.login(user, password)
+            s.send_message(msg)
+        print(f"[email] sent: {subject} -> {to_email}", flush=True)
+        return True
+    except Exception as e:
+        print(f"[email] send failed ({to_email}): {e}", flush=True)
+        return False
+
+
+def _send_order_emails(order: dict) -> None:
+    """Best-effort: email the customer an order confirmation/invoice and notify
+    the shop owner. Never raises — a mail problem must not fail order creation."""
+    try:
+        order_id = order.get("id") or ""
+        name = (order.get("customer_name") or "").strip()
+        cust_email = (order.get("customer_email") or "").strip()
+        total = order.get("total") or 0
+        lines = []
+        for it in (order.get("items") or []):
+            pname = (it.get("product_name_ka") or it.get("product_name_en") or "").strip() or "—"
+            qty = it.get("quantity") or 1
+            price = it.get("price") or 0
+            lines.append(f"  • {pname} × {qty} — {price}₾")
+        items_text = "\n".join(lines) if lines else "  —"
+        addr = ", ".join(p for p in [order.get("address_street"), order.get("address_city")] if p)
+        body = (
+            f"გმადლობთ შეკვეთისთვის, {name}!\n\n"
+            f"შეკვეთის ნომერი: {order_id}\n\n"
+            f"პროდუქცია:\n{items_text}\n\n"
+            f"ჯამი: {total}₾\n"
+            + (f"მისამართი: {addr}\n" if addr else "")
+            + "\nმალე დაგიკავშირდებით შეკვეთის დასადასტურებლად.\n\nTissu · tissu.ge"
+        )
+        if cust_email:
+            _send_email(cust_email, f"Tissu — შეკვეთა მიღებულია (#{order_id})", body)
+        owner_email = os.getenv("ORDER_NOTIFY_EMAIL", "").strip()
+        if owner_email:
+            _send_email(owner_email, f"ახალი შეკვეთა #{order_id} — {name} ({total}₾)", body)
+    except Exception as e:
+        print(f"[order-email] failed: {e}", flush=True)
 
 
 @app.get("/admin/reset-password", response_class=HTMLResponse)
@@ -2211,6 +2277,9 @@ async def api_create_site_order(
         address_zone=data.get("address_zone") or {},
         notes=(data.get("notes") or None),
     )
+    # Best-effort confirmation/invoice email (offloaded so a slow SMTP server
+    # can't hold up the checkout response). No-op until SMTP_* env vars are set.
+    await asyncio.to_thread(_send_order_emails, order)
     return order
 
 
