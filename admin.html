@@ -2931,12 +2931,12 @@
                         placeholder="🇬🇪 ${escapeHtml(productNameFallback(i))}"
                         title="საიტზე ქართულად გამოჩენილი სახელი. ცარიელია → მოდელი + ზომა"
                         style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;margin-bottom:4px;box-sizing:border-box;font-weight:600"
-                        onchange="setProductName(${i.id}, this.value)">
+                        onchange="setProductName(${i.id}, this.value, this)">
                     <input type="text" value="${escapeHtml(i.product_name_en || '')}"
                         placeholder="🇬🇧 English title (e.g. Small striped pouch)"
                         title="საიტზე ინგლისურად გამოჩენილი სახელი. ცარიელია → ქართულ ვარიანტს იყენებს"
                         style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12.5px;margin-bottom:6px;box-sizing:border-box;color:#444"
-                        onchange="setProductNameEn(${i.id}, this.value)">
+                        onchange="setProductNameEn(${i.id}, this.value, this)">
                     ${renderTagChips(i.tags)}
                     <input type="text" value="${i.tags || ''}" placeholder="ტეგების დამატება (მძიმით) — ფერი, სტილი…"
                         onchange="setLabel(${i.id},'tags',this.value); renderGrid()" title="მაგ: ყვითელი, ზოლებიანი, კლასიკური">
@@ -4310,7 +4310,14 @@
         return parts.join(' ') || item.code || '';
     }
 
-    async function setProductName(id, value) {
+    // Brief green flash on an input so the admin SEES the auto-save land.
+    function flashSaved(el) {
+        if (!el) return;
+        el.style.borderColor = '#16a34a';
+        setTimeout(() => { el.style.borderColor = '#d1d5db'; }, 900);
+    }
+
+    async function setProductName(id, value, el) {
         const trimmed = (value || '').trim();
         try {
             const r = await fetch(API + '/api/inventory/' + id + '?product_name=' + encodeURIComponent(trimmed), {
@@ -4319,10 +4326,11 @@
             if (!r.ok) throw new Error((await r.json()).detail || 'შენახვა ვერ შესრულდა');
             const item = allInventory.find(i => i.id === id);
             if (item) item.product_name = trimmed;
+            flashSaved(el);
         } catch (e) { alert('შეცდომა: ' + e.message); }
     }
 
-    async function setProductNameEn(id, value) {
+    async function setProductNameEn(id, value, el) {
         const trimmed = (value || '').trim();
         try {
             const r = await fetch(API + '/api/inventory/' + id + '?product_name_en=' + encodeURIComponent(trimmed), {
@@ -4331,6 +4339,7 @@
             if (!r.ok) throw new Error((await r.json()).detail || 'შენახვა ვერ შესრულდა');
             const item = allInventory.find(i => i.id === id);
             if (item) item.product_name_en = trimmed;
+            flashSaved(el);
         } catch (e) { alert('შეცდომა: ' + e.message); }
     }
 
