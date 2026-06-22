@@ -2502,8 +2502,62 @@
         return null;
     }
 
+    // ── Background colour (HEX) ──────────────────
+    // Every product can carry a banner background colour. It lives inside
+    // the free-form `tags` string as a #hex token (that's where the
+    // website reads it from), but we surface it as a dedicated colour
+    // control on each card so it isn't buried among the other tags.
+    function isHexToken(t) {
+        const s = (t || '').trim();
+        return /^#?[0-9a-fA-F]{6}$/.test(s) || /^#?[0-9a-fA-F]{3}$/.test(s);
+    }
+    function normalizeHex(t) {
+        let s = (t || '').trim().toLowerCase();
+        if (!s) return '';
+        if (!s.startsWith('#')) s = '#' + s;
+        return s;
+    }
+    function tagsToList(tagsStr) {
+        return (tagsStr || '').split(',').map(t => t.trim()).filter(Boolean);
+    }
+    function bgColorFromTags(tagsStr) {
+        const hex = tagsToList(tagsStr).find(isHexToken);
+        return hex ? normalizeHex(hex) : '';
+    }
+    function tagsWithoutColor(tagsStr) {
+        return tagsToList(tagsStr).filter(t => !isHexToken(t));
+    }
+    // <input type="color"> needs a 6-digit value; expand #abc → #aabbcc.
+    function hexForPicker(hex) {
+        let s = normalizeHex(hex);
+        if (/^#[0-9a-f]{3}$/.test(s)) {
+            s = '#' + s.slice(1).split('').map(c => c + c).join('');
+        }
+        return /^#[0-9a-f]{6}$/.test(s) ? s : '#cccccc';
+    }
+    // Save a new background colour: drop the old hex token, keep the rest.
+    async function setBgColor(id, value) {
+        const item = allInventory.find(i => i.id === id);
+        if (!item) return;
+        let v = (value || '').trim();
+        if (v && !v.startsWith('#')) v = '#' + v;
+        if (v && !isHexToken(v)) { alert('ფერი უნდა იყოს HEX კოდი, მაგ: #989567 ✨'); renderGrid(); return; }
+        const merged = [...tagsWithoutColor(item.tags), ...(v ? [normalizeHex(v)] : [])].join(', ');
+        await setLabel(id, 'tags', merged);
+        renderGrid();
+    }
+    // Save free-form tags without dropping the colour the picker owns.
+    async function setTagsKeepColor(id, value) {
+        const item = allInventory.find(i => i.id === id);
+        const color = item ? bgColorFromTags(item.tags) : '';
+        const others = tagsToList(value).filter(t => !isHexToken(t));
+        const merged = [...others, ...(color ? [color] : [])].join(', ');
+        await setLabel(id, 'tags', merged);
+        renderGrid();
+    }
+
     function renderTagChips(tagsStr) {
-        const tags = (tagsStr || '').split(',').map(t => t.trim()).filter(Boolean);
+        const tags = tagsToList(tagsStr).filter(t => !isHexToken(t));
         if (!tags.length) return '';
         return '<div class="tag-chips">' + tags.map(t => {
             const col = colorForTag(t);
@@ -2885,6 +2939,7 @@
             const hasBack = i.image_url_back && i.image_url_back.length > 1;
             const cat = i.category || 'bag';
             const catDef = categoryBySlug(cat);
+            const bgColor = bgColorFromTags(i.tags);
             const attrs = (i.attrs && typeof i.attrs === 'object') ? i.attrs : (i.attrs ? (()=>{ try{return JSON.parse(i.attrs)}catch(_){return {}} })() : {});
             let attrBlock;
             if (cat === 'bag') {
@@ -2990,9 +3045,19 @@
                         title="საიტზე ინგლისურად გამოჩენილი სახელი. ცარიელია → ქართულ ვარიანტს იყენებს"
                         style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12.5px;margin-bottom:6px;box-sizing:border-box;color:#444"
                         onchange="setProductNameEn(${i.id}, this.value, this)">
+                    <div style="display:flex;align-items:center;gap:8px;margin:2px 0 6px">
+                        <span style="font-size:11px;color:var(--muted);font-weight:600;white-space:nowrap">ფონის ფერი</span>
+                        <input type="color" value="${hexForPicker(bgColor)}" title="ფონის ფერის არჩევა"
+                            onchange="setBgColor(${i.id}, this.value)"
+                            style="width:36px;height:30px;padding:2px;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;background:#fff;flex-shrink:0">
+                        <input type="text" value="${bgColor}" placeholder="#არჩევა" maxlength="7"
+                            onchange="setBgColor(${i.id}, this.value)" title="ან ჩაწერე HEX კოდი, მაგ: #989567"
+                            style="flex:1;min-width:0;font-size:12.5px;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box">
+                        ${bgColor ? `<button onclick="setBgColor(${i.id}, '')" title="ფერის მოშორება" style="border:none;background:transparent;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;flex-shrink:0">&times;</button>` : ''}
+                    </div>
                     ${renderTagChips(i.tags)}
-                    <input type="text" value="${i.tags || ''}" placeholder="ტეგების დამატება (მძიმით) — ფერი, სტილი…"
-                        onchange="setLabel(${i.id},'tags',this.value); renderGrid()" title="მაგ: ყვითელი, ზოლებიანი, კლასიკური">
+                    <input type="text" value="${tagsWithoutColor(i.tags).join(', ')}" placeholder="ტეგების დამატება (მძიმით) — ფერი, სტილი…"
+                        onchange="setTagsKeepColor(${i.id}, this.value)" title="მაგ: ყვითელი, ზოლებიანი, კლასიკური">
                     ${attrBlock}
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:8px">
                         <span class="product-code">${i.code || '—'}</span>
