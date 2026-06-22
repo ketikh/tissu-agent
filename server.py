@@ -1191,7 +1191,7 @@ async def admin_put_bot_config(request: Request):
 _VALID_CMS_PAGES = frozenset({"home", "about", "faq", "shop", "contact"})
 _VALID_CMS_SECTIONS: dict[str, frozenset[str]] = {
     "home": frozenset({
-        "hero", "marquee", "products_grid", "necklace_grid",
+        "hero", "featured", "marquee", "products_grid", "necklace_grid",
         "about", "reviews", "newsletter",
     }),
     "faq":     frozenset({"items"}),

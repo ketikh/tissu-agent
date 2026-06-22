@@ -4769,6 +4769,10 @@
                 { k:'cta_link',  bi:false, label:'ღილაკის ბმული', hint:'მაგ: /shop', def:'/ka/shop' },
                 { k:'hero_image_url', bi:false, label:'Hero ფოტოს URL', hint:'Cloudinary-დან', def:'/background.png' },
             ]},
+            { key: 'featured', label: 'გამორჩეული პროდუქტები', sub: 'მთავარ გვერდზე — ხელით შერჩეული 3 პროდუქტი', icon: 'M12 2l2.9 6.3 6.9.6-5.2 4.5 1.6 6.8L12 17l-6.2 3.7 1.6-6.8L2.2 9.5l6.9-.6z', fields: [
+                { k:'title', bi:true, label:'სათაური', def_ka:'გამორჩეული პროდუქტები', def_en:'Featured products' },
+                { k:'attached_product_ids', bi:false, label:'პროდუქტები (3)', type:'product_picker', max:3 },
+            ]},
             { key: 'marquee', label: 'Marquee', sub: 'გადარბენი ლენტა გამოსახულებებით', icon: 'M4 6h16M4 12h16M4 18h16', fields: [
                 { k:'phrases', bi:true, label:'ფრაზები', hint:'5–8 მოკლე ფრაზა, ლენტში ბრუნავს', type:'repeater' },
             ]},
