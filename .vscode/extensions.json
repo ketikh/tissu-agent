@@ -6,6 +6,7 @@
     "charliermarsh.ruff",
     "ms-python.mypy-type-checker",
     "redhat.vscode-yaml",
-    "github.vscode-github-actions"
+    "github.vscode-github-actions",
+    "openai.chatgpt"
   ]
 }
