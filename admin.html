@@ -4834,21 +4834,15 @@
                 { k:'cta_link',  bi:false, label:'ღილაკის ბმული', hint:'მაგ: /shop', def:'/ka/shop' },
                 { k:'hero_image_url', bi:false, label:'Hero ფოტოს URL', hint:'Cloudinary-დან', def:'/background.png' },
             ]},
-            { key: 'featured', label: 'გამორჩეული პროდუქტები', sub: 'მთავარ გვერდზე — ხელით შერჩეული 3 პროდუქტი', icon: 'M12 2l2.9 6.3 6.9.6-5.2 4.5 1.6 6.8L12 17l-6.2 3.7 1.6-6.8L2.2 9.5l6.9-.6z', fields: [
+            { key: 'featured', label: 'გამორჩეული პროდუქტები', sub: 'მთავარ გვერდზე — სათაური (პროდუქტებს ირჩევ პროდუქტზე „მთავარზე ჩვენების" მონიშვნით)', icon: 'M12 2l2.9 6.3 6.9.6-5.2 4.5 1.6 6.8L12 17l-6.2 3.7 1.6-6.8L2.2 9.5l6.9-.6z', fields: [
                 { k:'title', bi:true, label:'სათაური', def_ka:'გამორჩეული პროდუქტები', def_en:'Featured products' },
-                { k:'attached_product_ids', bi:false, label:'პროდუქტები (3)', type:'product_picker', max:3 },
             ]},
             { key: 'marquee', label: 'Marquee', sub: 'გადარბენი ლენტა გამოსახულებებით', icon: 'M4 6h16M4 12h16M4 18h16', fields: [
                 { k:'phrases', bi:true, label:'ფრაზები', hint:'5–8 მოკლე ფრაზა, ლენტში ბრუნავს', type:'repeater' },
             ]},
-            { key: 'products_grid', label: 'პროდუქტების Grid', sub: 'მთავარ გვერდზე ნაჩვენები ჩანთები (max 6)', icon: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z', fields: [
+            { key: 'products_grid', label: 'ლეპტოპის ქეისების სექცია', sub: 'მთავარ გვერდზე — სათაური (პროდუქტებს ირჩევ პროდუქტზე „მთავარზე ჩვენების" მონიშვნით)', icon: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z', fields: [
                 { k:'title', bi:true, label:'სათაური', def_ka:'ერთი ჩანთა ორი განწყობა', def_en:'One bag, two moods' },
                 { k:'sub',   bi:true, label:'ქვესათაური', def_ka:'ორმხრივი ჩანთები მათთვის, ვისაც ცვალებადი ხასიათი აქვს', def_en:'Reversible bags for the ever-changing mood' },
-                { k:'attached_product_ids', bi:false, label:'პროდუქტები (max 6)', type:'product_picker', max:6 },
-            ]},
-            { key: 'necklace_grid', label: 'Necklace Grid', sub: 'ყელსაბამების სექცია (max 2)', icon: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 4a6 6 0 0 1 0 12', fields: [
-                { k:'title', bi:true, label:'სათაური' },
-                { k:'attached_product_ids', bi:false, label:'პროდუქტები (max 2)', type:'product_picker', max:2 },
             ]},
             { key: 'about', label: 'How it works', sub: '"გადაბრუნე" სექცია — ნაბიჯები', icon: 'M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z', fields: [
                 { k:'title',    bi:true,  label:'სათაური', def_ka:'ჩვენი ბრენდი ორიგინალური გახდა სწორედ ორმხრივი ჩანთების დამსახურებით.', def_en:'What makes our brand unique is its reversible bags.' },
