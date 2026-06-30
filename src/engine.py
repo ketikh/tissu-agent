@@ -24,6 +24,83 @@ class AgentDefinition:
     tools: list[Tool] = field(default_factory=list)
 
 
+# ── Intent Router (Python-based, no LLM call) ───────────────
+
+def detect_intent(user_message: str, history: list[dict]) -> str:
+    """Detect which agent should handle this message. Returns agent name."""
+    msg = user_message.lower().strip()
+
+    # System messages — escalation handles owner instructions
+    if msg.startswith("[system:") or msg.startswith("[მფლობელ"):
+        if "გადახდა" in msg or "დაადასტურა გადახდა" in msg:
+            return "payment"
+        return "escalation"
+
+    # Owner instructions
+    if "მფლობელის ინსტრუქცია" in msg:
+        return "escalation"
+
+    # Photo/link forwarded by system
+    if "ფოტო გამოგზავნა" in msg or "ბმული გამოგზავნა" in msg:
+        return "catalog"
+
+    # Goodbye / end of conversation — sales handles it
+    goodbye_keywords = ("მადლობა", "ნახვამდის", "კარგი ნახვამდის", "არ მინდა", "სხვა დროს")
+    if msg.strip() in goodbye_keywords or any(msg.strip() == kw for kw in goodbye_keywords):
+        return "sales"
+
+    # FAQ — sales handles directly (BEFORE catalog/escalation checks!)
+    faq_keywords = ("ღირს", "ფასი", "რამდენ", "მასალ", "ნაჭრ", "რისგან", "ტილო",
+                    "წყალგაუმტარ", "ელვა", "შესაკრავ", "დამტენ", "ტელეფონის",
+                    "ფასდაკლება", "შეკვეთით", "ქასთომ", "პრინტ", "კორპორატ",
+                    "საკურიერო", "მიწოდება", "როდის", "ზომა", "ინჩ", "სტილ",
+                    "ფხრიწ", "თასმიან", "მახასიათებ", "ორმხრივ")
+    if any(kw in msg for kw in faq_keywords):
+        return "sales"
+
+    # Escalation — spam, operator, unknown
+    escalation_keywords = ("ოპერატორ", "დამაკავშირ", "საიტს აგიწყობ", "საიტს გაგიწყობ",
+                          "ფოლოვერ", "გაგირეკლამებ", "ბარტერ", "დაპოსტ", "საჩუქარ",
+                          "notify_owner", "გაუგებარ", "კონფიდენციალ",
+                          "აგიწყობთ", "რეკლამ", "თანამშრომლობ", "სტუდენტ",
+                          "რას მირჩევთ", "რომელი ჯობია", "მირჩიეთ",
+                          "რეგიონ", "თბილისის გარეთ")
+    if any(kw in msg for kw in escalation_keywords):
+        return "escalation"
+
+    # Payment-related
+    payment_keywords = ("თიბისი", "საქართველოს ბანკი", "ჩარიცხ", "გადავრიცხ", "სქრინ",
+                        "ქვითარ", "გადახდ", "მისამართ",
+                        "მფლობელმა დაადასტურა", "მფლობელმა გადახდა")
+    if any(kw in msg for kw in payment_keywords):
+        return "payment"
+
+    # Check if user sent a product code (FP3, TP15, TD2, etc.)
+    code_pattern = re.search(r'\b[FfTtФფ][PpDdПпДд]\d{1,2}\b', msg)
+    if code_pattern:
+        return "catalog"
+
+    # Catalog — inventory related
+    catalog_keywords = ("მარაგ", "გაქვთ", "check_inventory", "მოდელ", "კოდ",
+                        "ფოტო", "სურათ", "შეარჩი", "forward_photo")
+    if any(kw in msg for kw in catalog_keywords):
+        return "catalog"
+
+    # Check conversation history for context — if we're mid-payment flow
+    if history:
+        last_few = [m["content"].lower() for m in history[-4:] if m["role"] == "assistant"]
+        last_text = " ".join(last_few)
+        if any(kw in last_text for kw in ("ანგარიში:", "ჩარიცხვის შემდეგ", "სქრინი გამომიგზავნეთ", "გადავამოწმებ")):
+            return "payment"
+        if any(kw in last_text for kw in ("კოდი მოგვწერეთ", "შეარჩიეთ", "პატარა თუ დიდი")):
+            return "catalog"
+        if any(kw in last_text for kw in ("თიბისი თუ საქართველოს", "გავაფორმოთ")):
+            return "payment"
+
+    # Default — sales (greeting, price, size, style, FAQ)
+    return "sales"
+
+
 def parse_agent_metadata(text: str) -> dict | None:
     """Extract structured metadata block from agent response."""
     match = re.search(r"---AGENT_METADATA---\s*(.+?)\s*---END_METADATA---", text, re.DOTALL)

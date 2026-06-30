@@ -1,7 +1,8 @@
-"""Tissu Shop — Receipt Detection Only.
+"""Tissu Shop — Receipt Detection via Cloud Vision OCR.
 
-Uses Gemini to detect if customer photo is a payment receipt.
-Product photo matching is handled manually by owner via WhatsApp.
+Uses Google Cloud Vision TEXT_DETECTION to extract text from photos,
+then checks for Georgian banking keywords to identify payment receipts.
+Much faster, cheaper and more accurate than LLM-based detection.
 """
 from __future__ import annotations
 
@@ -9,16 +10,35 @@ import logging
 import os
 
 import httpx
-from google import genai
-from google.genai import types
 
 from src.db import get_db
 
+# Ensure credentials path is set for Cloud Vision
+if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+    _default_cred = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "secrets", "gcloud-key.json"
+    )
+    if os.path.exists(_default_cred):
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _default_cred
+    elif os.getenv("GOOGLE_CREDENTIALS_JSON"):
+        import tempfile
+        _tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        _tmp.write(os.getenv("GOOGLE_CREDENTIALS_JSON"))
+        _tmp.close()
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _tmp.name
+
+from google.cloud import vision  # noqa: E402
+
 logger = logging.getLogger(__name__)
 
+_vision_client: vision.ImageAnnotatorClient | None = None
 
-def _get_gemini_client() -> genai.Client:
-    return genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
+
+def _get_vision_client() -> vision.ImageAnnotatorClient:
+    global _vision_client
+    if _vision_client is None:
+        _vision_client = vision.ImageAnnotatorClient()
+    return _vision_client
 
 
 async def download_image(url: str) -> bytes | None:
@@ -33,43 +53,86 @@ async def download_image(url: str) -> bytes | None:
     return None
 
 
+# Keywords that appear on Georgian bank payment receipts
+RECEIPT_KEYWORDS = (
+    # Georgian — payment/transfer actions
+    "ჩარიცხულია", "ჩარიცხვა", "გადარიცხვა", "გადაირიცხა",
+    "თანხა", "წარმატებით", "შესრულებულია", "გადახდა",
+    # Georgian — bank names
+    "თიბისი", "TBC", "tbc",
+    "საქართველოს ბანკი", "BOG", "bog",
+    "ლიბერთი", "Liberty", "liberty",
+    # Georgian — common receipt fields
+    "ანგარიში", "ბენეფიციარი", "მიმღები", "გამგზავნი",
+    "თარიღი", "ოპერაცია", "ტრანზაქცია",
+    # Symbols / currency
+    "GEL", "₾", "USD", "$", "EUR",
+    # English banking terms
+    "Transfer", "Payment", "Amount", "Receipt", "Transaction",
+    "Beneficiary", "Sender",
+    # Status indicators
+    "SUCCESS", "Completed", "Successful", "✓", "✔",
+)
+
+
 async def is_payment_receipt(image_bytes: bytes, conversation_id: str) -> bool:
-    """Check if image is a payment receipt (vs product photo).
+    """Check if image is a payment receipt using Cloud Vision OCR.
 
-    Uses conversation context: if we recently asked for payment screenshot,
-    it's more likely a receipt.
+    Fast, cheap, deterministic — no LLM needed.
+    Uses conversation context as fallback if OCR fails.
     """
-    client = _get_gemini_client()
-
-    # Check conversation context
+    # Check conversation context first — faster path if we're expecting a receipt
     expecting = False
-    pool = await get_db()
-    rows = await pool.fetch(
-        "SELECT content FROM messages WHERE conversation_id = $1 AND role = 'assistant' ORDER BY created_at DESC LIMIT 3",
-        conversation_id,
-    )
-    receipt_keywords = ("სქრინ", "ჩარიცხ", "გადარიცხ", "გადასახდელი")
-    for row in rows:
-        text = row["content"] or ""
-        if any(kw in text for kw in receipt_keywords):
-            expecting = True
-            break
-
-    ctx = "კლიენტმა გადახდის სქრინი უნდა გამოეგზავნა." if expecting else "კლიენტი ჩანთას ეძებს."
-
     try:
-        resp = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[types.Content(role="user", parts=[
-                types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
-                types.Part(text=(
-                    f'კონტექსტი: {ctx}\n'
-                    'ეს ფოტო payment_receipt (ბანკის ტრანზაქცია/გადარიცხვა) თუ product (ჩანთა/ქეისი)?\n'
-                    'უპასუხე მხოლოდ: payment_receipt ან product'
-                )),
-            ])],
+        pool = await get_db()
+        rows = await pool.fetch(
+            "SELECT content FROM messages WHERE conversation_id = $1 AND role = 'assistant' ORDER BY created_at DESC LIMIT 3",
+            conversation_id,
         )
-        return "payment_receipt" in (resp.text or "").lower()
+        ctx_keywords = ("სქრინ", "ჩარიცხ", "გადარიცხ", "გადასახდელი")
+        for row in rows:
+            text = row["content"] or ""
+            if any(kw in text for kw in ctx_keywords):
+                expecting = True
+                break
+    except Exception as e:
+        logger.warning(f"Context check failed: {e}")
+
+    # Run Cloud Vision OCR on the image
+    try:
+        client = _get_vision_client()
+        image = vision.Image(content=image_bytes)
+        response = client.text_detection(image=image)
+
+        if response.error.message:
+            logger.error(f"Vision OCR error: {response.error.message}")
+            return expecting  # fall back to context
+
+        # Get the full text (first element is the full block)
+        annotations = response.text_annotations
+        if not annotations:
+            # No text detected — definitely not a receipt
+            print(f"[RECEIPT] No text detected — NOT a receipt", flush=True)
+            return False
+
+        full_text = annotations[0].description or ""
+        text_lower = full_text.lower()
+
+        # Count matching keywords
+        matches = [kw for kw in RECEIPT_KEYWORDS if kw.lower() in text_lower]
+
+        print(f"[RECEIPT] OCR detected {len(annotations)} text blocks, "
+              f"{len(matches)} banking keywords: {matches[:5]}", flush=True)
+
+        # Need at least 2 banking keywords to be confident it's a receipt
+        if len(matches) >= 2:
+            return True
+        # Single strong match — bank name + nothing else — still counts
+        bank_names = ("თიბისი", "TBC", "საქართველოს ბანკი", "BOG", "ლიბერთი")
+        if any(bn.lower() in text_lower for bn in bank_names) and expecting:
+            return True
+        return False
+
     except Exception as e:
         logger.error(f"Receipt detection failed: {e}")
-        return expecting  # If we were expecting receipt, assume it is one
+        return expecting  # fall back to context

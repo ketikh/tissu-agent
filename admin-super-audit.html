@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tissu Platform — აუდიტ ჟურნალი</title>
+    <link rel="preconnect" href="https://rsms.me/">
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+    <style>
+        * { box-sizing:border-box; }
+        html, body { margin:0; padding:0; font-family:"Inter var","Inter",system-ui,sans-serif;
+            background:#F8F7F4; color:#17140E; min-height:100vh; }
+        .page { max-width:1200px; margin:0 auto; padding:40px 24px; }
+        .top { display:flex; align-items:center; justify-content:space-between; margin-bottom:28px; }
+        h1 { margin:0; font-size:26px; font-weight:600; letter-spacing:-0.01em; }
+        .sub { color:#8B8478; font-size:14px; margin-top:4px; }
+        .nav-link { color:#8B8478; text-decoration:none; font-size:13px; margin-left:16px; }
+        .nav-link:hover { color:#17140E; }
+        table { width:100%; border-collapse:collapse; background:#FFF;
+            border:1px solid #ECE7DF; border-radius:12px; overflow:hidden; }
+        th { text-align:left; padding:12px 16px; background:#FBFAF7; font-size:12px;
+            font-weight:600; color:#8B8478; text-transform:uppercase; letter-spacing:0.04em;
+            border-bottom:1px solid #ECE7DF; }
+        td { padding:12px 16px; border-bottom:1px solid #F0ECE5; font-size:13px; vertical-align:top; }
+        tr:last-child td { border-bottom:none; }
+        .when { color:#8B8478; font-family:ui-monospace,monospace; font-size:12px; white-space:nowrap; }
+        .who { font-weight:500; }
+        .action { display:inline-block; padding:2px 8px; border-radius:6px; font-size:11px;
+            font-weight:600; text-transform:uppercase; letter-spacing:0.04em;
+            background:#F2EEE7; color:#4A443B; }
+        .action.create_tenant { background:#E0F0E8; color:#1F4A38; }
+        .action.delete_tenant { background:#F7E1DE; color:#7F2A24; }
+        .action.suspend { background:#FFF4E0; color:#7A5A1F; }
+        .action.mark_paid { background:#E0F0E8; color:#1F4A38; }
+        .action.regenerate_key { background:#FBEFE6; color:#7F4425; }
+        .action.login_as { background:#E8E1F0; color:#3A2D5F; }
+        .target { color:#1F1B16; }
+        .payload { color:#8B8478; font-size:11px; font-family:ui-monospace,monospace;
+            max-width:380px; overflow-wrap:break-word; }
+        .ip { color:#8B8478; font-family:ui-monospace,monospace; font-size:11px; }
+        .empty { text-align:center; padding:40px; color:#8B8478; }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="top">
+            <div>
+                <h1>📋 აუდიტ ჟურნალი</h1>
+                <div class="sub">სუპერ-ადმინის ბოლო 100 მოქმედება. Append-only.</div>
+            </div>
+            <div>
+                <a class="nav-link" href="/admin/super">← კლიენტები</a>
+                <a class="nav-link" href="/admin/super/pricing">💰 ფასები</a>
+                <a class="nav-link" href="/admin">ადმინზე</a>
+                <a class="nav-link" href="/admin/logout">გამოსვლა</a>
+            </div>
+        </div>
+
+        <table id="auditTable">
+            <thead>
+                <tr>
+                    <th>როდის</th>
+                    <th>ვინ</th>
+                    <th>მოქმედება</th>
+                    <th>ვისზე</th>
+                    <th>დეტალი</th>
+                    <th>IP</th>
+                </tr>
+            </thead>
+            <tbody id="auditBody">
+                <tr><td colspan="6" class="empty">იტვირთება…</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        function _cookie(n) {
+            const m = document.cookie.match(new RegExp('(?:^|; )' + n + '=([^;]*)'));
+            return m ? decodeURIComponent(m[1]) : '';
+        }
+        async function api(url) {
+            const r = await fetch(url, { credentials: 'same-origin' });
+            if (r.status === 401) { window.location.href = '/admin/login?error=expired'; return; }
+            if (r.status === 403) { document.getElementById('auditBody').innerHTML =
+                '<tr><td colspan="6" class="empty">წვდომა აკრძალულია — მხოლოდ super-admin.</td></tr>';
+                return null; }
+            return r;
+        }
+        function esc(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+        function fmtTime(iso) {
+            try {
+                const d = new Date(iso);
+                return d.toLocaleString('ka-GE', { hour12: false });
+            } catch { return esc(iso); }
+        }
+        function fmtPayload(p) {
+            if (!p) return '<span class="payload">—</span>';
+            const parts = Object.entries(p).map(([k, v]) => {
+                let val = typeof v === 'object' ? JSON.stringify(v) : String(v);
+                if (val.length > 60) val = val.slice(0, 57) + '…';
+                return `${esc(k)}=${esc(val)}`;
+            });
+            return `<div class="payload">${parts.join(', ')}</div>`;
+        }
+
+        async function load() {
+            const r = await api('/api/super/audit');
+            if (!r) return;
+            const data = await r.json();
+            const body = document.getElementById('auditBody');
+            if (!data.actions.length) {
+                body.innerHTML = '<tr><td colspan="6" class="empty">ჯერ არც ერთი მოქმედება არაა.</td></tr>';
+                return;
+            }
+            body.innerHTML = data.actions.map(a => `
+                <tr>
+                    <td class="when">${esc(fmtTime(a.at))}</td>
+                    <td class="who">${esc(a.super_admin_email || '—')}</td>
+                    <td><span class="action ${esc(a.action)}">${esc(a.action)}</span></td>
+                    <td class="target">${esc(a.target_shop_name || a.target_tenant_id || '—')}</td>
+                    <td>${fmtPayload(a.payload_json)}</td>
+                    <td class="ip">${esc(a.ip || '—')}</td>
+                </tr>
+            `).join('');
+        }
+        load();
+    </script>
+</body>
+</html>

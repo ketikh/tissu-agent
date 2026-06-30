@@ -9,12 +9,23 @@ from src.db import get_db
 from src.engine import Tool
 
 
-async def check_inventory(model: str = "", size: str = "", search: str = "") -> dict:
-    """Check what's in stock. Can filter by model, size, or search by tags/description."""
+async def check_inventory(model: str = "", size: str = "", search: str = "", on_sale: bool = False) -> dict:
+    """Check what's in stock. Can filter by model, size, tags, or sale status.
+
+    When on_sale=True we return only products that the owner has marked as
+    discounted in the admin panel — used when a customer asks whether we
+    have any current promotions.
+    """
     pool = await get_db()
-    query = "SELECT * FROM inventory WHERE stock > 0"
+    # Bag-only guard: the master bot is currently bag-aware only. We never
+    # return necklaces (or any future category) from this tool so the bot
+    # can't accidentally recommend a non-bag product to a customer asking
+    # about ჩანთები.
+    query = "SELECT * FROM inventory WHERE stock > 0 AND category = 'bag'"
     params = []
     idx = 1
+    if on_sale:
+        query += " AND on_sale = true"
     if model:
         query += f" AND model ILIKE ${idx}"
         params.append(f"%{model}%")
@@ -24,9 +35,23 @@ async def check_inventory(model: str = "", size: str = "", search: str = "") -> 
         params.append(f"%{size}%")
         idx += 1
     if search:
-        query += f" AND (tags ILIKE ${idx} OR color ILIKE ${idx+1} OR style ILIKE ${idx+2})"
-        params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
-        idx += 3
+        # Check if search looks like product code(s) — single (FP1) or multiple (FP1,TP3,FD2)
+        search_upper = search.strip().upper()
+        # Multiple codes separated by comma
+        if "," in search_upper:
+            codes = [c.strip() for c in search_upper.split(",") if c.strip()]
+            placeholders = ",".join(f"${idx + i}" for i in range(len(codes)))
+            query += f" AND UPPER(code) IN ({placeholders})"
+            params.extend(codes)
+            idx += len(codes)
+        elif any(search_upper.startswith(p) for p in ("FP", "TP", "FD", "TD")) and any(c.isdigit() for c in search_upper):
+            query += f" AND UPPER(code) = ${idx}"
+            params.append(search_upper)
+            idx += 1
+        else:
+            query += f" AND (tags ILIKE ${idx} OR color ILIKE ${idx+1} OR style ILIKE ${idx+2})"
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+            idx += 3
     rows = await pool.fetch(query, *params)
     if not rows:
         return {"found": False, "message": "ვერ მოიძებნა."}
@@ -39,6 +64,11 @@ async def check_inventory(model: str = "", size: str = "", search: str = "") -> 
             "size": row["size"],
             "price": row["price"],
         }
+        if row.get("on_sale"):
+            item["on_sale"] = True
+            sp = row.get("sale_price")
+            if sp is not None and sp > 0:
+                item["sale_price"] = sp
         if row.get("image_url"):
             item["image_url"] = row["image_url"]
         if row.get("image_url_back"):
@@ -58,13 +88,42 @@ async def save_lead(name: str, phone: str = "", notes: str = "", score: int = 0,
 
 
 async def create_order(customer_name: str, customer_phone: str, customer_address: str, items: str, total: float, payment_method: str = "", notes: str = "") -> dict:
+    import re as _re
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
     row = await pool.fetchrow(
         "INSERT INTO orders (customer_name, customer_phone, customer_address, items, total, payment_method, notes, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
         customer_name, customer_phone, customer_address, items, total, payment_method, notes, now, now,
     )
-    return {"success": True, "order_id": row["id"]}
+    order_id = row["id"]
+
+    # Stock stays untouched here — the owner adjusts it manually from the admin
+    # panel when changing order status, so auto-decrement would double-count.
+    codes = sorted(set(c.upper() for c in _re.findall(r'(?i)(?:FP|TP|FD|TD)\d+', items)))
+
+    from src.notifications import send_whatsapp_text
+    public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
+    parts = [
+        f"🛒 ახალი შეკვეთა #{order_id}!",
+        f"👤 {customer_name}",
+        f"📱 {customer_phone}",
+        f"📍 {customer_address}",
+    ]
+    if codes:
+        parts.append(f"🏷️ {', '.join(codes)}")
+    parts.extend([
+        f"📦 {items}",
+        f"💰 {total}₾",
+        "",
+        f"📋 ადმინ პანელი:\n{public_url}/admin",
+    ])
+    await send_whatsapp_text("\n".join(parts))
+
+    return {
+        "success": True,
+        "order_id": order_id,
+        "codes": codes,
+    }
 
 
 async def notify_owner(reason: str, customer_name: str = "", customer_phone: str = "", details: str = "", conversation_id: str = "") -> dict:
@@ -141,9 +200,12 @@ async def notify_owner(reason: str, customer_name: str = "", customer_phone: str
                 # Only add confirm/deny links for order-related notifications
                 _needs_confirm = any(kw in reason.lower() for kw in ("შეკვეთა", "გადახდა", "ჩარიცხ", "order", "payment"))
                 if public_url and conversation_id and _needs_confirm:
+                    from src.webhooks.whatsapp import build_confirm_url, create_confirm_token
+                    confirm_url = build_confirm_url("owner-confirm", await create_confirm_token(conversation_id, "owner-confirm"))
+                    deny_url = build_confirm_url("owner-deny", await create_confirm_token(conversation_id, "owner-deny"))
                     msg_parts.append("")
-                    msg_parts.append(f"✅ ვადასტურებ:\n{public_url}/api/owner-confirm/{conversation_id}")
-                    msg_parts.append(f"❌ არ ვადასტურებ:\n{public_url}/api/owner-deny/{conversation_id}")
+                    msg_parts.append(f"✅ ვადასტურებ:\n{confirm_url}")
+                    msg_parts.append(f"❌ არ ვადასტურებ:\n{deny_url}")
 
                 await client.post(wa_url, headers=headers, json={
                     "messaging_product": "whatsapp", "to": owner_number,
@@ -168,12 +230,13 @@ async def search_knowledge(query: str) -> dict:
 
 # Pending customer photos: conversation_id -> image_bytes
 _pending_photos: dict[str, bytes] = {}
+# AI match hints: conversation_id -> hint text
+_ai_hints: dict[str, str] = {}
 
 
 async def forward_photo_to_owner(size: str, conversation_id: str = "") -> dict:
-    """Forward customer's pending photo to owner via WhatsApp with confirm/deny links."""
-    import logging
-    from src.notifications import send_whatsapp_image
+    """Forward customer's pending photo to owner via WhatsApp with AI match + confirm/deny."""
+    from src.notifications import send_whatsapp_image, send_whatsapp_text
 
     print(f"[PHOTO] forward_photo_to_owner called: size={size}, conv_id={conversation_id}")
     print(f"[PHOTO] Pending photos keys: {list(_pending_photos.keys())}")
@@ -185,17 +248,45 @@ async def forward_photo_to_owner(size: str, conversation_id: str = "") -> dict:
 
     print(f"[PHOTO] Photo found: {len(photo_bytes)} bytes")
 
+    from src.webhooks.whatsapp import build_confirm_url, create_confirm_token
     public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
-    confirm_url = f"{public_url}/api/photo-confirm/{conversation_id}"
-    deny_url = f"{public_url}/api/photo-deny/{conversation_id}"
-
+    confirm_url = build_confirm_url("photo-confirm", await create_confirm_token(conversation_id, "photo-confirm"))
+    deny_url = build_confirm_url("photo-deny", await create_confirm_token(conversation_id, "photo-deny"))
     admin_url = f"{public_url}/admin"
-    sent = await send_whatsapp_image(
-        photo_bytes,
-        caption=f"📷 კლიენტი ეძებს ამ მოდელს, {size} ზომაში.\n\n✅ გვაქვს:\n{confirm_url}\n\n❌ არ გვაქვს:\n{deny_url}\n\n📋 ადმინ პანელი:\n{admin_url}",
-    )
 
-    print(f"[PHOTO] WhatsApp send result: {sent}")
+    # Extract AI hint (now structured dict)
+    ai_data = _ai_hints.pop(conversation_id, None)
+    ai_hint_text = ""
+    ai_product_url = ""
+    if isinstance(ai_data, dict):
+        ai_hint_text = ai_data.get("text", "")
+        ai_product_url = ai_data.get("image_url", "")
+    elif isinstance(ai_data, str):
+        ai_hint_text = ai_data
+
+    # 1. Send customer's photo with AI recommendation + confirm/deny
+    caption = (
+        f"📷 კლიენტი ეძებს ამ მოდელს, {size} ზომაში.{ai_hint_text}\n\n"
+        f"✅ გვაქვს:\n{confirm_url}\n\n"
+        f"❌ არ გვაქვს:\n{deny_url}\n\n"
+        f"📋 ადმინ პანელი:\n{admin_url}"
+    )
+    sent = await send_whatsapp_image(photo_bytes, caption=caption)
+    print(f"[PHOTO] WhatsApp customer photo sent: {sent}")
+
+    # 2. If AI matched, also send the AI-recommended product photo so owner can visually compare
+    if ai_product_url:
+        try:
+            async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+                resp = await client.get(ai_product_url)
+                if resp.status_code == 200:
+                    await send_whatsapp_image(
+                        resp.content,
+                        caption=f"🤖 AI-ის რეკომენდაცია ↑ შეადარე კლიენტის ფოტოს",
+                    )
+                    print(f"[PHOTO] AI recommendation photo also sent")
+        except Exception as e:
+            print(f"[PHOTO] Failed to send AI recommendation photo: {e}")
 
     # Clean up
     _pending_photos.pop(conversation_id, None)
@@ -206,13 +297,14 @@ async def forward_photo_to_owner(size: str, conversation_id: str = "") -> dict:
 SUPPORT_TOOLS = [
     Tool(
         name="check_inventory",
-        description="მარაგის შემოწმება. ფილტრავს მოდელით, ზომით, ან ტეგებით/ფერით.",
+        description="მარაგის შემოწმება. ფილტრავს მოდელით, ზომით, ან ტეგებით/ფერით. on_sale=true — მხოლოდ ფასდაკლებული პროდუქტები.",
         parameters={
             "type": "object",
             "properties": {
                 "model": {"type": "string", "description": "'ფხრიწიანი' ან 'თასმიანი'"},
                 "size": {"type": "string", "description": "'პატარა' ან 'დიდი'"},
                 "search": {"type": "string", "description": "ძიება ფერით ან აღწერით"},
+                "on_sale": {"type": "boolean", "description": "true — მხოლოდ ფასდაკლებული პროდუქტები (აქცია)"},
             },
             "required": [],
         },
@@ -277,16 +369,18 @@ SUPPORT_TOOLS = [
         },
         handler=search_knowledge,
     ),
-    Tool(
-        name="forward_photo_to_owner",
-        description="კლიენტის ფოტო მფლობელს გადაუგზავნე WhatsApp-ზე. მფლობელი გადაწყვეტს მარაგშია თუ არა. გამოიძახე მხოლოდ მას შემდეგ რაც კლიენტმა ზომა აირჩია.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "size": {"type": "string", "description": "'პატარა' ან 'დიდი'"},
-            },
-            "required": ["size"],
-        },
-        handler=forward_photo_to_owner,
-    ),
+    # DISABLED — AI photo matching handles this automatically now.
+    # Payment screenshot confirmation still works via send_whatsapp_image in facebook.py.
+    # Tool(
+    #     name="forward_photo_to_owner",
+    #     description="კლიენტის ფოტო მფლობელს გადაუგზავნე WhatsApp-ზე. მფლობელი გადაწყვეტს მარაგშია თუ არა. გამოიძახე მხოლოდ მას შემდეგ რაც კლიენტმა ზომა აირჩია.",
+    #     parameters={
+    #         "type": "object",
+    #         "properties": {
+    #             "size": {"type": "string", "description": "'პატარა' ან 'დიდი'"},
+    #         },
+    #         "required": ["size"],
+    #     },
+    #     handler=forward_photo_to_owner,
+    # ),
 ]

@@ -54,3 +54,8 @@ htmlcov/
 *.egg
 MANIFEST
 .playwright-mcp/
+secrets/
+
+# Playwright debug screenshots
+*.png
+test_photos/

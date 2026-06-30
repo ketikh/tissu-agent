@@ -1,0 +1,6 @@
+sentence-transformers
+Pillow
+fastapi
+uvicorn
+httpx
+rembg[cpu]

@@ -1,0 +1,513 @@
+"""Public read API for the Tissu website (and any other external storefront).
+
+The Tissu storefront pulls its product grid from here. The API key that
+comes in via ``X-API-Key`` resolves to a tenant (via the api_keys table)
+and the endpoints only return products owned by that tenant — so when a
+second shop plugs their own site into this backend, each storefront
+automatically sees only its own catalog.
+
+The response shape is the source of truth and the website depends on it
+verbatim. Keep changes backward-compatible: add new optional fields
+rather than renaming or removing existing ones.
+"""
+from __future__ import annotations
+
+import json
+import re
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+
+from src.db import (
+    DEFAULT_TENANT_ID, get_db, get_site_sections,
+    list_necklace_options, get_necklace_base_price,
+    list_gallery_photos,
+    list_product_gallery, list_product_gallery_for_ids,
+    list_reviews,
+    size_variant_map_for_ids,
+)
+
+
+router = APIRouter(prefix="/api/storefront", tags=["storefront"])
+
+# Lightweight alias router — exposes a minimal /api/products endpoint that
+# any external site can hit without learning our full schema. Returns a
+# flat array with just the four fields a product card needs.
+simple_router = APIRouter(prefix="/api", tags=["products"])
+
+# The Tissu website renders six sections. We map every internal category
+# slug into one of these six so the frontend can filter by stable names
+# without caring about legacy slugs. Unknown categories pass through
+# unchanged — the storefront falls back to a "Other" section for those.
+CATEGORY_ALIASES: dict[str, str] = {
+    "bag": "pouch",           # legacy slug — kept for backwards compat
+    "laptop-cases": "pouch",  # new canonical slug for laptop pouches
+    "pouch": "pouch",
+    "laptop": "laptop",
+    "tote": "tote",
+    "kidsbackpack": "kidsbackpack",
+    "apron": "apron",
+    "necklace": "necklace",
+}
+
+PUBLIC_CATEGORIES: frozenset[str] = frozenset(CATEGORY_ALIASES.values())
+
+STOREFRONT_CACHE = "s-maxage=60, stale-while-revalidate=300"
+CURRENCY = "GEL"
+
+
+def _tenant_id(request: Request) -> str:
+    """Every /api/* request comes through APIKeyMiddleware which stashes
+    the resolved tenant on request.state. Fall back to the default
+    tenant for defensiveness — the middleware always sets this."""
+    return getattr(request.state, "tenant_id", DEFAULT_TENANT_ID)
+
+
+def _map_category(slug: str | None) -> str:
+    """Normalize an internal category slug to the public enum. Unknown
+    slugs pass through so new categories added by the owner still surface
+    to the storefront without a code change."""
+    if not slug:
+        return "pouch"
+    return CATEGORY_ALIASES.get(slug, slug)
+
+
+_HEX_RE = re.compile(r'^#?[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?$')
+
+
+def _is_hex_token(t: str) -> bool:
+    return bool(_HEX_RE.match(t.strip()))
+
+
+def _parse_tags(raw: Any) -> list[str]:
+    """Inventory.tags is a free-form text column — in practice either a
+    comma-separated string, a JSON array, or empty. Normalize to a list
+    of trimmed, non-empty strings. HEX colour tokens (e.g. #989567) are
+    stripped out — they are stored alongside tags for the admin's banner
+    colour picker but should never appear as public filter chips."""
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        return [str(t).strip() for t in raw if str(t).strip() and not _is_hex_token(str(t))]
+    s = str(raw).strip()
+    if not s:
+        return []
+    # Try JSON first — handles '["new", "sale"]'.
+    if s.startswith("[") and s.endswith("]"):
+        try:
+            parsed = json.loads(s)
+            if isinstance(parsed, list):
+                return [str(t).strip() for t in parsed if str(t).strip() and not _is_hex_token(str(t))]
+        except Exception:
+            pass
+    # Fallback: comma-separated.
+    return [t.strip() for t in s.split(",") if t.strip() and not _is_hex_token(t.strip())]
+
+
+def _effective_price(row: dict) -> float:
+    """Return the price the customer actually pays: sale_price when the
+    product is on sale, otherwise the regular price."""
+    if row.get("on_sale") and row.get("sale_price"):
+        try:
+            sp = float(row["sale_price"])
+            if sp > 0:
+                return sp
+        except (TypeError, ValueError):
+            pass
+    try:
+        return float(row.get("price") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _serialize(
+    row: dict,
+    gallery_images: list[str] | None = None,
+    category_labels: dict[str, dict] | None = None,
+    size_sibling: dict | None = None,
+) -> dict:
+    """Turn an inventory row into the public response shape.
+
+    ``gallery_images`` is the pre-fetched lookbook for this product. Pass
+    an empty list (or None — coerced to []) when the product has no
+    lifestyle photos. The website checks for a non-empty array to decide
+    whether to render the "On model" section.
+
+    ``category_labels`` is ``{slug: {name_ka, name_en}}`` so the response
+    can carry the human-readable filter chip text inline. The site falls
+    back to the slug when a label is missing.
+    """
+    stock = int(row.get("stock") or 0)
+    effective = _effective_price(row)
+    # original_price exposes the pre-discount number so the storefront
+    # can render a strike-through. Null when the product isn't on sale
+    # (so the UI can simply check for null to decide whether to render).
+    original_price = None
+    if row.get("on_sale"):
+        try:
+            base = float(row.get("price") or 0)
+            if base > 0 and base != effective:
+                original_price = base
+        except (TypeError, ValueError):
+            pass
+    description = row.get("description")
+    if description is not None:
+        description = str(description).strip() or None
+    # Storefront name resolution: explicit product_name first (owner can
+    # set a marketing label like "ბავშვის რანცი"); if blank, build one
+    # from model + size; final fallback is the product code so the card
+    # is never nameless. English variant gets the same chain; if the
+    # operator hasn't set an English name yet, it falls back to the
+    # Georgian one so the site never renders an empty label.
+    explicit_name = (row.get("product_name") or "").strip()
+    explicit_name_en = (row.get("product_name_en") or "").strip()
+    model_part = (row.get("model") or "").strip()
+    size_part = (row.get("size") or "").strip()
+    fallback_name = " ".join(p for p in (model_part, size_part) if p).strip()
+    resolved_name = explicit_name or fallback_name or (row.get("code") or "")
+    resolved_name_en = explicit_name_en or resolved_name
+    return {
+        "id": str(row["id"]),
+        "code": row.get("code") or "",
+        "name": resolved_name,
+        "name_ka": resolved_name,
+        "name_en": resolved_name_en,
+        "model": row.get("model") or "",
+        "size": row.get("size") or "",
+        "color": row.get("color") or "",
+        "description": description,
+        "price": effective,
+        "original_price": original_price,
+        "currency": CURRENCY,
+        "stock": stock,
+        "in_stock": stock > 0,
+        "image_front": row.get("image_url") or "",
+        "image_back": row.get("image_url_back") or "",
+        "category": _map_category(row.get("category")),
+        "category_slug": row.get("category") or "",
+        "category_name_ka": (
+            (category_labels or {}).get(row.get("category") or "", {}).get("name_ka")
+            or row.get("category") or ""
+        ),
+        "category_name_en": (
+            (category_labels or {}).get(row.get("category") or "", {}).get("name_en")
+            or ""
+        ),
+        "tags": _parse_tags(row.get("tags")),
+        "gallery_images": list(gallery_images or []),
+        "size_sibling": size_sibling,
+        "updated_at": row.get("updated_at") or row.get("created_at") or "",
+    }
+
+
+async def _fetch_category_labels(tenant_id: str) -> dict[str, dict]:
+    """Return ``{slug: {name_ka, name_en}}`` for every category this
+    tenant owns. Used to enrich product responses inline so the
+    storefront doesn't need a second round-trip just to label filter
+    chips."""
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT slug, name, name_en FROM categories WHERE tenant_id = $1",
+        tenant_id,
+    )
+    return {
+        r["slug"]: {
+            "name_ka": r["name"] or "",
+            "name_en": r["name_en"] or "",
+        }
+        for r in rows
+    }
+
+
+@router.get("/health")
+async def storefront_health(response: Response):
+    """Cheap liveness check the storefront can hit without a DB round-trip.
+    Returns no tenant-scoped data so it's safe to cache aggressively at
+    the edge."""
+    response.headers["Cache-Control"] = STOREFRONT_CACHE
+    return {"ok": True}
+
+
+@router.get("/products")
+async def list_products(
+    request: Request,
+    response: Response,
+    include_out_of_stock: bool = False,
+    category: str = "",
+    tenant_id: str = Depends(_tenant_id),
+):
+    """Return every product available on the storefront for this tenant.
+
+    Defaults to in-stock only; pass ``?include_out_of_stock=true`` to
+    include sold-out rows (useful for a "back-in-soon" section). The
+    optional ``?category=`` filter uses the *public* enum (pouch,
+    laptop, …), not the internal slug.
+    """
+    pool = await get_db()
+
+    sql = "SELECT * FROM inventory WHERE tenant_id = $1"
+    params: list = [tenant_id]
+    idx = 2
+    if not include_out_of_stock:
+        sql += " AND stock > 0"
+    if category:
+        # Translate the public enum back to the internal slug(s) so
+        # tenant-specific legacy slugs (e.g. 'bag' → 'pouch') match.
+        internal_slugs = [
+            slug for slug, public in CATEGORY_ALIASES.items()
+            if public == category
+        ] or [category]
+        sql += f" AND category = ANY(${idx}::text[])"
+        params.append(internal_slugs)
+        idx += 1
+    sql += " ORDER BY category, code, id"
+
+    rows = await pool.fetch(sql, *params)
+    rows = [dict(r) for r in rows]
+    # Batch-fetch lookbook photos for every product in this page so the
+    # response includes them without an N+1 query loop. Category labels
+    # come from a single query keyed by slug.
+    gallery_by_id = await list_product_gallery_for_ids(
+        tenant_id, [r["id"] for r in rows]
+    )
+    category_labels = await _fetch_category_labels(tenant_id)
+    sibling_map = await size_variant_map_for_ids(
+        tenant_id, [r["id"] for r in rows]
+    )
+    products = [
+        _serialize(
+            r,
+            gallery_images=gallery_by_id.get(r["id"], []),
+            category_labels=category_labels,
+            size_sibling=sibling_map.get(r["id"]),
+        )
+        for r in rows
+    ]
+    response.headers["Cache-Control"] = STOREFRONT_CACHE
+    return {"products": products, "count": len(products)}
+
+
+@router.get("/products/{product_id}")
+async def get_product(
+    product_id: str,
+    request: Request,
+    response: Response,
+    tenant_id: str = Depends(_tenant_id),
+):
+    """Return a single product by its stable id. 404s across tenants so a
+    storefront operator can't probe other shops' inventory by guessing
+    numeric ids."""
+    try:
+        id_int = int(product_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="not found")
+
+    pool = await get_db()
+    row = await pool.fetchrow(
+        "SELECT * FROM inventory WHERE id = $1 AND tenant_id = $2",
+        id_int, tenant_id,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="not found")
+
+    gallery = await list_product_gallery(tenant_id, inventory_id=id_int)
+    category_labels = await _fetch_category_labels(tenant_id)
+    sibling_map = await size_variant_map_for_ids(tenant_id, [id_int])
+    response.headers["Cache-Control"] = STOREFRONT_CACHE
+    return _serialize(
+        dict(row),
+        gallery_images=[g["image_url"] for g in gallery],
+        category_labels=category_labels,
+        size_sibling=sibling_map.get(id_int),
+    )
+
+
+_VALID_PAGES = frozenset({"home", "about", "faq", "shop", "contact"})
+
+
+@router.get("/content/{page}")
+async def get_site_content(
+    page: str,
+    request: Request,
+    response: Response,
+    tenant_id: str = Depends(_tenant_id),
+):
+    """Return CMS content sections for a page.
+
+    The website calls this to replace its hardcoded copy with owner-edited
+    text.  If a section is missing in the DB the frontend falls back to its
+    built-in defaults, so partial edits are safe.
+    """
+    if page not in _VALID_PAGES:
+        raise HTTPException(status_code=404, detail="page not found")
+
+    sections = await get_site_sections(tenant_id, page)
+    updated_at = max((s["updated_at"] for s in sections), default=None)
+
+    response.headers["Cache-Control"] = STOREFRONT_CACHE
+    return {
+        "page": page,
+        "sections": [
+            {
+                "section": s["section"],
+                "position": s["position"],
+                "payload": s["payload"],
+            }
+            for s in sections
+        ],
+        "updated_at": updated_at,
+    }
+
+
+@simple_router.get("/products")
+async def list_products_simple(
+    request: Request,
+    response: Response,
+    tenant_id: str = Depends(_tenant_id),
+):
+    """Minimal product list — flat array with just the four fields a card
+    needs. For richer fields use ``/api/storefront/products``."""
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT id, product_name, image_url, stock "
+        "FROM inventory WHERE tenant_id = $1 AND stock > 0 "
+        "ORDER BY category, code, id",
+        tenant_id,
+    )
+    response.headers["Cache-Control"] = STOREFRONT_CACHE
+    return [
+        {
+            "id": r["id"],
+            "name": r["product_name"] or "",
+            "image_url": r["image_url"] or "",
+            "in_stock": (r["stock"] or 0) > 0,
+        }
+        for r in rows
+    ]
+
+
+@router.get("/necklace-options")
+async def storefront_necklace_options(
+    request: Request,
+    response: Response,
+    tenant_id: str = Depends(_tenant_id),
+):
+    """Public list of necklace customisation options the website shows
+    to customers when they pick a fabric + charm. Active only — inactive
+    rows stay invisible to the public.
+
+    Response shape:
+        {
+          "base_price": 19,
+          "fabrics": [{ id, name, image_url }],
+          "charms":  [{ id, name, image_url, extra_price, variants }]
+        }
+
+    `extra_price` is added on top of `base_price` if the customer picks
+    that charm. `variants` lets one photo represent multiple sub-options
+    (e.g. red vs. black heart); empty array when there are no sub-options.
+    """
+    fabrics = await list_necklace_options(tenant_id, kind="fabric", include_inactive=False)
+    charms = await list_necklace_options(tenant_id, kind="charm", include_inactive=False)
+    base_price = await get_necklace_base_price(tenant_id)
+
+    def _shape_fabric(r):
+        return {"id": r["id"], "name": r.get("name") or "", "image_url": r["image_url"]}
+
+    def _shape_charm(r):
+        return {
+            "id": r["id"],
+            "name": r.get("name") or "",
+            "image_url": r["image_url"],
+            "extra_price": float(r.get("extra_price") or 0),
+            "variants": r.get("variants") or [],
+        }
+
+    response.headers["Cache-Control"] = STOREFRONT_CACHE
+    return {
+        "base_price": float(base_price),
+        "fabrics": [_shape_fabric(r) for r in fabrics],
+        "charms": [_shape_charm(r) for r in charms],
+    }
+
+
+@router.get("/categories")
+async def storefront_categories(
+    request: Request,
+    response: Response,
+    tenant_id: str = Depends(_tenant_id),
+):
+    """Public category list — drives the filter chips on the storefront.
+    Returns bilingual labels plus product counts so the UI can hide
+    empty categories without an extra query."""
+    pool = await get_db()
+    rows = await pool.fetch("""
+        SELECT c.slug, c.name, c.name_en, c.emoji, c.sort_order,
+               COALESCE(cnt.n, 0) AS count
+        FROM categories c
+        LEFT JOIN (
+            SELECT category, COUNT(*) AS n FROM inventory
+            WHERE tenant_id = $1 AND stock > 0
+            GROUP BY category
+        ) cnt ON cnt.category = c.slug
+        WHERE c.tenant_id = $1
+        ORDER BY c.sort_order ASC, c.name ASC
+    """, tenant_id)
+    response.headers["Cache-Control"] = STOREFRONT_CACHE
+    return [
+        {
+            "slug": r["slug"],
+            "name_ka": r["name"],
+            "name_en": r["name_en"] or "",
+            "emoji": r["emoji"],
+            "sort_order": int(r["sort_order"] or 0),
+            "count": int(r["count"] or 0),
+        }
+        for r in rows
+    ]
+
+
+@router.get("/reviews")
+async def storefront_reviews(
+    request: Request,
+    response: Response,
+    tenant_id: str = Depends(_tenant_id),
+):
+    """Public reviews list — sorted by position ascending, ready for the
+    storefront to render. Only includes fields the website actually needs."""
+    rows = await list_reviews(tenant_id)
+    response.headers["Cache-Control"] = STOREFRONT_CACHE
+    return [
+        {
+            "id": r["id"],
+            "name": r.get("name") or "",
+            "comment": r.get("comment") or "",
+            "photo_url": r.get("photo_url"),
+            "product_id": r.get("product_id"),
+        }
+        for r in rows
+    ]
+
+
+@router.get("/gallery")
+async def storefront_gallery(
+    request: Request,
+    response: Response,
+    tenant_id: str = Depends(_tenant_id),
+):
+    """Public lookbook — lifestyle photos that live outside the product
+    catalog. Returns a flat array sorted by position so the storefront
+    can render the strip without any post-processing."""
+    rows = await list_gallery_photos(tenant_id)
+    response.headers["Cache-Control"] = STOREFRONT_CACHE
+    return [
+        {
+            "id": r["id"],
+            "image_url": r["image_url"],
+            "caption": r.get("caption") or "",
+            "position": int(r.get("position") or 0),
+            "width": r.get("width"),
+            "height": r.get("height"),
+        }
+        for r in rows
+    ]

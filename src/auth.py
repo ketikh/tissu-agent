@@ -1,0 +1,400 @@
+"""API key + admin session authentication middleware.
+
+Every ``/api/*`` request is authenticated by EITHER a valid
+``X-API-Key`` header OR a valid ``admin_session`` cookie — whichever
+arrives first. The cookie path is what admin.html uses once the
+shop owner has logged in; the header path stays for external API
+clients (the storefront site, curl scripts, etc.).
+
+A small list of exemptions covers paths that cannot carry either:
+``/api/health`` (the task contract), ``/api/storefront/health``
+(public liveness probe), the Meta data-deletion callback (signed by
+Meta itself), and the owner-confirm / photo-confirm links that the
+shop owner opens from their phone after a WhatsApp notification.
+
+Key scopes:
+  - 'admin'      — unrestricted, every /api/* path
+  - 'storefront' — read-only, only /api/storefront/* paths
+"""
+from __future__ import annotations
+
+import os
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from src.db import (
+    DEFAULT_TENANT_ID, resolve_api_key, get_tenant,
+    update_tenant_status, get_admin_session_epoch,
+)
+from src.sessions import (
+    SESSION_COOKIE_NAME, CSRF_COOKIE_NAME,
+    SHORT_SESSION_SECONDS, LONG_SESSION_SECONDS,
+    load_session_token, verify_csrf_token,
+)
+
+
+# Methods that modify state and therefore need CSRF protection when
+# the caller is authenticated via session cookie. Bearer-authenticated
+# (X-API-Key) requests are exempt because browsers don't auto-attach
+# custom headers cross-origin.
+UNSAFE_METHODS: frozenset[str] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+# /admin/* POST targets that must stay CSRF-free because there is no
+# prior session to bind a token to (logging in, starting/finishing a
+# password reset, first-time activation).
+CSRF_EXEMPT_ADMIN_POSTS: frozenset[str] = frozenset({
+    "/admin/login",
+    "/admin/logout",
+    "/admin/stop-impersonation",
+    "/admin/forgot-password",
+    "/admin/reset-password",
+    "/admin/activate",
+})
+
+
+def _csrf_ok(request: Request, session_token: str) -> bool:
+    """Verify the X-CSRF-Token header matches the signed csrf cookie
+    that was issued alongside the session cookie. Both must be
+    present; neither alone is enough."""
+    header_token = request.headers.get("x-csrf-token", "")
+    cookie_token = request.cookies.get(CSRF_COOKIE_NAME, "")
+    if not header_token or not cookie_token:
+        return False
+    # The two must match bit-for-bit AND the cookie must still verify
+    # against the current session token. That way a stolen header+cookie
+    # pair from a different user can't be replayed after the session
+    # rotates on login.
+    if header_token != cookie_token:
+        return False
+    return verify_csrf_token(cookie_token, session_token)
+
+# Paths under /api/* that bypass the API key check.
+#
+# Rules:
+#   - exact match first (EXEMPT_EXACT)
+#   - then prefix match (EXEMPT_PREFIXES), used for /api/owner-confirm/<token>
+#     etc. where the token is part of the URL and varies per request.
+EXEMPT_EXACT: frozenset[str] = frozenset({
+    "/api/health",
+    "/api/storefront/health",
+    "/api/meta/data-deletion",
+})
+
+EXEMPT_PREFIXES: tuple[str, ...] = (
+    "/api/owner-confirm/",
+    "/api/owner-deny/",
+    "/api/photo-confirm/",
+    "/api/photo-deny/",
+)
+
+
+def _is_exempt(path: str) -> bool:
+    if path in EXEMPT_EXACT:
+        return True
+    return any(path.startswith(p) for p in EXEMPT_PREFIXES)
+
+
+class APIKeyMiddleware(BaseHTTPMiddleware):
+    """Reject /api/* requests that do not present a valid X-API-Key.
+
+    Also stashes the resolved tenant_id on ``request.state.tenant_id`` for
+    downstream handlers. Non-/api/* routes (the HTML pages, Meta webhooks
+    at /webhook and /wa-webhook, static assets) default to the single-shop
+    ``DEFAULT_TENANT_ID`` — useful for the Facebook Messenger webhook,
+    which is always the Tissu page in this deployment.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+
+        # Non-/api routes and exempt /api paths are always the default tenant.
+        if not path.startswith("/api/") or _is_exempt(path):
+            request.state.tenant_id = DEFAULT_TENANT_ID
+            return await call_next(request)
+
+        tenant_id: str | None = None
+        scope: str = "admin"
+        auth_source: str = ""
+
+        # Path 1 — X-API-Key header. External API clients use this.
+        provided = request.headers.get("x-api-key", "").strip()
+        if provided:
+            try:
+                hit = await resolve_api_key(provided)
+            except Exception:
+                hit = None
+            if hit is not None:
+                tenant_id, scope = hit
+                auth_source = "api_key"
+            else:
+                # Bootstrap path: env-var match pre-seed.
+                admin_env = os.environ.get("ADMIN_API_KEY", "").strip()
+                sf_env = os.environ.get("STOREFRONT_API_KEY", "").strip()
+                if admin_env and provided == admin_env:
+                    tenant_id = DEFAULT_TENANT_ID
+                    scope = "admin"
+                    auth_source = "api_key_env"
+                elif sf_env and provided == sf_env:
+                    tenant_id = DEFAULT_TENANT_ID
+                    scope = "storefront"
+                    auth_source = "api_key_env"
+
+        # Path 2 — admin session cookie. The admin HTML pages use this
+        # (browsers send it automatically on same-origin fetches). We
+        # accept it as admin-scoped for the current tenant, AND we
+        # require a matching CSRF token on unsafe methods because
+        # cookies are auto-attached cross-origin while custom headers
+        # aren't.
+        if tenant_id is None:
+            cookie = request.cookies.get(SESSION_COOKIE_NAME, "")
+            if cookie:
+                session = load_session_token(cookie, max_age_seconds=LONG_SESSION_SECONDS)
+                if session and "user_id" in session:
+                    if not await _session_epoch_ok(session):
+                        return JSONResponse(
+                            {"error": "session_revoked"},
+                            status_code=401,
+                        )
+                    if (request.method in UNSAFE_METHODS
+                            and not _csrf_ok(request, cookie)):
+                        return JSONResponse(
+                            {"error": "csrf_failed"},
+                            status_code=403,
+                        )
+                    tenant_id = session.get("tenant_id") or DEFAULT_TENANT_ID
+                    scope = "admin"
+                    auth_source = "session"
+                    request.state.admin_user_id = session["user_id"]
+                    # Impersonation flag — the super-admin "login as"
+                    # flow puts impersonator_id into the cookie. Kept
+                    # on request.state so handlers (and the
+                    # impersonation guard below) can react.
+                    if "impersonator_id" in session:
+                        request.state.impersonator_id = session["impersonator_id"]
+
+        if tenant_id is None:
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+        # Scope enforcement: storefront-scoped keys can only touch
+        # /api/storefront/* and /api/products (the public read endpoints).
+        # Admin-scoped keys can touch anything.
+        if scope == "storefront" and not (
+            path.startswith("/api/storefront/")
+            or path == "/api/products"
+            or path.startswith("/api/products/")
+        ):
+            return JSONResponse(
+                {"error": "forbidden", "reason": "key is read-only storefront scope"},
+                status_code=403,
+            )
+
+        # 'media' scope — the Pinterest / AI-content agent. Read access
+        # to the public product list (so it can pick an inventory_id to
+        # attach to) and full CRUD on the per-product lookbook so it can
+        # upload, reorder, and remove generated photos. Cannot touch
+        # inventory rows themselves, orders, settings, or anything else.
+        # We intentionally do NOT include /api/inventory because it
+        # exposes write endpoints (POST/PUT/DELETE) we don't want a
+        # third-party agent to call. /api/inspirations is read-only
+        # in this scope — the operator-uploaded reference photos the
+        # agent uses as visual inspiration when generating new designs.
+        if scope == "media" and not (
+            path.startswith("/api/storefront/")
+            or path == "/api/products"
+            or path.startswith("/api/products/")
+            or path == "/api/product-gallery"
+            or path.startswith("/api/product-gallery/")
+            or (path == "/api/inspirations" and request.method == "GET")
+        ):
+            return JSONResponse(
+                {"error": "forbidden", "reason": "key is media scope — limited to products read + product-gallery write + inspirations read"},
+                status_code=403,
+            )
+
+        # Suspended tenants are read/write blocked. We still allow
+        # health checks and the storefront (customers of the shop
+        # shouldn't see the frontend break when the shop falls behind
+        # on payment — that's a matter between operator and shop).
+        # Status code is 403 Forbidden per the Phase 1 contract.
+        # Phase 2: also auto-suspend any trial whose trial_ends_at
+        # has passed — that's the "10-day free trial" cutoff.
+        if tenant_id != DEFAULT_TENANT_ID and not (
+            path.startswith("/api/storefront/")
+            or path == "/api/products"
+            or path.startswith("/api/products/")
+        ):
+            try:
+                t = await get_tenant(tenant_id)
+            except Exception:
+                t = None
+            if t:
+                # Trial expiry → flip to suspended on first request
+                # past the deadline. Idempotent: once status is
+                # already 'suspended', the next branch handles it.
+                if (t.get("status") == "trial"
+                        and t.get("trial_ends_at")
+                        and not t.get("suspended_at")):
+                    if _trial_expired(t["trial_ends_at"]):
+                        try:
+                            await update_tenant_status(tenant_id, "suspended")
+                        except Exception:
+                            pass
+                        # Refresh local view so the lock-out below fires.
+                        t = {**t, "status": "suspended"}
+                if (t.get("status") == "suspended"
+                        or t.get("suspended_at") is not None):
+                    return JSONResponse(
+                        {"error": "account_suspended",
+                         "message": "Tenant account is suspended. Contact the platform operator."},
+                        status_code=403,
+                    )
+
+        request.state.tenant_id = tenant_id
+        request.state.api_key_scope = scope
+        request.state.auth_source = auth_source
+        return await call_next(request)
+
+
+# Paths under /admin/* that do NOT require a logged-in session (the
+# login flow itself, plus password-reset, plus logout, plus the
+# first-time activation link the super-admin sends to new customers).
+# Everything else under /admin/* redirects to /admin/login when
+# unauthenticated.
+ADMIN_PUBLIC_PATHS: frozenset[str] = frozenset({
+    "/admin/login",
+    "/admin/logout",
+    "/admin/forgot-password",
+    "/admin/reset-password",
+    "/admin/activate",
+    "/admin/suspended",
+})
+
+
+class AdminSessionMiddleware(BaseHTTPMiddleware):
+    """Gate HTML pages under /admin/* behind the session cookie.
+
+    If the visitor hits /admin, /admin/chat-test, etc. without a
+    valid session, redirect them to /admin/login with a flag so the
+    form can show the right message ("your session expired"). If they
+    have a valid session, attach user_id + tenant_id to request.state
+    so downstream handlers can show the user's name etc.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if not path.startswith("/admin"):
+            return await call_next(request)
+        # Exact-match public admin paths — login form, logout, the
+        # forgot-password routes which don't exist yet but will in
+        # commit 8. Matching as a startswith so /admin/reset-password
+        # with any query string works.
+        if (path in ADMIN_PUBLIC_PATHS
+                or path.startswith("/admin/reset-password")
+                or path.startswith("/admin/forgot-password")
+                or path.startswith("/admin/activate")):
+            return await call_next(request)
+
+        cookie = request.cookies.get(SESSION_COOKIE_NAME, "")
+        if cookie:
+            session = load_session_token(cookie, max_age_seconds=LONG_SESSION_SECONDS)
+            if session and "user_id" in session:
+                # Server-side revocation: any token whose epoch is
+                # older than the user's current session_epoch was
+                # invalidated by a password change or "logout all
+                # devices". Treat as expired → bounce to login.
+                if not await _session_epoch_ok(session):
+                    return _redirect_to_login()
+                # Admin HTML POST endpoints (e.g. a future settings form)
+                # get the same CSRF check. Login, logout, and password
+                # reset are exempt — they either predate the session or
+                # authenticate with their own one-time tokens.
+                if (request.method in UNSAFE_METHODS
+                        and path not in CSRF_EXEMPT_ADMIN_POSTS
+                        and not path.startswith("/admin/reset-password")
+                        and not path.startswith("/admin/forgot-password")
+                        and not _csrf_ok(request, cookie)):
+                    return JSONResponse(
+                        {"error": "csrf_failed"}, status_code=403,
+                    )
+                tenant_id = session.get("tenant_id") or DEFAULT_TENANT_ID
+                # Suspended tenants get bounced to the frozen page.
+                # Default tenant stays open even if somehow flipped to
+                # suspended (the super-admin lives there). Phase 2:
+                # also auto-suspend any trial whose 10-day window has
+                # closed before letting them load /admin.
+                if tenant_id != DEFAULT_TENANT_ID and path != "/admin/suspended":
+                    try:
+                        t = await get_tenant(tenant_id)
+                    except Exception:
+                        t = None
+                    if t:
+                        if (t.get("status") == "trial"
+                                and t.get("trial_ends_at")
+                                and not t.get("suspended_at")
+                                and _trial_expired(t["trial_ends_at"])):
+                            try:
+                                await update_tenant_status(tenant_id, "suspended")
+                            except Exception:
+                                pass
+                            return _redirect_to("/admin/suspended")
+                        if t.get("status") == "suspended":
+                            return _redirect_to("/admin/suspended")
+                request.state.admin_user_id = session["user_id"]
+                request.state.tenant_id = tenant_id
+                if "impersonator_id" in session:
+                    request.state.impersonator_id = session["impersonator_id"]
+                return await call_next(request)
+
+        # No / expired / tampered cookie → send them to the login form.
+        return JSONResponse(
+            status_code=302,
+            content=None,
+            headers={"location": "/admin/login?error=expired"},
+        ) if False else _redirect_to_login()
+
+
+async def _session_epoch_ok(session: dict) -> bool:
+    """Return True iff the session token's epoch matches the user's
+    current session_epoch in the DB. A None / missing epoch in the
+    token counts as 0 — old tokens issued before this column existed
+    stay valid until the user first bumps (e.g. by changing password).
+    Defensive on DB errors: a failed lookup keeps the session alive
+    rather than locking everyone out on a transient outage."""
+    user_id = session.get("user_id")
+    if not user_id:
+        return False
+    token_epoch = int(session.get("epoch") or 0)
+    try:
+        current = await get_admin_session_epoch(int(user_id))
+    except Exception:
+        return True
+    return token_epoch >= current
+
+
+def _trial_expired(trial_ends_at: str) -> bool:
+    """Return True iff the ISO timestamp ``trial_ends_at`` is in the
+    past. Defensive on parse errors — a garbled timestamp counts as
+    "not expired" so a single bad row can't lock everyone out."""
+    if not trial_ends_at:
+        return False
+    try:
+        from datetime import datetime as _dt
+        deadline = _dt.fromisoformat(trial_ends_at)
+        now = _dt.now(deadline.tzinfo)
+        return now > deadline
+    except Exception:
+        return False
+
+
+def _redirect_to_login():
+    """Small helper to avoid pulling RedirectResponse into auth.py
+    (keeps the middleware independent of FastAPI's response helpers
+    at module-import time)."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/admin/login?error=expired", status_code=302)
+
+
+def _redirect_to(url: str):
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=url, status_code=302)
