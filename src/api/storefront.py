@@ -40,7 +40,8 @@ simple_router = APIRouter(prefix="/api", tags=["products"])
 # without caring about legacy slugs. Unknown categories pass through
 # unchanged — the storefront falls back to a "Other" section for those.
 CATEGORY_ALIASES: dict[str, str] = {
-    "bag": "pouch",          # Tissu bags are laptop pouches
+    "bag": "pouch",           # legacy slug — kept for backwards compat
+    "laptop-cases": "pouch",  # new canonical slug for laptop pouches
     "pouch": "pouch",
     "laptop": "laptop",
     "tote": "tote",

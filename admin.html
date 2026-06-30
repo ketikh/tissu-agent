@@ -2273,8 +2273,13 @@
         }
     }
 
+    // Both the old 'bag' slug and the new 'laptop-cases' slug refer to the
+    // same product type — check both so existing DB rows (category='bag')
+    // still render correctly while the category slug is being migrated.
+    function isLaptopCat(slug) { return slug === 'bag' || slug === 'laptop-cases'; }
+
     let allOrders = [];
-    let activeCategory = 'bag';
+    let activeCategory = 'laptop-cases';
     let allCategories = [];
     let invQuery = '';
     let ordersQuery = '';
@@ -2389,7 +2394,7 @@
         }
         host.innerHTML = items.map(i => {
             const img = i.image_url ? (i.image_url.startsWith('http') ? i.image_url : API + i.image_url) : '';
-            const catDef = categoryBySlug(i.category || 'bag');
+            const catDef = categoryBySlug(i.category || 'laptop-cases');
             const sp = (i.sale_price !== null && i.sale_price !== undefined && i.sale_price > 0) ? i.sale_price : i.price;
             const hasSale = sp !== i.price && sp > 0;
             return `<div class="product-card" data-id="${i.id}">
@@ -2574,7 +2579,7 @@
             allCategories = d.categories || [];
         } catch (e) {
             allCategories = [
-                { slug: 'bag', name: 'ჩანთები', emoji: '💼', fields: [], count: 0 },
+                { slug: 'laptop-cases', name: 'ლეპტოპის ქეისები', emoji: '💼', fields: [], count: 0 },
             ];
         }
         renderSidebarCategories();
@@ -2667,7 +2672,7 @@
         document.getElementById('cat-slug').disabled = false;
         document.getElementById('cat-slug-label').style.display = '';
         document.getElementById('cat-slug').style.display = '';
-        document.getElementById('cat-delete-btn').style.display = (slug === 'bag' || slug === 'necklace') ? 'none' : 'inline-flex';
+        document.getElementById('cat-delete-btn').style.display = (isLaptopCat(slug) || slug === 'necklace') ? 'none' : 'inline-flex';
         document.getElementById('cat-save-btn').textContent = 'განახლება';
         const host = document.getElementById('cat-fields');
         host.innerHTML = '';
@@ -2760,7 +2765,7 @@
             closeAddCategoryModal();
             await loadCategories();
             // Fall back to bag if we deleted the active one.
-            switchCategory('bag', document.querySelector('.cat-item[data-category="bag"]'));
+            switchCategory('laptop-cases', document.querySelector('.cat-item[data-category="laptop-cases"]'));
         } catch (e) { await showAlert('შეცდომა: ' + e.message, { variant: 'error' }); }
     }
 
@@ -2898,7 +2903,8 @@
         // Main grid is scoped to the active category — switching via the
         // sidebar pill flips what the user is editing. Category counts in
         // the sidebar come from /api/categories (re-fetched on add/delete).
-        let items = allInventory.filter(i => (i.category || 'bag') === activeCategory);
+        let items = allInventory.filter(i => (i.category || 'laptop-cases') === activeCategory
+            || (isLaptopCat(activeCategory) && isLaptopCat(i.category || 'laptop-cases')));
         const hasBagFilters = items.some(i => i.model && i.model.trim());
         if (hasBagFilters) {
             if (filterModel) items = items.filter(i => i.model === filterModel);
@@ -2938,12 +2944,12 @@
         const cards = items.map(i => {
             const isSoldOut = i.stock === 0;
             const hasBack = i.image_url_back && i.image_url_back.length > 1;
-            const cat = i.category || 'bag';
+            const cat = i.category || 'laptop-cases';
             const catDef = categoryBySlug(cat);
             const bgColor = bgColorFromTags(i.tags);
             const attrs = (i.attrs && typeof i.attrs === 'object') ? i.attrs : (i.attrs ? (()=>{ try{return JSON.parse(i.attrs)}catch(_){return {}} })() : {});
             let attrBlock;
-            if (cat === 'bag') {
+            if (isLaptopCat(cat)) {
                 attrBlock = `
                     <div style="display:flex;gap:6px;margin-top:2px">
                         <select style="flex:1" onchange="setLabel(${i.id},'model',this.value)">
@@ -2968,8 +2974,8 @@
             // categories start with a single slot. Extra angles live on
             // the product_extra_photos table and come back via i.angles.
             const angles = Array.isArray(i.angles) ? i.angles : [];
-            const frontLabel = cat === 'bag' ? 'გარე' : 'ფოტო';
-            const backLabel  = cat === 'bag' ? 'შიდა' : 'რაკურსი 2';
+            const frontLabel = isLaptopCat(cat) ? 'გარე' : 'ფოტო';
+            const backLabel  = isLaptopCat(cat) ? 'შიდა' : 'რაკურსი 2';
 
             const slots = [];
             // Slot 0: image_url
@@ -2993,7 +2999,7 @@
             // dismissed the empty back slot for this specific product) or
             // when a non-bag product already has a back photo uploaded.
             const backHidden = !hasBack && isSlotHidden(i.id, 'back');
-            if ((cat === 'bag' && !backHidden) || hasBack) {
+            if ((isLaptopCat(cat) && !backHidden) || hasBack) {
                 slots.push(hasBack
                     ? `<div class="photo-slot filled"
                             ondragover="event.preventDefault()" ondragenter="slotEnter(event)" ondragleave="slotLeave(event)"
@@ -4008,7 +4014,7 @@
             ]);
             const inv = await invR.json();
             const ln = await lnR.json();
-            svBagInventory = (inv.inventory || []).filter(i => (i.category || 'bag') === 'bag');
+            svBagInventory = (inv.inventory || []).filter(i => isLaptopCat(i.category || 'laptop-cases'));
             svLinks = ln.links || [];
             svSelectedSmall = null;
             svSelectedBig = null;
@@ -4508,8 +4514,8 @@
         const fd = new FormData();
         fd.append('category', activeCategory);
 
-        if (activeCategory === 'bag') {
-            // Bags have only two sizes with fixed prices, so a tiny prompt
+        if (isLaptopCat(activeCategory)) {
+            // Laptop cases have only two sizes with fixed prices, so a tiny prompt
             // is still the fastest path here — no free-text needed.
             const model = prompt('მოდელი?\n1 = ფხრიწიანი\n2 = თასმიანი', '1');
             if (!model) return;
