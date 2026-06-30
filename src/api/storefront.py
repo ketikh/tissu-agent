@@ -13,6 +13,7 @@ rather than renaming or removing existing ones.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -70,14 +71,23 @@ def _map_category(slug: str | None) -> str:
     return CATEGORY_ALIASES.get(slug, slug)
 
 
+_HEX_RE = re.compile(r'^#?[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?$')
+
+
+def _is_hex_token(t: str) -> bool:
+    return bool(_HEX_RE.match(t.strip()))
+
+
 def _parse_tags(raw: Any) -> list[str]:
     """Inventory.tags is a free-form text column — in practice either a
     comma-separated string, a JSON array, or empty. Normalize to a list
-    of trimmed, non-empty strings."""
+    of trimmed, non-empty strings. HEX colour tokens (e.g. #989567) are
+    stripped out — they are stored alongside tags for the admin's banner
+    colour picker but should never appear as public filter chips."""
     if not raw:
         return []
     if isinstance(raw, list):
-        return [str(t).strip() for t in raw if str(t).strip()]
+        return [str(t).strip() for t in raw if str(t).strip() and not _is_hex_token(str(t))]
     s = str(raw).strip()
     if not s:
         return []
@@ -86,11 +96,11 @@ def _parse_tags(raw: Any) -> list[str]:
         try:
             parsed = json.loads(s)
             if isinstance(parsed, list):
-                return [str(t).strip() for t in parsed if str(t).strip()]
+                return [str(t).strip() for t in parsed if str(t).strip() and not _is_hex_token(str(t))]
         except Exception:
             pass
     # Fallback: comma-separated.
-    return [t.strip() for t in s.split(",") if t.strip()]
+    return [t.strip() for t in s.split(",") if t.strip() and not _is_hex_token(t.strip())]
 
 
 def _effective_price(row: dict) -> float:

@@ -2899,7 +2899,8 @@
         // sidebar pill flips what the user is editing. Category counts in
         // the sidebar come from /api/categories (re-fetched on add/delete).
         let items = allInventory.filter(i => (i.category || 'bag') === activeCategory);
-        if (activeCategory === 'bag') {
+        const hasBagFilters = items.some(i => i.model && i.model.trim());
+        if (hasBagFilters) {
             if (filterModel) items = items.filter(i => i.model === filterModel);
             if (filterSize) items = items.filter(i => i.size.includes(filterSize));
         }
@@ -2926,7 +2927,7 @@
         // Hide the bag-only filter chips on non-bag categories; keep the
         // filter-bar itself visible so the inventory search stays available.
         document.querySelectorAll('#tab-inventory .inv-bag-filters > *').forEach(el => {
-            el.style.display = activeCategory === 'bag' ? '' : 'none';
+            el.style.display = hasBagFilters ? '' : 'none';
         });
         // Clear the search input's DOM value when switching categories so
         // it matches the (just-reset) invQuery state.
