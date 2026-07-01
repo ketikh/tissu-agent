@@ -1484,7 +1484,8 @@
 
                     <div class="ins-tabs">
                         <button class="ins-tab active" data-category="necklace" onclick="switchInspirationCat('necklace', this)">📿 ყელსაბამები <span id="ins-count-necklace" style="color:#999;margin-left:4px">0</span></button>
-                        <button class="ins-tab" data-category="bag" onclick="switchInspirationCat('bag', this)">💼 ჩანთები <span id="ins-count-bag" style="color:#999;margin-left:4px">0</span></button>
+                        <button class="ins-tab" data-category="bag" onclick="switchInspirationCat('bag', this)">💼 ლეპტოპის ჩანთები <span id="ins-count-bag" style="color:#999;margin-left:4px">0</span></button>
+                        <button class="ins-tab" data-category="totebag" onclick="switchInspirationCat('totebag', this)">🛍️ ტოტ ბეგები <span id="ins-count-totebag" style="color:#999;margin-left:4px">0</span></button>
                     </div>
 
                     <div class="ins-upload-form">
@@ -4275,10 +4276,10 @@
         inspirationsState.forEach(p => {
             counts[p.category] = (counts[p.category] || 0) + 1;
         });
-        const necklaceEl = document.getElementById('ins-count-necklace');
-        const bagEl = document.getElementById('ins-count-bag');
-        if (necklaceEl) necklaceEl.textContent = counts.necklace || 0;
-        if (bagEl) bagEl.textContent = counts.bag || 0;
+        ['necklace', 'bag', 'totebag'].forEach(cat => {
+            const el = document.getElementById('ins-count-' + cat);
+            if (el) el.textContent = counts[cat] || 0;
+        });
     }
 
     function switchInspirationCat(cat, btn) {
@@ -4876,40 +4877,61 @@
         allInventory.forEach(i => {
             const cat = i.category || 'laptop-cases';
             let key;
-            if (isLaptopCat(cat)) {
+            if (cat === 'totebag') {
+                // Each tote bag is individual — different costs per item
+                key = '__totebag_' + i.id;
+                if (!map[key]) {
+                    map[key] = {
+                        key, emoji: '🛍️',
+                        label: i.code || i.name || ('ტოტ ბეგი #' + i.id),
+                        priceLabel: i.price + ' ₾ გასაყიდი ფასი',
+                        price: i.price, items: [],
+                        cost_material:  parseFloat(i.cost_material  || 0),
+                        cost_tailor:    parseFloat(i.cost_tailor    || 0),
+                        cost_packaging: parseFloat(i.cost_packaging || 0),
+                    };
+                }
+                map[key].items.push(i);
+            } else if (isLaptopCat(cat)) {
                 const big = i.size && i.size.includes('დიდი');
                 key = big ? '__laptop_big' : '__laptop_small';
+                if (!map[key]) {
+                    map[key] = { key, emoji: '💼',
+                        label: 'ლეპტოპის ქეისი · ' + (big ? 'დიდი' : 'პატარა'),
+                        priceLabel: i.price + ' ₾ გასაყიდი ფასი',
+                        price: i.price, items: [],
+                        cost_material: 0, cost_tailor: 0, cost_packaging: 0 };
+                }
+                map[key].items.push(i);
+                if (map[key].items.length === 1) {
+                    map[key].cost_material  = parseFloat(i.cost_material  || 0);
+                    map[key].cost_tailor    = parseFloat(i.cost_tailor    || 0);
+                    map[key].cost_packaging = parseFloat(i.cost_packaging || 0);
+                }
             } else {
                 key = cat;
-            }
-            if (!map[key]) {
-                const catDef = categoryBySlug(cat);
-                let label, emoji, priceLabel;
-                if (isLaptopCat(cat)) {
-                    const big = i.size && i.size.includes('დიდი');
-                    label = 'ლეპტოპის ქეისი · ' + (big ? 'დიდი' : 'პატარა');
-                    emoji = '💼';
-                    priceLabel = i.price + ' ₾ გასაყიდი ფასი';
-                } else {
-                    label = catDef.name || cat;
-                    emoji = catDef.emoji || '📦';
-                    priceLabel = i.price + ' ₾';
+                if (!map[key]) {
+                    const catDef = categoryBySlug(cat);
+                    map[key] = { key, label: catDef.name || cat, emoji: catDef.emoji || '📦',
+                        priceLabel: i.price + ' ₾', price: i.price, items: [],
+                        cost_material: 0, cost_tailor: 0, cost_packaging: 0 };
                 }
-                map[key] = { key, label, emoji, priceLabel, price: i.price, items: [],
-                    cost_material: 0, cost_tailor: 0, cost_packaging: 0 };
-            }
-            map[key].items.push(i);
-            if (map[key].items.length === 1) {
-                map[key].cost_material  = parseFloat(i.cost_material  || 0);
-                map[key].cost_tailor    = parseFloat(i.cost_tailor    || 0);
-                map[key].cost_packaging = parseFloat(i.cost_packaging || 0);
+                map[key].items.push(i);
+                if (map[key].items.length === 1) {
+                    map[key].cost_material  = parseFloat(i.cost_material  || 0);
+                    map[key].cost_tailor    = parseFloat(i.cost_tailor    || 0);
+                    map[key].cost_packaging = parseFloat(i.cost_packaging || 0);
+                }
             }
         });
-        // Sort: laptop small first, then big, then others
-        const order = ['__laptop_small', '__laptop_big'];
+        // Sort: laptop small, laptop big, other categories, then individual tote bags
+        const laptopOrder = ['__laptop_small', '__laptop_big'];
+        const toteKeys = Object.keys(map).filter(k => k.startsWith('__totebag_'));
+        const otherKeys = Object.keys(map).filter(k => !laptopOrder.includes(k) && !k.startsWith('__totebag_'));
         return [
-            ...order.filter(k => map[k]).map(k => map[k]),
-            ...Object.values(map).filter(g => !order.includes(g.key)),
+            ...laptopOrder.filter(k => map[k]).map(k => map[k]),
+            ...otherKeys.map(k => map[k]),
+            ...toteKeys.map(k => map[k]),
         ];
     }
 
