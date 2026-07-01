@@ -599,6 +599,65 @@
             .user-pill { display: none; }
             #user-menu a.btn { display: none; }
         }
+
+        /* ── Inventory category picker ──────────── */
+        #inv-cat-picker { padding: 8px 0 32px; }
+        .cat-pick-header { margin-bottom: 28px; }
+        .cat-pick-title { font-size: 24px; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 4px; }
+        .cat-pick-sub { color: var(--muted); font-size: 14px; }
+        .cat-pick-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .cat-pick-card {
+            border: 1.5px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 28px 22px 22px;
+            background: var(--surface);
+            cursor: pointer;
+            display: flex; flex-direction: column; gap: 8px;
+            text-align: left;
+            transition: border-color .15s, box-shadow .15s, transform .12s;
+            position: relative; overflow: hidden;
+        }
+        .cat-pick-card:hover {
+            border-color: var(--hi);
+            box-shadow: 0 6px 20px rgba(200,117,81,.12);
+            transform: translateY(-2px);
+        }
+        .cat-pick-emoji { font-size: 38px; line-height: 1; margin-bottom: 4px; }
+        .cat-pick-name { font-size: 16px; font-weight: 650; letter-spacing: -0.01em; color: var(--text); }
+        .cat-pick-meta { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+        .cat-pick-badge {
+            background: var(--accent-soft); color: var(--text-2);
+            font-size: 11px; font-weight: 600; padding: 2px 8px;
+            border-radius: 999px; font-variant-numeric: tabular-nums;
+        }
+        .cat-pick-add {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 10px 18px; border-radius: var(--radius);
+            border: 1.5px dashed var(--border-strong);
+            background: transparent; cursor: pointer;
+            font-size: 13px; font-weight: 500; color: var(--muted);
+            transition: color .12s, border-color .12s;
+        }
+        .cat-pick-add:hover { color: var(--hi-ink); border-color: var(--hi); }
+        .inv-back-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            margin-bottom: 16px; padding: 6px 12px 6px 8px;
+            border-radius: var(--radius-sm); border: none;
+            background: var(--accent-soft); color: var(--text-2);
+            font-size: 13px; font-weight: 500; cursor: pointer;
+            transition: background .12s, color .12s;
+        }
+        .inv-back-btn:hover { background: var(--border); color: var(--text); }
+        @media (max-width: 600px) {
+            .cat-pick-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+            .cat-pick-card { padding: 20px 16px 16px; }
+            .cat-pick-emoji { font-size: 30px; }
+        }
     </style>
 </head>
 <body>
@@ -776,26 +835,46 @@
                 </div>
             </div>
             <div id="tab-inventory" class="section">
-                <div class="stat-cards" id="inv-stats"></div>
-                <div class="filter-bar" id="inv-filter-bar">
-                    <div class="inv-search-wrap">
-                        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-                        <input class="inv-search" id="inv-search" placeholder="ძებნა კოდით, ტეგით…" oninput="setInvQuery(this.value)">
+                <!-- Category picker landing — shown first when opening inventory -->
+                <div id="inv-cat-picker">
+                    <div class="cat-pick-header">
+                        <h2 class="cat-pick-title">მარაგი</h2>
+                        <p class="cat-pick-sub">რომელი კატეგორიის პროდუქტებს ნახავ?</p>
                     </div>
-                    <span class="inv-bag-filters" style="display:contents">
-                        <span style="width:1px;height:18px;background:var(--border);margin:0 4px"></span>
-                        <b>მოდელი</b>
-                        <button class="btn btn-sm active" data-filter="model" data-value="" onclick="setFilter('model','')">ყველა</button>
-                        <button class="btn btn-sm" data-filter="model" data-value="ფხრიწიანი" onclick="setFilter('model','ფხრიწიანი')">ფხრიწიანი</button>
-                        <button class="btn btn-sm" data-filter="model" data-value="თასმიანი" onclick="setFilter('model','თასმიანი')">თასმიანი</button>
-                        <span style="width:1px;height:18px;background:var(--border);margin:0 4px"></span>
-                        <b>ზომა</b>
-                        <button class="btn btn-sm active" data-filter="size" data-value="" onclick="setFilter('size','')">ყველა</button>
-                        <button class="btn btn-sm" data-filter="size" data-value="პატარა" onclick="setFilter('size','პატარა')">პატარა</button>
-                        <button class="btn btn-sm" data-filter="size" data-value="დიდი" onclick="setFilter('size','დიდი')">დიდი</button>
-                    </span>
+                    <div class="cat-pick-grid" id="inv-cat-picker-grid"></div>
+                    <button class="cat-pick-add" onclick="openAddCategoryModal()">
+                        <svg style="width:15px;height:15px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                        ახალი კატეგორია
+                    </button>
                 </div>
-                <div class="product-grid" id="inv-grid"></div>
+
+                <!-- Grid view — shown after a category is selected -->
+                <div id="inv-grid-view" style="display:none">
+                    <button class="inv-back-btn" onclick="showInvPicker()">
+                        <svg style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+                        ყველა კატეგორია
+                    </button>
+                    <div class="stat-cards" id="inv-stats"></div>
+                    <div class="filter-bar" id="inv-filter-bar">
+                        <div class="inv-search-wrap">
+                            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                            <input class="inv-search" id="inv-search" placeholder="ძებნა კოდით, ტეგით…" oninput="setInvQuery(this.value)">
+                        </div>
+                        <span class="inv-bag-filters" style="display:contents">
+                            <span style="width:1px;height:18px;background:var(--border);margin:0 4px"></span>
+                            <b>მოდელი</b>
+                            <button class="btn btn-sm active" data-filter="model" data-value="" onclick="setFilter('model','')">ყველა</button>
+                            <button class="btn btn-sm" data-filter="model" data-value="ფხრიწიანი" onclick="setFilter('model','ფხრიწიანი')">ფხრიწიანი</button>
+                            <button class="btn btn-sm" data-filter="model" data-value="თასმიანი" onclick="setFilter('model','თასმიანი')">თასმიანი</button>
+                            <span style="width:1px;height:18px;background:var(--border);margin:0 4px"></span>
+                            <b>ზომა</b>
+                            <button class="btn btn-sm active" data-filter="size" data-value="" onclick="setFilter('size','')">ყველა</button>
+                            <button class="btn btn-sm" data-filter="size" data-value="პატარა" onclick="setFilter('size','პატარა')">პატარა</button>
+                            <button class="btn btn-sm" data-filter="size" data-value="დიდი" onclick="setFilter('size','დიდი')">დიდი</button>
+                        </span>
+                    </div>
+                    <div class="product-grid" id="inv-grid"></div>
+                </div>
             </div>
 
             <div id="tab-pairs" class="section">
@@ -2348,8 +2427,10 @@
         }
         document.getElementById('page-h1').textContent = PAGE_TITLES[tab] || tab;
         document.getElementById('page-crumb').textContent = PAGE_CRUMBS[tab] || '';
-        // Only show the "ახალი მოდელი" action on the inventory tab.
-        document.getElementById('topbar-actions').style.display = (tab === 'inventory') ? 'flex' : 'none';
+        // Only show the "ახალი მოდელი" action on the inventory grid view (not the category picker).
+        document.getElementById('topbar-actions').style.display = 'none';
+        // When switching to inventory, always start from the category picker.
+        if (tab === 'inventory') showInvPicker();
         // Persist so a page refresh keeps the user on the same tab.
         try { localStorage.setItem('tissuAdmin:lastTab', tab); } catch (_) {}
         loadData();
@@ -2388,6 +2469,7 @@
     let activeCategory = 'laptop-cases';
     let allCategories = [];
     let invQuery = '';
+    let invPickerVisible = true;
     let ordersQuery = '';
     let saleQuery = '';
     let allSale = [];
@@ -2689,6 +2771,7 @@
             ];
         }
         renderSidebarCategories();
+        if (invPickerVisible) renderInvCategoryPicker();
     }
 
     function renderSidebarCategories() {
@@ -2705,26 +2788,81 @@
             </button>`).join('');
     }
 
+    function showInvPicker() {
+        invPickerVisible = true;
+        const picker = document.getElementById('inv-cat-picker');
+        const gridView = document.getElementById('inv-grid-view');
+        if (picker) picker.style.display = '';
+        if (gridView) gridView.style.display = 'none';
+        document.getElementById('topbar-actions').style.display = 'none';
+        document.getElementById('page-h1').textContent = 'მარაგი';
+        document.getElementById('page-crumb').textContent = 'Catalog';
+        renderInvCategoryPicker();
+    }
+
+    function showInvGrid(cat) {
+        if (cat) activeCategory = cat;
+        invPickerVisible = false;
+        const picker = document.getElementById('inv-cat-picker');
+        const gridView = document.getElementById('inv-grid-view');
+        if (picker) picker.style.display = 'none';
+        if (gridView) gridView.style.display = '';
+        document.getElementById('topbar-actions').style.display = 'flex';
+        const catDef = categoryBySlug(activeCategory);
+        document.getElementById('page-h1').textContent = catDef.name;
+        document.getElementById('page-crumb').textContent = 'Catalog';
+        const addBtn = document.querySelector('#topbar-actions .btn-primary');
+        if (addBtn) addBtn.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> <span class="btn-label">ახალი ${catDef.name.replace(/ები$/, 'ი')}</span>`;
+        invQuery = '';
+        const inv = document.getElementById('inv-search');
+        if (inv) inv.value = '';
+        renderGrid();
+    }
+
+    function renderInvCategoryPicker() {
+        const host = document.getElementById('inv-cat-picker-grid');
+        if (!host) return;
+        if (!allCategories.length) {
+            host.innerHTML = '<p style="color:var(--muted);padding:16px 0">კატეგორიები იტვირთება…</p>';
+            return;
+        }
+        const counts = {};
+        allInventory.forEach(i => {
+            // Normalize legacy 'bag' slug to 'laptop-cases' for display
+            const slug = isLaptopCat(i.category) ? 'laptop-cases' : (i.category || 'laptop-cases');
+            counts[slug] = (counts[slug] || 0) + 1;
+        });
+        host.innerHTML = allCategories.map(c => {
+            const cnt = counts[c.slug] || 0;
+            return `<button class="cat-pick-card" onclick="switchCategory('${c.slug}')">
+                <div class="cat-pick-emoji">${c.emoji || '📦'}</div>
+                <div class="cat-pick-name">${c.name}</div>
+                <div class="cat-pick-meta">
+                    <span class="cat-pick-badge">${cnt} პროდუქტი</span>
+                </div>
+            </button>`;
+        }).join('');
+    }
+
     function switchCategory(cat, btn) {
         closeSidebar();
         activeCategory = cat;
-        invQuery = '';  // clear the search when flipping categories
-        const inv = document.getElementById('inv-search');
-        if (inv) inv.value = '';
         document.querySelectorAll('.cat-item').forEach(b => b.classList.remove('active'));
         if (btn) btn.classList.add('active');
-        const catDef = categoryBySlug(cat);
-        const currentTab = document.querySelector('.nav-item.active')?.dataset?.tab;
-        const addBtn = document.querySelector('#topbar-actions .btn-primary');
-        if (addBtn) addBtn.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> <span class="btn-label">ახალი ${catDef.name.replace(/ები$/, 'ი')}</span>`;
-        // When the user is on a non-catalog tab (dashboard, orders, insights)
-        // and clicks a category, jump to the inventory view for that category.
-        // Otherwise they'd just see the pill highlight with no visible change.
-        if (currentTab !== 'inventory' && currentTab !== 'pairs' && currentTab !== 'extra-photos') {
-            showTab('inventory', document.querySelector('.nav-item[data-tab="inventory"]'));
+        else {
+            const match = document.querySelector(`.cat-item[data-category="${cat}"]`);
+            if (match) match.classList.add('active');
         }
-        document.getElementById('page-crumb').textContent = 'Catalog · ' + catDef.name;
-        renderGrid();
+        const currentTab = document.querySelector('.nav-item.active')?.dataset?.tab;
+        if (currentTab !== 'inventory' && currentTab !== 'pairs' && currentTab !== 'extra-photos') {
+            // Jump to inventory grid from another tab
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.getElementById('tab-inventory').classList.add('active');
+            document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+            const invBtn = document.querySelector('.nav-item[data-tab="inventory"]');
+            if (invBtn) invBtn.classList.add('active');
+        }
+        showInvGrid(cat);
     }
 
     // ── Category modal (add or edit) ────────────
@@ -3233,6 +3371,7 @@
     async function loadData() {
         const inv = await (await fetch(API + '/api/inventory')).json();
         allInventory = inv.inventory;
+        if (invPickerVisible) renderInvCategoryPicker();
         renderGrid();
         const orders = await (await fetch(API + '/api/orders')).json();
         allOrders = orders.orders || [];
