@@ -4936,6 +4936,14 @@
     }
 
     async function loadExpenses() {
+        // If inventory hasn't loaded yet (user switched tabs before loadData finished),
+        // fetch it now so cost groups have data to render.
+        if (!allInventory.length) {
+            try {
+                const inv = await (await fetch(API + '/api/inventory')).json();
+                allInventory = inv.inventory || [];
+            } catch (_) {}
+        }
         try {
             const d = await (await fetch(API + '/api/expenses')).json();
             _expenses = d.expenses || [];
