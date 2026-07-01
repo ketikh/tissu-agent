@@ -5011,27 +5011,16 @@
     let _expenses = [];
 
     // Build cost groups: laptop cases split by size, other cats one row each.
+    // Categories where all items share one cost structure (grouped)
+    const GROUPED_CATS = new Set(['necklace']);
+
     function buildCostGroups() {
         const map = {};
         allInventory.forEach(i => {
             const cat = i.category || 'laptop-cases';
             let key;
-            if (cat === 'totebag') {
-                // Each tote bag is individual — different costs per item
-                key = '__totebag_' + i.id;
-                if (!map[key]) {
-                    map[key] = {
-                        key, emoji: '🛍️',
-                        label: i.code || i.name || ('ტოტ ბეგი #' + i.id),
-                        priceLabel: i.price + ' ₾ გასაყიდი ფასი',
-                        price: i.price, items: [],
-                        cost_material:  parseFloat(i.cost_material  || 0),
-                        cost_tailor:    parseFloat(i.cost_tailor    || 0),
-                        cost_packaging: parseFloat(i.cost_packaging || 0),
-                    };
-                }
-                map[key].items.push(i);
-            } else if (isLaptopCat(cat)) {
+            if (isLaptopCat(cat)) {
+                // Laptop cases: group by size (small / big) — all same-size share one cost
                 const big = i.size && i.size.includes('დიდი');
                 key = big ? '__laptop_big' : '__laptop_small';
                 if (!map[key]) {
@@ -5047,7 +5036,8 @@
                     map[key].cost_tailor    = parseFloat(i.cost_tailor    || 0);
                     map[key].cost_packaging = parseFloat(i.cost_packaging || 0);
                 }
-            } else {
+            } else if (GROUPED_CATS.has(cat)) {
+                // Known grouped categories — one card for the whole category
                 key = cat;
                 if (!map[key]) {
                     const catDef = categoryBySlug(cat);
@@ -5061,16 +5051,29 @@
                     map[key].cost_tailor    = parseFloat(i.cost_tailor    || 0);
                     map[key].cost_packaging = parseFloat(i.cost_packaging || 0);
                 }
+            } else {
+                // Everything else (tote bags, etc.) — each product is its own card
+                key = '__item_' + i.id;
+                const catDef = categoryBySlug(cat);
+                map[key] = {
+                    key, emoji: catDef.emoji || '📦',
+                    label: i.code || i.name || (catDef.name + ' #' + i.id),
+                    priceLabel: i.price + ' ₾ გასაყიდი ფასი',
+                    price: i.price, items: [i],
+                    cost_material:  parseFloat(i.cost_material  || 0),
+                    cost_tailor:    parseFloat(i.cost_tailor    || 0),
+                    cost_packaging: parseFloat(i.cost_packaging || 0),
+                };
             }
         });
-        // Sort: laptop small, laptop big, other categories, then individual tote bags
+        // Sort: laptop small, laptop big, grouped cats (necklace), then individual items
         const laptopOrder = ['__laptop_small', '__laptop_big'];
-        const toteKeys = Object.keys(map).filter(k => k.startsWith('__totebag_'));
-        const otherKeys = Object.keys(map).filter(k => !laptopOrder.includes(k) && !k.startsWith('__totebag_'));
+        const itemKeys = Object.keys(map).filter(k => k.startsWith('__item_'));
+        const groupedKeys = Object.keys(map).filter(k => !laptopOrder.includes(k) && !k.startsWith('__item_'));
         return [
             ...laptopOrder.filter(k => map[k]).map(k => map[k]),
-            ...otherKeys.map(k => map[k]),
-            ...toteKeys.map(k => map[k]),
+            ...groupedKeys.map(k => map[k]),
+            ...itemKeys.map(k => map[k]),
         ];
     }
 
