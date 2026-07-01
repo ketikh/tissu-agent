@@ -2885,6 +2885,22 @@ async def delete_inventory(item_id: int, tenant_id: str = Depends(get_tenant_id)
     return {"message": f"Item #{item_id} deleted"}
 
 
+@app.put("/api/inventory/{item_id}/costs")
+async def update_product_costs(item_id: int, request: Request, tenant_id: str = Depends(get_tenant_id)):
+    data = await request.json()
+    pool = await get_db()
+    await pool.execute(
+        """UPDATE inventory
+           SET cost_material = $1, cost_tailor = $2, cost_packaging = $3
+           WHERE id = $4 AND tenant_id = $5""",
+        float(data.get("cost_material") or 0),
+        float(data.get("cost_tailor") or 0),
+        float(data.get("cost_packaging") or 0),
+        item_id, tenant_id,
+    )
+    return {"success": True}
+
+
 # ── Orders ───────────────────────────────────────────────────
 
 @app.get("/api/orders")
@@ -2949,6 +2965,46 @@ async def decrease_stock_for_order(order_id: int, tenant_id: str = Depends(get_t
         datetime.now(timezone.utc).isoformat(), tenant_id, item_code,
     )
     return {"success": True, "code": item_code}
+
+
+# ── Expenses ─────────────────────────────────────────────────
+
+@app.get("/api/expenses")
+async def list_expenses(tenant_id: str = Depends(get_tenant_id)):
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT * FROM expenses WHERE tenant_id = $1 ORDER BY created_at DESC",
+        tenant_id,
+    )
+    return {"expenses": [dict(r) for r in rows]}
+
+
+@app.post("/api/expenses")
+async def create_expense(request: Request, tenant_id: str = Depends(get_tenant_id)):
+    data = await request.json()
+    description = (data.get("description") or "").strip()
+    if not description:
+        raise HTTPException(status_code=400, detail="description required")
+    amount = float(data.get("amount") or 0)
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="amount must be > 0")
+    pool = await get_db()
+    row = await pool.fetchrow(
+        """INSERT INTO expenses (tenant_id, description, amount, expense_date)
+           VALUES ($1, $2, $3, $4) RETURNING *""",
+        tenant_id, description, amount, (data.get("expense_date") or "").strip(),
+    )
+    return dict(row)
+
+
+@app.delete("/api/expenses/{expense_id}")
+async def delete_expense(expense_id: int, tenant_id: str = Depends(get_tenant_id)):
+    pool = await get_db()
+    await pool.execute(
+        "DELETE FROM expenses WHERE id = $1 AND tenant_id = $2",
+        expense_id, tenant_id,
+    )
+    return {"success": True}
 
 
 # ── Product Pairs (same print, different style) ─────────────

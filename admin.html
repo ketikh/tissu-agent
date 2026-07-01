@@ -682,6 +682,10 @@
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-5"/></svg>
                 ინსაიტები
             </button>
+            <button class="nav-item" data-tab="expenses" onclick="showTab('expenses', this)">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                ხარჯები
+            </button>
             <button class="nav-item" data-tab="bot" onclick="showTab('bot', this)">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M12 2a4 4 0 0 1 4 4v5H8V6a4 4 0 0 1 4-4z"/><circle cx="9" cy="17" r="1" fill="currentColor"/><circle cx="15" cy="17" r="1" fill="currentColor"/></svg>
                 ბოტი
@@ -1610,6 +1614,86 @@
                 </div>
             </div>
 
+            <!-- ── Expenses tab ───────────────────────────── -->
+            <div id="tab-expenses" class="section">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start" class="expenses-grid">
+
+                    <!-- Card 1: General expenses -->
+                    <div class="card">
+                        <h2 style="margin-bottom:4px">ზოგადი ხარჯები</h2>
+                        <p class="hint" style="margin-bottom:16px">მასალის შეძენა, ტრანსპორტი, შეფუთვა — ნებისმიერი გახარჯული თანხა</p>
+
+                        <form id="exp-form" onsubmit="addExpense(event)" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+                            <input id="exp-desc" type="text" placeholder="რაში? (მაგ: ტილო, მდინარე ბაზარი)" required
+                                style="flex:2;min-width:140px">
+                            <input id="exp-amount" type="number" min="0.01" step="0.01" placeholder="₾ თანხა" required
+                                style="flex:1;min-width:90px">
+                            <input id="exp-date" type="date" style="flex:1;min-width:110px">
+                            <button type="submit" class="btn btn-primary" style="white-space:nowrap">+ დამატება</button>
+                        </form>
+
+                        <div id="exp-list" style="display:flex;flex-direction:column;gap:4px;min-height:60px">
+                            <p style="color:var(--muted);text-align:center;padding:20px 0">იტვირთება…</p>
+                        </div>
+
+                        <div style="border-top:2px solid var(--border);margin-top:12px;padding-top:12px;display:flex;justify-content:space-between;align-items:center">
+                            <span style="font-size:13px;color:var(--muted);font-weight:600">სულ გახარჯული</span>
+                            <span id="exp-total" style="font-size:20px;font-weight:700;color:var(--danger)">0 ₾</span>
+                        </div>
+                    </div>
+
+                    <!-- Card 2: Product cost breakdown -->
+                    <div class="card">
+                        <h2 style="margin-bottom:4px">პროდუქტის ღირებულება</h2>
+                        <p class="hint" style="margin-bottom:16px">თითოეული პროდუქტის წარმოების ხარჯი და მოგება</p>
+                        <div id="costs-table-wrap" style="overflow-x:auto">
+                            <table style="width:100%;border-collapse:collapse;font-size:13px" id="costs-table">
+                                <thead>
+                                    <tr style="border-bottom:2px solid var(--border);text-align:left">
+                                        <th style="padding:6px 8px;font-weight:600;color:var(--muted);font-size:11px;text-transform:uppercase;white-space:nowrap">პროდუქტი</th>
+                                        <th style="padding:6px 8px;font-weight:600;color:var(--muted);font-size:11px;text-transform:uppercase;text-align:right">ფასი</th>
+                                        <th style="padding:6px 8px;font-weight:600;color:var(--muted);font-size:11px;text-transform:uppercase;text-align:right">მასალა</th>
+                                        <th style="padding:6px 8px;font-weight:600;color:var(--muted);font-size:11px;text-transform:uppercase;text-align:right">მკერავი</th>
+                                        <th style="padding:6px 8px;font-weight:600;color:var(--muted);font-size:11px;text-transform:uppercase;text-align:right">შეფუთვა</th>
+                                        <th style="padding:6px 8px;font-weight:600;color:var(--muted);font-size:11px;text-transform:uppercase;text-align:right">ჯამი</th>
+                                        <th style="padding:6px 8px;font-weight:600;color:var(--muted);font-size:11px;text-transform:uppercase;text-align:right">მოგება</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="costs-tbody">
+                                    <tr><td colspan="7" style="padding:20px;text-align:center;color:var(--muted)">იტვირთება…</td></tr>
+                                </tbody>
+                                <tfoot id="costs-tfoot" style="display:none">
+                                    <tr style="border-top:2px solid var(--border);font-weight:700">
+                                        <td style="padding:8px 8px" colspan="2">სულ</td>
+                                        <td style="padding:8px 8px;text-align:right" id="costs-total-material">—</td>
+                                        <td style="padding:8px 8px;text-align:right" id="costs-total-tailor">—</td>
+                                        <td style="padding:8px 8px;text-align:right" id="costs-total-packaging">—</td>
+                                        <td style="padding:8px 8px;text-align:right" id="costs-total-cost">—</td>
+                                        <td style="padding:8px 8px;text-align:right" id="costs-total-profit">—</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <style>
+                    @media (max-width: 900px) { .expenses-grid { grid-template-columns: 1fr !important; } }
+                    .exp-row { display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:8px; background:var(--surface); border:1px solid var(--border); }
+                    .exp-row:hover { border-color:var(--border-strong); }
+                    .exp-row .exp-date { font-size:11px; color:var(--muted); white-space:nowrap; }
+                    .exp-row .exp-desc { flex:1; font-size:13px; }
+                    .exp-row .exp-amt  { font-size:14px; font-weight:700; white-space:nowrap; }
+                    .exp-row .exp-del  { background:none; border:none; color:var(--muted); cursor:pointer; font-size:16px; line-height:1; padding:2px 6px; border-radius:4px; }
+                    .exp-row .exp-del:hover { background:var(--danger-bg,#fff0f0); color:var(--danger); }
+                    #costs-table tbody tr:nth-child(odd) { background: var(--surface); }
+                    #costs-table tbody tr:hover { background: var(--surface-hover, #f5f5f3); }
+                    .cost-input { width:70px; text-align:right; padding:4px 6px; font-size:12px; border:1px solid transparent; border-radius:4px; background:transparent; }
+                    .cost-input:hover, .cost-input:focus { border-color:var(--border); background:#fff; }
+                    .profit-positive { color:#16a34a; font-weight:700; }
+                    .profit-negative { color:var(--danger); font-weight:700; }
+                </style>
+            </div>
+
             <div id="tab-bot" class="section">
                 <style>
                     .bc-page { max-width: 740px; }
@@ -2186,6 +2270,7 @@
         sale: 'ფასდაკლება',
         promos: 'პრომოკოდები',
         insights: 'ინსაიტები',
+        expenses: 'ხარჯები',
         bot: 'ბოტი',
         site: 'საიტი',
         pinterest: 'პინტერესტი',
@@ -2206,6 +2291,7 @@
         sale: 'Workspace',
         promos: 'Workspace',
         insights: 'Workspace',
+        expenses: 'Finance',
         bot: 'Settings',
         site: 'Settings',
         pinterest: 'Integrations',
@@ -2259,6 +2345,7 @@
         if (tab === 'reviews') loadReviewsData();
         if (tab === 'sizes') loadSizeVariants();
         if (tab === 'inspirations') loadInspirations();
+        if (tab === 'expenses') loadExpenses();
         if (tab === 'chats') loadChats();
         if (tab === 'insights') loadInsights();
         if (tab === 'bot') loadBotConfig();
@@ -4760,6 +4847,132 @@
     function bcRemoveBank(i) {
         _bcBanks.splice(i, 1);
         bcRenderBanks();
+    }
+
+    // ── Expenses ─────────────────────────────────────────────────────────
+    let _expenses = [];
+
+    async function loadExpenses() {
+        try {
+            const d = await (await fetch(API + '/api/expenses')).json();
+            _expenses = d.expenses || [];
+        } catch (_) { _expenses = []; }
+        renderExpenses();
+        renderCostsTable();
+    }
+
+    function renderExpenses() {
+        const list = document.getElementById('exp-list');
+        const totalEl = document.getElementById('exp-total');
+        if (!list) return;
+        if (!_expenses.length) {
+            list.innerHTML = '<p style="color:var(--muted);text-align:center;padding:20px 0;font-size:13px">ჯერ ხარჯი არ დაუმატებია</p>';
+            if (totalEl) totalEl.textContent = '0 ₾';
+            return;
+        }
+        const total = _expenses.reduce((s, e) => s + (e.amount || 0), 0);
+        list.innerHTML = _expenses.map(e => `
+            <div class="exp-row">
+                ${e.expense_date ? `<span class="exp-date">${e.expense_date}</span>` : ''}
+                <span class="exp-desc">${e.description.replace(/[<>]/g, '')}</span>
+                <span class="exp-amt">${e.amount.toFixed(2)} ₾</span>
+                <button class="exp-del" onclick="deleteExpense(${e.id})" title="წაშლა">×</button>
+            </div>`).join('');
+        if (totalEl) totalEl.textContent = total.toFixed(2) + ' ₾';
+    }
+
+    async function addExpense(ev) {
+        ev.preventDefault();
+        const desc = document.getElementById('exp-desc').value.trim();
+        const amount = parseFloat(document.getElementById('exp-amount').value);
+        const date = document.getElementById('exp-date').value;
+        if (!desc || !amount) return;
+        try {
+            await fetch(API + '/api/expenses', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ description: desc, amount, expense_date: date }),
+            });
+            document.getElementById('exp-form').reset();
+            await loadExpenses();
+        } catch (_) { alert('შეცდომა, სცადე ხელახლა'); }
+    }
+
+    async function deleteExpense(id) {
+        await fetch(API + '/api/expenses/' + id, { method: 'DELETE' });
+        _expenses = _expenses.filter(e => e.id !== id);
+        renderExpenses();
+    }
+
+    function renderCostsTable() {
+        const tbody = document.getElementById('costs-tbody');
+        const tfoot = document.getElementById('costs-tfoot');
+        if (!tbody) return;
+        const items = allInventory.filter(i => i.stock > 0 || true); // show all
+        if (!items.length) {
+            tbody.innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--muted)">მარაგი ცარიელია</td></tr>';
+            if (tfoot) tfoot.style.display = 'none';
+            return;
+        }
+        let sumMat = 0, sumTailor = 0, sumPack = 0, sumCost = 0, sumProfit = 0;
+        tbody.innerHTML = items.map(i => {
+            const mat  = parseFloat(i.cost_material  || 0);
+            const tail = parseFloat(i.cost_tailor    || 0);
+            const pack = parseFloat(i.cost_packaging || 0);
+            const cost = mat + tail + pack;
+            const profit = i.price - cost;
+            sumMat += mat; sumTailor += tail; sumPack += pack;
+            sumCost += cost; sumProfit += profit;
+            const profitClass = profit >= 0 ? 'profit-positive' : 'profit-negative';
+            const label = i.code || (i.model + ' ' + (i.size||'')).trim();
+            return `<tr>
+                <td style="padding:6px 8px;white-space:nowrap">${label}</td>
+                <td style="padding:6px 8px;text-align:right;font-weight:600">${i.price.toFixed(2)} ₾</td>
+                <td style="padding:6px 8px;text-align:right">
+                    <input class="cost-input" type="number" min="0" step="0.01" value="${mat||''}" placeholder="0"
+                        onchange="saveCost(${i.id},'cost_material',this.value)"
+                        onblur="renderCostsTable()">
+                </td>
+                <td style="padding:6px 8px;text-align:right">
+                    <input class="cost-input" type="number" min="0" step="0.01" value="${tail||''}" placeholder="0"
+                        onchange="saveCost(${i.id},'cost_tailor',this.value)"
+                        onblur="renderCostsTable()">
+                </td>
+                <td style="padding:6px 8px;text-align:right">
+                    <input class="cost-input" type="number" min="0" step="0.01" value="${pack||''}" placeholder="0"
+                        onchange="saveCost(${i.id},'cost_packaging',this.value)"
+                        onblur="renderCostsTable()">
+                </td>
+                <td style="padding:6px 8px;text-align:right;font-weight:600">${cost>0?cost.toFixed(2)+' ₾':'—'}</td>
+                <td style="padding:6px 8px;text-align:right" class="${profitClass}">${cost>0?(profit>=0?'+':'')+profit.toFixed(2)+' ₾':'—'}</td>
+            </tr>`;
+        }).join('');
+        if (tfoot) {
+            tfoot.style.display = '';
+            document.getElementById('costs-total-material').textContent = sumMat.toFixed(2) + ' ₾';
+            document.getElementById('costs-total-tailor').textContent   = sumTailor.toFixed(2) + ' ₾';
+            document.getElementById('costs-total-packaging').textContent = sumPack.toFixed(2) + ' ₾';
+            document.getElementById('costs-total-cost').textContent     = sumCost.toFixed(2) + ' ₾';
+            const tp = document.getElementById('costs-total-profit');
+            tp.textContent = (sumProfit>=0?'+':'')+sumProfit.toFixed(2)+' ₾';
+            tp.className   = sumProfit>=0 ? 'profit-positive' : 'profit-negative';
+        }
+    }
+
+    async function saveCost(id, field, value) {
+        const item = allInventory.find(i => i.id === id);
+        if (!item) return;
+        item[field] = parseFloat(value) || 0;
+        const body = {
+            cost_material:  parseFloat(item.cost_material  || 0),
+            cost_tailor:    parseFloat(item.cost_tailor    || 0),
+            cost_packaging: parseFloat(item.cost_packaging || 0),
+        };
+        await fetch(API + '/api/inventory/' + id + '/costs', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
     }
 
     async function loadBotConfig() {

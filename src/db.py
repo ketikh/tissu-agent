@@ -31,6 +31,7 @@ TENANT_SCOPED_TABLES = (
     "confirm_tokens",
     "categories",
     "product_extra_photos",
+    "expenses",
     # These tables are created lazily by other modules (image_match,
     # vision_match, the Facebook webhook's photo-hint pipeline). ADD
     # COLUMN will fail if the table isn't there yet, so init_db wraps
@@ -1095,6 +1096,28 @@ async def init_db():
             "AND role = 'owner'",
             DEFAULT_TENANT_ID, owner_email or "",
         )
+
+        # ── Expenses tracker ────────────────────────────────────
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS expenses (
+                id SERIAL PRIMARY KEY,
+                tenant_id TEXT NOT NULL DEFAULT 'default',
+                description TEXT NOT NULL,
+                amount REAL NOT NULL,
+                expense_date TEXT DEFAULT '',
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_expenses_tenant "
+            "ON expenses (tenant_id, created_at DESC)"
+        )
+
+        # ── Product cost breakdown columns ──────────────────────
+        for col in ("cost_material", "cost_tailor", "cost_packaging"):
+            await conn.execute(
+                f"ALTER TABLE inventory ADD COLUMN IF NOT EXISTS {col} REAL NOT NULL DEFAULT 0"
+            )
 
 
 async def resolve_tenant_id(api_key: str) -> str | None:
