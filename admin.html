@@ -3283,7 +3283,15 @@
 
             return `
             <div class="product-card ${isSoldOut ? 'sold-out' : ''}" data-id="${i.id}">
-                ${isSoldOut ? `<div class="sold-overlay"><span>Sold out</span><button onclick="event.stopPropagation();restock(${i.id})">დაბრუნება</button></div>` : ''}
+                ${isSoldOut ? `<div class="sold-overlay">
+                    <span>${i.preorder_available ? 'წინასწარი შეკვეთით' : 'Sold out'}</span>
+                    <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#fff;margin:4px 0;cursor:pointer" onclick="event.stopPropagation()">
+                        <input type="checkbox" ${i.preorder_available ? 'checked' : ''}
+                            onchange="setLabel(${i.id},'preorder_available',this.checked,null); renderGrid();">
+                        წინასწარი შეკვეთა
+                    </label>
+                    <button onclick="event.stopPropagation();restock(${i.id})">დაბრუნება</button>
+                </div>` : ''}
                 ${photosBlock}
                 <div class="info">
                     <input type="text" value="${escapeHtml(i.product_name || '')}"

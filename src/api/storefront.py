@@ -181,6 +181,7 @@ def _serialize(
         "currency": CURRENCY,
         "stock": stock,
         "in_stock": stock > 0,
+        "preorder_available": bool(row.get("preorder_available")),
         "image_front": row.get("image_url") or "",
         "image_back": row.get("image_url_back") or "",
         "category": _map_category(row.get("category")),
@@ -249,7 +250,10 @@ async def list_products(
     params: list = [tenant_id]
     idx = 2
     if not include_out_of_stock:
-        sql += " AND stock > 0"
+        # Pre-order-flagged rows stay visible even at stock=0 so the
+        # storefront can render them with a "წინასწარი შეკვეთით" badge
+        # instead of hiding a design the owner is still willing to make.
+        sql += " AND (stock > 0 OR preorder_available = true)"
     if category:
         # Translate the public enum back to the internal slug(s) so
         # tenant-specific legacy slugs (e.g. 'bag' → 'pouch') match.

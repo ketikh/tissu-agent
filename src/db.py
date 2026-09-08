@@ -212,6 +212,12 @@ async def init_db():
         await conn.execute(
             "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS sale_price REAL"
         )
+        # Lets the owner keep a sold-out (stock=0) product visible as
+        # "available on pre-order" instead of hiding it outright — used when
+        # a design sold out but can still be made to order on request.
+        await conn.execute(
+            "ALTER TABLE inventory ADD COLUMN IF NOT EXISTS preorder_available BOOLEAN NOT NULL DEFAULT false"
+        )
         # Speed up the admin's angles lookup and the orders-by-conversation
         # lookups the insights tab runs on every open.
         await conn.execute(

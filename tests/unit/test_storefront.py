@@ -113,6 +113,7 @@ def test_serialize_matches_task_contract():
         "currency": "GEL",
         "stock": 1,
         "in_stock": True,
+        "preorder_available": False,
         "image_front": "https://cdn/front.jpg",
         "image_back": "https://cdn/back.jpg",
         "category": "pouch",
@@ -176,6 +177,31 @@ def test_serialize_marks_zero_stock_as_out():
     out = _serialize(row)
     assert out["stock"] == 0
     assert out["in_stock"] is False
+
+
+def test_serialize_exposes_preorder_flag_when_sold_out():
+    row = {
+        "id": 100,
+        "code": "XX2",
+        "product_name": "sold out but remakeable",
+        "model": "",
+        "size": "",
+        "color": "",
+        "price": 10.0,
+        "stock": 0,
+        "preorder_available": True,
+        "image_url": "",
+        "image_url_back": "",
+        "category": "bag",
+        "tags": "",
+        "on_sale": False,
+        "sale_price": None,
+        "updated_at": "",
+        "created_at": "",
+    }
+    out = _serialize(row)
+    assert out["in_stock"] is False
+    assert out["preorder_available"] is True
 
 
 def test_serialize_falls_back_to_created_at_when_updated_at_missing():
