@@ -8,6 +8,39 @@ from src.config import GEMINI_API_KEY, LLM_MODEL
 
 _logger = logging.getLogger(__name__)
 _client: genai.Client | None = None
+_sleep = _asyncio.sleep  # indirection so tests can skip the retry back-off
+_RETRYABLE_MARKERS = ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE")
+
+
+class LLMUnavailableError(RuntimeError):
+    """Gemini produced no usable answer (outage, quota, safety block, token limit)."""
+
+
+def _has_parts(response) -> bool:
+    return bool(
+        response and response.candidates
+        and response.candidates[0].content
+        and response.candidates[0].content.parts
+    )
+
+
+def _empty_reason(response) -> str:
+    """Why did Gemini return nothing? Human-readable, for logs and owner alerts."""
+    if response is None:
+        return "no response"
+    if not response.candidates:
+        block = getattr(getattr(response, "prompt_feedback", None), "block_reason", None)
+        return f"no candidates (block_reason={getattr(block, 'name', block)})"
+    fr = getattr(response.candidates[0], "finish_reason", None)
+    return f"finish_reason={getattr(fr, 'name', fr)}"
+
+
+def _is_intentional_silence(response) -> bool:
+    """A normal STOP finish with no parts means the model chose to say nothing."""
+    if not response or not response.candidates:
+        return False
+    fr = getattr(response.candidates[0], "finish_reason", None)
+    return (getattr(fr, "name", None) or str(fr)).endswith("STOP")
 
 # Vertex AI config — when set, uses Vertex AI instead of AI Studio API key
 VERTEX_PROJECT = os.getenv("VERTEX_PROJECT", "")
@@ -108,6 +141,7 @@ async def chat_with_tools(
 
     # Retry up to 3 times if Gemini returns empty or rate limited
     response = None
+    last_error = ""
     for attempt in range(3):
         try:
             print(f"[LLM] Calling Gemini (attempt {attempt+1}/3)...")
@@ -116,19 +150,26 @@ async def chat_with_tools(
                 contents=contents,
                 config=config,
             )
-            if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+            if _has_parts(response):
                 print(f"[LLM] Got response, {len(response.candidates[0].content.parts)} parts")
                 break
-            print(f"[LLM] Empty response, retrying...")
+            last_error = _empty_reason(response)
+            print(f"[LLM] Empty response ({last_error}), retrying...")
         except Exception as e:
-            err_str = str(e)
-            print(f"[LLM] Error: {err_str[:200]}")
-            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "503" in err_str or "UNAVAILABLE" in err_str:
+            last_error = str(e)
+            print(f"[LLM] Error: {last_error[:200]}")
+            if any(marker in last_error for marker in _RETRYABLE_MARKERS):
                 wait = (attempt + 1) * 3
                 print(f"[LLM] Rate limited, waiting {wait}s")
-                await _asyncio.sleep(wait)
+                await _sleep(wait)
+                response = None
                 continue
             raise
+
+    if not _has_parts(response) and not _is_intentional_silence(response):
+        # An outage must not look like a deliberate silence: the caller sends
+        # a holding message to the customer and alerts the owner with the reason.
+        raise LLMUnavailableError(f"Gemini returned no content after 3 attempts: {last_error[:300]}")
 
     # Normalize response to our internal format
     result_content = []
