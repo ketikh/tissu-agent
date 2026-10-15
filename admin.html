@@ -1830,6 +1830,19 @@
                     .bc-status.err { background: var(--danger-soft); color: var(--danger); display: flex; align-items: center; gap: 7px; }
                     .bc-actions { display: flex; align-items: center; gap: 10px; padding: 18px 0 4px; }
                     .bc-actions .bc-save-btn { padding: 9px 22px; font-size: 13.5px; font-weight: 600; }
+                    /* ── bot on/off switch ── */
+                    .bp-card { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 14px 18px; }
+                    .bp-card.off { border-color: var(--danger); }
+                    .bp-text { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 260px; }
+                    .bp-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--success); flex-shrink: 0; box-shadow: 0 0 0 4px var(--success-soft); }
+                    .bp-card.off .bp-dot { background: var(--danger); box-shadow: 0 0 0 4px var(--danger-soft); }
+                    .bp-switch { position: relative; width: 64px; height: 44px; background: none; border: none; cursor: pointer; padding: 0; flex-shrink: 0; }
+                    .bp-switch::before { content: ''; position: absolute; left: 4px; top: 7px; width: 56px; height: 30px; border-radius: 15px; background: var(--success); transition: background .2s var(--ease); }
+                    .bp-switch::after { content: ''; position: absolute; top: 10px; left: 33px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: left .2s var(--ease); }
+                    .bp-switch[aria-checked="false"]::before { background: var(--danger); }
+                    .bp-switch[aria-checked="false"]::after { left: 7px; }
+                    .bp-switch:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; border-radius: 22px; }
+                    .bp-switch:disabled { opacity: .6; cursor: wait; }
                     @media (max-width: 600px) { .bc-row { grid-template-columns: 1fr; } .bc-bank-card { grid-template-columns: 1fr; } }
                 </style>
 
@@ -1840,6 +1853,18 @@
                     </div>
 
                     <div id="bot-cfg-status" class="bc-status"></div>
+
+                    <!-- 0. ჩართვა / გამორთვა -->
+                    <div class="bc-section bp-card" id="bot-power-card">
+                        <div class="bp-text">
+                            <span class="bp-dot" aria-hidden="true"></span>
+                            <div>
+                                <div class="bc-section-title" id="bot-power-title">ბოტი ჩართულია</div>
+                                <div class="bc-section-sub" id="bot-power-sub">Messenger-სა და Instagram-ში კლიენტებს ავტომატურად პასუხობს.</div>
+                            </div>
+                        </div>
+                        <button type="button" class="bp-switch" id="bot-power-switch" role="switch" aria-checked="true" aria-label="ბოტის ჩართვა / გამორთვა" onclick="toggleBotPaused()"></button>
+                    </div>
 
                     <!-- 1. კომპანია -->
                     <div class="bc-section">
@@ -5243,6 +5268,8 @@
             const r = await fetch('/api/admin/bot-config', { credentials: 'include' });
             if (!r.ok) { botCfgStatus('ჩატვირთვა ვერ მოხდა: ' + r.status, false); return; }
             const cfg = await r.json();
+            _botPaused = (cfg.bot_paused === true || cfg.bot_paused === 'true');
+            renderBotPower();
             BC_TEXT_FIELDS.forEach(f => {
                 const el = document.getElementById('bc-' + f);
                 if (!el) return;
@@ -5288,6 +5315,54 @@
             else botCfgStatus('შეცდომა: ' + (j.detail || r.status), false);
         } catch(e) {
             botCfgStatus('შეცდომა: ' + e.message, false);
+        }
+    }
+
+    // ── Bot on/off switch ────────────────────────────────────────────────
+    let _botPaused = false;
+
+    function renderBotPower() {
+        const card  = document.getElementById('bot-power-card');
+        const title = document.getElementById('bot-power-title');
+        const sub   = document.getElementById('bot-power-sub');
+        const sw    = document.getElementById('bot-power-switch');
+        if (!card || !title || !sub || !sw) return;
+        card.classList.toggle('off', _botPaused);
+        sw.setAttribute('aria-checked', _botPaused ? 'false' : 'true');
+        if (_botPaused) {
+            title.textContent = 'ბოტი გამორთულია';
+            sub.textContent = 'კლიენტებს არ პასუხობს და Telegram-ზე შეტყობინებებს არ გიგზავნის. Messenger-სა და Instagram-ში შენ თვითონ პასუხობ.';
+        } else {
+            title.textContent = 'ბოტი ჩართულია';
+            sub.textContent = 'Messenger-სა და Instagram-ში კლიენტებს ავტომატურად პასუხობს.';
+        }
+    }
+
+    async function toggleBotPaused() {
+        const sw = document.getElementById('bot-power-switch');
+        const next = !_botPaused;
+        if (sw) sw.disabled = true;
+        try {
+            const csrfCookie = document.cookie.split(';').map(c=>c.trim()).find(c=>c.startsWith('csrf_token='));
+            const csrf = csrfCookie ? csrfCookie.split('=')[1] : '';
+            const r = await fetch('/api/admin/bot-config', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+                credentials: 'include',
+                body: JSON.stringify({ bot_paused: next }),
+            });
+            const j = await r.json().catch(() => ({}));
+            if (r.ok && j.ok) {
+                _botPaused = next;
+                renderBotPower();
+                botCfgStatus(next ? 'ბოტი გამორთულია — კლიენტებს აღარ უპასუხებს' : 'ბოტი ჩართულია ✓', true);
+            } else {
+                botCfgStatus('შეცდომა: ' + (j.detail || r.status), false);
+            }
+        } catch (e) {
+            botCfgStatus('შეცდომა: ' + e.message, false);
+        } finally {
+            if (sw) sw.disabled = false;
         }
     }
 

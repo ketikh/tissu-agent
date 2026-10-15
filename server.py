@@ -1179,11 +1179,14 @@ async def admin_put_bot_config(request: Request):
         "delivery_info", "payment_accounts", "currency_symbol",
         "off_topic_reply", "confidential_reply", "unavailable_reply",
         "custom_order_reply", "corporate_info", "tone",
-        "emoji_enabled", "custom_instructions",
+        "emoji_enabled", "custom_instructions", "bot_paused",
     }
     filtered = {k: v for k, v in data.items() if k in allowed_fields}
     if not filtered:
         raise HTTPException(status_code=400, detail="no valid fields provided")
+    if "bot_paused" in filtered:
+        raw = filtered["bot_paused"]
+        filtered["bot_paused"] = raw if isinstance(raw, bool) else str(raw).lower() == "true"
     await upsert_bot_config(tenant_id, filtered)
     return {"ok": True}
 

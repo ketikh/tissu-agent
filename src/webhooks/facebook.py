@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Request
 from src.agents.support_sales import get_support_sales_agent, get_greeting_text
 from src.db import (
     get_db, DEFAULT_TENANT_ID,
-    get_tenant, get_tenant_by_fb_page_id,
+    get_tenant, get_tenant_by_fb_page_id, is_bot_paused,
     save_pending_photo, pop_pending_photo, delete_pending_photo,
     set_pending_soldout, pop_pending_soldout, delete_pending_soldout,
 )
@@ -87,6 +87,20 @@ async def _resolve_tenant_context(page_id: str) -> tuple[str, str]:
         "[webhook] unknown fb page_id=%s — event dropped", page_id,
     )
     return ("", "")
+
+
+async def _is_bot_paused_safe(tenant_id: str) -> bool:
+    """True when the owner switched the bot off from the admin panel.
+
+    Fails open (returns False) on DB errors so a transient outage never
+    silences the bot by accident."""
+    try:
+        return await is_bot_paused(tenant_id)
+    except Exception as e:
+        logger.error("[webhook] bot_paused check failed for tenant=%s: %s", tenant_id, e)
+        return False
+
+
 # Instagram Business Account ID — used to filter self-echoes on IG DMs.
 # Defaults to the Tissu IG account id so the filter works out of the
 # box; can be overridden with the IG_USER_ID env var for other tenants.
@@ -1121,6 +1135,15 @@ async def webhook_receive(request: Request):
         tenant_id_for_entry, _page_token_for_entry = await _resolve_tenant_context(entry_page_id)
         if not tenant_id_for_entry:
             # Unknown page — dropped with a log line in _resolve_tenant_context.
+            continue
+        if await _is_bot_paused_safe(tenant_id_for_entry):
+            # Owner switched the bot off in the admin panel: ignore the
+            # whole entry (no reply, no owner notification). Still 200
+            # so Meta doesn't retry.
+            logger.info(
+                "[webhook] bot paused for tenant=%s — %d event(s) ignored",
+                tenant_id_for_entry, len(entry.get("messaging", [])),
+            )
             continue
         # NOTE: the per-tenant token isn't threaded through the rest
         # of this handler yet — that's the next refactor. For now

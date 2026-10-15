@@ -774,6 +774,12 @@ async def init_db():
                 updated_at TEXT NOT NULL DEFAULT ''
             )
         """)
+        # Owner-controlled on/off switch (admin panel → ბოტი tab).
+        # Idempotent for rows created before the column existed.
+        await conn.execute(
+            "ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS "
+            "bot_paused BOOLEAN NOT NULL DEFAULT false"
+        )
 
         # Seed default Tissu config if not present.
         # These values mirror what was previously hardcoded in the system prompt.
@@ -1669,6 +1675,17 @@ async def is_bot_enabled(tenant_id: str) -> bool:
     return bool(row) if row is not None else False
 
 
+async def is_bot_paused(tenant_id: str) -> bool:
+    """True when the shop owner has switched the bot off from the admin
+    panel (bot_configs.bot_paused). A missing config row means the bot
+    is running — pausing is always an explicit choice."""
+    pool = await get_pool()
+    row = await pool.fetchval(
+        "SELECT bot_paused FROM bot_configs WHERE tenant_id = $1", tenant_id,
+    )
+    return bool(row)
+
+
 async def is_site_enabled(tenant_id: str) -> bool:
     """True iff the tenant currently has website CMS access."""
     pool = await get_pool()
@@ -1887,8 +1904,8 @@ async def upsert_bot_config(tenant_id: str, data: dict) -> None:
                 size_guide, delivery_info, payment_accounts, currency_symbol,
                 off_topic_reply, confidential_reply, unavailable_reply,
                 custom_order_reply, corporate_info, tone, emoji_enabled,
-                custom_instructions, updated_at)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)""",
+                custom_instructions, updated_at, bot_paused)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)""",
             tenant_id,
             data.get("company_name", ""),
             data.get("bot_greeting", ""),
@@ -1906,6 +1923,7 @@ async def upsert_bot_config(tenant_id: str, data: dict) -> None:
             bool(data.get("emoji_enabled", True)),
             data.get("custom_instructions", ""),
             now,
+            bool(data.get("bot_paused", False)),
         )
     else:
         fields = []
@@ -1916,10 +1934,12 @@ async def upsert_bot_config(tenant_id: str, data: dict) -> None:
             "delivery_info", "currency_symbol", "off_topic_reply",
             "confidential_reply", "unavailable_reply", "custom_order_reply",
             "corporate_info", "tone", "emoji_enabled", "custom_instructions",
+            "bot_paused",
         ):
             if col in data:
+                value = bool(data[col]) if col == "bot_paused" else data[col]
                 fields.append(f"{col} = ${idx}")
-                params.append(data[col])
+                params.append(value)
                 idx += 1
         if payment_accounts is not None:
             fields.append(f"payment_accounts = ${idx}")
