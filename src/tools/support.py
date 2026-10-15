@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import os
 import json
+from typing import Any
+
 import httpx
 from datetime import datetime, timezone
 from src.db import get_db
@@ -101,7 +103,7 @@ async def create_order(customer_name: str, customer_phone: str, customer_address
     # panel when changing order status, so auto-decrement would double-count.
     codes = sorted(set(c.upper() for c in _re.findall(r'(?i)(?:FP|TP|FD|TD)\d+', items)))
 
-    from src.notifications import send_whatsapp_text
+    from src.notifications import notify_owner_text
     public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
     parts = [
         f"🛒 ახალი შეკვეთა #{order_id}!",
@@ -117,7 +119,7 @@ async def create_order(customer_name: str, customer_phone: str, customer_address
         "",
         f"📋 ადმინ პანელი:\n{public_url}/admin",
     ])
-    await send_whatsapp_text("\n".join(parts))
+    await notify_owner_text("\n".join(parts))
 
     return {
         "success": True,
@@ -126,8 +128,72 @@ async def create_order(customer_name: str, customer_phone: str, customer_address
     }
 
 
+def _extract_product_code(text: str) -> str:
+    """Find a product code such as TD3 / ფდ3 in free text; '' if none.
+    Georgian letters that spell model/size codes are transliterated."""
+    ka_to_lat = {"ტ": "T", "ფ": "F", "პ": "P", "დ": "D"}
+    for word in text.split():
+        word_clean = word.strip(".,!?\"'()[]")
+        if not word_clean:
+            continue
+        converted = "".join(ka_to_lat.get(ch, ch) for ch in word_clean).upper()
+        if (len(converted) <= 5
+                and any(c.isalpha() for c in converted)
+                and any(c.isdigit() for c in converted)):
+            return converted
+    return ""
+
+
+async def _load_product_image_bytes(pool: Any, product_code: str) -> bytes | None:
+    """Return the product's main photo as bytes (Cloudinary URL or local /static path)."""
+    row = await pool.fetchrow("SELECT image_url FROM inventory WHERE UPPER(code) = $1", product_code)
+    image_url = (row["image_url"] if row else "") or ""
+    if not image_url:
+        return None
+    try:
+        if image_url.startswith("http"):
+            async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+                resp = await client.get(image_url)
+                return resp.content if resp.status_code == 200 else None
+        if image_url.startswith("/static/"):
+            static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static")
+            path = os.path.join(static_dir, image_url.replace("/static/", "", 1))
+            if os.path.exists(path):
+                with open(path, "rb") as f:
+                    return f.read()
+    except (httpx.HTTPError, OSError) as e:
+        print(f"[NOTIFY] product image load failed for {product_code}: {e}", flush=True)
+    return None
+
+
+async def _build_owner_message(
+    reason: str, customer_name: str, customer_phone: str, details: str, conversation_id: str,
+) -> str:
+    """Compose the owner's notification. Order/payment reasons get one-time
+    confirm/deny links; every notification ends with the admin panel link."""
+    public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
+    parts = [f"🔔 {reason}"]
+    if customer_name:
+        parts.append(f"👤 {customer_name}")
+    if customer_phone:
+        parts.append(f"📱 {customer_phone}")
+    if details:
+        parts.append(f"📝 {details}")
+    needs_confirm = any(kw in reason.lower() for kw in ("შეკვეთა", "გადახდა", "ჩარიცხ", "order", "payment"))
+    if conversation_id and needs_confirm:
+        from src.webhooks.whatsapp import build_confirm_url, create_confirm_token
+        confirm_url = build_confirm_url("owner-confirm", await create_confirm_token(conversation_id, "owner-confirm"))
+        deny_url = build_confirm_url("owner-deny", await create_confirm_token(conversation_id, "owner-deny"))
+        parts.extend(["", f"✅ ვადასტურებ:\n{confirm_url}", f"❌ არ ვადასტურებ:\n{deny_url}"])
+    parts.extend(["", f"📋 ადმინ პანელი:\n{public_url}/admin"])
+    return "\n".join(parts)
+
+
 async def notify_owner(reason: str, customer_name: str = "", customer_phone: str = "", details: str = "", conversation_id: str = "") -> dict:
-    """Notify shop owner via WhatsApp with product photo and confirm/deny."""
+    """Notify the shop owner (Telegram first, WhatsApp fallback) and log a ticket.
+
+    The ticket is written first so the request shows up in the admin panel
+    even if every messaging channel is down."""
     pool = await get_db()
     now = datetime.now(timezone.utc).isoformat()
     notification = {"reason": reason, "customer_name": customer_name, "customer_phone": customer_phone, "details": details}
@@ -136,85 +202,26 @@ async def notify_owner(reason: str, customer_name: str = "", customer_phone: str
         f"[NOTIFICATION] {reason}", json.dumps(notification, ensure_ascii=False), customer_phone, conversation_id, now, now,
     )
 
-    wa_phone_id = os.getenv("WA_PHONE_ID", "")
-    wa_token = os.getenv("WA_TOKEN", "")
-    owner_number = os.getenv("OWNER_WHATSAPP", "")
-    public_url = os.getenv("PUBLIC_URL", "")
+    from src.notifications import notify_owner_image, notify_owner_text
 
-    if wa_phone_id and wa_token and owner_number:
-        headers = {"Authorization": f"Bearer {wa_token}", "Content-Type": "application/json"}
-        wa_url = f"https://graph.facebook.com/v21.0/{wa_phone_id}/messages"
+    product_code = _extract_product_code(f"{details} {reason}")
+    if product_code:
+        image_bytes = await _load_product_image_bytes(pool, product_code)
+        if image_bytes:
+            await notify_owner_image(image_bytes, caption=f"📌 {product_code}")
 
-        # Find product code in details/reason — support Georgian letters
-        _ka_to_lat = {"ტ": "T", "ფ": "F", "პ": "P", "დ": "D"}
-        product_code = ""
-        product_image = ""
-        for word in (details + " " + reason).split():
-            word_clean = word.strip(".,!?\"'()[]")
-            if not word_clean:
-                continue
-            converted = ""
-            for ch in word_clean:
-                converted += _ka_to_lat.get(ch, ch)
-            converted = converted.upper()
-            if len(converted) <= 5 and any(c.isalpha() for c in converted) and any(c.isdigit() for c in converted):
-                product_code = converted
-                break
-
-        if product_code:
-            row = await pool.fetchrow("SELECT image_url FROM inventory WHERE UPPER(code) = $1", product_code)
-            if row and row["image_url"]:
-                product_image = row["image_url"]
-
-        try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                if product_image:
-                    _static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static")
-                    _img_path = product_image
-                    if _img_path.startswith("/static/"):
-                        _img_path = os.path.join(_static_dir, _img_path.replace("/static/", ""))
-                    if os.path.exists(_img_path):
-                        with open(_img_path, "rb") as _f:
-                            _img_bytes = _f.read()
-                        _upload = await client.post(
-                            f"https://graph.facebook.com/v21.0/{wa_phone_id}/media",
-                            headers={"Authorization": f"Bearer {wa_token}"},
-                            data={"messaging_product": "whatsapp", "type": "image/jpeg"},
-                            files={"file": ("photo.jpg", _img_bytes, "image/jpeg")},
-                        )
-                        _media_id = _upload.json().get("id", "")
-                        if _media_id:
-                            await client.post(wa_url, headers=headers, json={
-                                "messaging_product": "whatsapp", "to": owner_number,
-                                "type": "image",
-                                "image": {"id": _media_id, "caption": f"📌 {product_code}"},
-                            })
-
-                msg_parts = [f"🔔 {reason}"]
-                if customer_name:
-                    msg_parts.append(f"👤 {customer_name}")
-                if customer_phone:
-                    msg_parts.append(f"📱 {customer_phone}")
-                if details:
-                    msg_parts.append(f"📝 {details}")
-                # Only add confirm/deny links for order-related notifications
-                _needs_confirm = any(kw in reason.lower() for kw in ("შეკვეთა", "გადახდა", "ჩარიცხ", "order", "payment"))
-                if public_url and conversation_id and _needs_confirm:
-                    from src.webhooks.whatsapp import build_confirm_url, create_confirm_token
-                    confirm_url = build_confirm_url("owner-confirm", await create_confirm_token(conversation_id, "owner-confirm"))
-                    deny_url = build_confirm_url("owner-deny", await create_confirm_token(conversation_id, "owner-deny"))
-                    msg_parts.append("")
-                    msg_parts.append(f"✅ ვადასტურებ:\n{confirm_url}")
-                    msg_parts.append(f"❌ არ ვადასტურებ:\n{deny_url}")
-
-                await client.post(wa_url, headers=headers, json={
-                    "messaging_product": "whatsapp", "to": owner_number,
-                    "type": "text", "text": {"body": "\n".join(msg_parts)},
-                })
-        except Exception:
-            pass
-
-    return {"notified": True, "message": "მფლობელს ეცნობა"}
+    message = await _build_owner_message(reason, customer_name, customer_phone, details, conversation_id)
+    try:
+        sent = await notify_owner_text(message)
+    except Exception as e:  # a messaging failure must never break the customer's reply
+        print(f"[NOTIFY] owner text failed: {type(e).__name__}: {e}", flush=True)
+        sent = False
+    if not sent:
+        print(f"[NOTIFY] owner NOT reached — ticket logged only: {reason[:60]}", flush=True)
+    return {
+        "notified": sent,
+        "message": "მფლობელს ეცნობა" if sent else "მფლობელს შეტყობინება ვერ მიუვიდა, მოთხოვნა ადმინ პანელში ჩაიწერა",
+    }
 
 
 async def search_knowledge(query: str) -> dict:
@@ -236,7 +243,7 @@ _ai_hints: dict[str, str] = {}
 
 async def forward_photo_to_owner(size: str, conversation_id: str = "") -> dict:
     """Forward customer's pending photo to owner via WhatsApp with AI match + confirm/deny."""
-    from src.notifications import send_whatsapp_image, send_whatsapp_text
+    from src.notifications import notify_owner_image
 
     print(f"[PHOTO] forward_photo_to_owner called: size={size}, conv_id={conversation_id}")
     print(f"[PHOTO] Pending photos keys: {list(_pending_photos.keys())}")
@@ -271,8 +278,8 @@ async def forward_photo_to_owner(size: str, conversation_id: str = "") -> dict:
         f"❌ არ გვაქვს:\n{deny_url}\n\n"
         f"📋 ადმინ პანელი:\n{admin_url}"
     )
-    sent = await send_whatsapp_image(photo_bytes, caption=caption)
-    print(f"[PHOTO] WhatsApp customer photo sent: {sent}")
+    sent = await notify_owner_image(photo_bytes, caption=caption)
+    print(f"[PHOTO] owner photo sent: {sent}")
 
     # 2. If AI matched, also send the AI-recommended product photo so owner can visually compare
     if ai_product_url:
@@ -280,7 +287,7 @@ async def forward_photo_to_owner(size: str, conversation_id: str = "") -> dict:
             async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
                 resp = await client.get(ai_product_url)
                 if resp.status_code == 200:
-                    await send_whatsapp_image(
+                    await notify_owner_image(
                         resp.content,
                         caption=f"🤖 AI-ის რეკომენდაცია ↑ შეადარე კლიენტის ფოტოს",
                     )
@@ -291,7 +298,7 @@ async def forward_photo_to_owner(size: str, conversation_id: str = "") -> dict:
     # Clean up
     _pending_photos.pop(conversation_id, None)
 
-    return {"forwarded": sent, "message": "მფლობელს გადაეგზავნა" if sent else "WhatsApp გაგზავნა ვერ მოხერხდა"}
+    return {"forwarded": sent, "message": "მფლობელს გადაეგზავნა" if sent else "მფლობელს გაგზავნა ვერ მოხერხდა"}
 
 
 SUPPORT_TOOLS = [
