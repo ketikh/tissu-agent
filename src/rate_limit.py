@@ -9,12 +9,25 @@ This deliberately does NOT persist across restarts — Railway rebuilds
 reset the state, which is the right trade-off for a single-instance
 admin. When we scale horizontally or want stricter lockout, swap the
 backing dict for Redis. The public API won't change.
+
+IP Whitelist: set ADMIN_WHITELIST_IPS env var (comma-separated) to
+bypass rate limiting for trusted IPs, e.g. "1.2.3.4,5.6.7.8".
 """
 from __future__ import annotations
 
+import os
 import threading
 import time
 from dataclasses import dataclass, field
+
+
+def _load_whitelist() -> frozenset[str]:
+    raw = os.environ.get("ADMIN_WHITELIST_IPS", "")
+    return frozenset(ip.strip() for ip in raw.split(",") if ip.strip())
+
+
+# Loaded once at startup; redeploy to pick up changes.
+_WHITELIST: frozenset[str] = _load_whitelist()
 
 
 @dataclass
@@ -51,7 +64,7 @@ class RateLimiter:
 
     def allow(self, key: str) -> bool:
         """Return True if ``key`` is currently allowed to attempt."""
-        if not key:
+        if not key or key in _WHITELIST:
             return True
         now = time.time()
         with self._lock:
@@ -65,7 +78,7 @@ class RateLimiter:
 
     def record_failure(self, key: str) -> None:
         """Record a failed attempt. Engages lockout when threshold hits."""
-        if not key:
+        if not key or key in _WHITELIST:
             return
         now = time.time()
         with self._lock:
