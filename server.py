@@ -55,6 +55,7 @@ from src.db import (
 from src.sessions import IMPERSONATION_SECONDS
 from src.secrets_vault import encrypt_secret, redacted
 from src.passwords import needs_rehash, verify_password, hash_password
+from src.pricing import fixed_price_for_size
 from src.sessions import (
     SESSION_COOKIE_NAME, CSRF_COOKIE_NAME,
     SHORT_SESSION_SECONDS, LONG_SESSION_SECONDS,
@@ -2792,8 +2793,18 @@ async def update_inventory(
     if model is not None:
         await pool.execute("UPDATE inventory SET model = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", model, now, item_id, tenant_id)
     if size is not None:
-        new_price = 74 if "დიდი" in size else 69
-        await pool.execute("UPDATE inventory SET size = $1, price = $2, updated_at = $3 WHERE id = $4 AND tenant_id = $5", size, new_price, now, item_id, tenant_id)
+        # Only laptop cases have a fixed price per size (69₾ / 74₾). For
+        # every other category — cosmetic bags, aprons, … — the size is
+        # descriptive and the owner's own price must survive the change.
+        category = await pool.fetchval(
+            "SELECT category FROM inventory WHERE id = $1 AND tenant_id = $2",
+            item_id, tenant_id,
+        )
+        fixed_price = fixed_price_for_size(category, size)
+        if fixed_price is None:
+            await pool.execute("UPDATE inventory SET size = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", size, now, item_id, tenant_id)
+        else:
+            await pool.execute("UPDATE inventory SET size = $1, price = $2, updated_at = $3 WHERE id = $4 AND tenant_id = $5", size, fixed_price, now, item_id, tenant_id)
     if color is not None:
         await pool.execute("UPDATE inventory SET color = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4", color, now, item_id, tenant_id)
     if tags is not None:

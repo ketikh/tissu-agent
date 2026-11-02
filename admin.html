@@ -860,12 +860,14 @@
                             <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
                             <input class="inv-search" id="inv-search" placeholder="ძებნა კოდით, ტეგით…" oninput="setInvQuery(this.value)">
                         </div>
-                        <span class="inv-bag-filters" style="display:contents">
+                        <span class="inv-model-filters" style="display:contents">
                             <span style="width:1px;height:18px;background:var(--border);margin:0 4px"></span>
                             <b>მოდელი</b>
                             <button class="btn btn-sm active" data-filter="model" data-value="" onclick="setFilter('model','')">ყველა</button>
                             <button class="btn btn-sm" data-filter="model" data-value="ფხრიწიანი" onclick="setFilter('model','ფხრიწიანი')">ფხრიწიანი</button>
                             <button class="btn btn-sm" data-filter="model" data-value="თასმიანი" onclick="setFilter('model','თასმიანი')">თასმიანი</button>
+                        </span>
+                        <span class="inv-size-filters" style="display:contents">
                             <span style="width:1px;height:18px;background:var(--border);margin:0 4px"></span>
                             <b>ზომა</b>
                             <button class="btn btn-sm active" data-filter="size" data-value="" onclick="setFilter('size','')">ყველა</button>
@@ -2490,6 +2492,27 @@
     // still render correctly while the category slug is being migrated.
     function isLaptopCat(slug) { return slug === 'bag' || slug === 'laptop-cases'; }
 
+    // Size is first-class on laptop cases (size column, "პატარა (33x25)").
+    // Other categories may carry it in the size column or as a tag the
+    // owner typed ("პატარა ზომა") — read both so the ზომა filter chips and
+    // the per-card dropdown behave the same way in every category.
+    const SIZE_TAG_RE = /^(პატარა|დიდი)(\s+ზომა)?$/;
+    function sizeOf(item) {
+        const direct = (item.size || '').trim();
+        if (direct.includes('პატარა')) return 'პატარა';
+        if (direct.includes('დიდი')) return 'დიდი';
+        const tagged = tagsToList(item.tags).find(t => SIZE_TAG_RE.test(t));
+        return tagged ? tagged.split(/\s+/)[0] : '';
+    }
+    // A category "has sizes" when it is the laptop one, when the owner gave
+    // it a 'size' custom field, or when any of its products already carries
+    // a size — so cosmetic bags light up as soon as one is tagged პატარა.
+    function categoryHasSizes(cat, items) {
+        if (isLaptopCat(cat)) return true;
+        if ((categoryBySlug(cat).fields || []).some(f => f.key === 'size')) return true;
+        return items.some(i => sizeOf(i));
+    }
+
     let allOrders = [];
     let activeCategory = 'laptop-cases';
     let allCategories = [];
@@ -3174,11 +3197,13 @@
         // the sidebar come from /api/categories (re-fetched on add/delete).
         let items = allInventory.filter(i => (i.category || 'laptop-cases') === activeCategory
             || (isLaptopCat(activeCategory) && isLaptopCat(i.category || 'laptop-cases')));
-        const hasBagFilters = items.some(i => i.model && i.model.trim());
-        if (hasBagFilters) {
-            if (filterModel) items = items.filter(i => i.model === filterModel);
-            if (filterSize) items = items.filter(i => i.size.includes(filterSize));
-        }
+        // Model chips are laptop-only (ფხრიწიანი / თასმიანი). Size chips show
+        // in any category that carries sizes — laptop cases always, other
+        // categories once a product has a size (column or "პატარა ზომა" tag).
+        const hasModelFilters = items.some(i => i.model && i.model.trim());
+        const hasSizeFilters = categoryHasSizes(activeCategory, items);
+        if (hasModelFilters && filterModel) items = items.filter(i => i.model === filterModel);
+        if (hasSizeFilters && filterSize) items = items.filter(i => sizeOf(i) === filterSize);
         if (invQuery) {
             items = items.filter(i => {
                 const attrsStr = (i.attrs && typeof i.attrs === 'object') ? Object.values(i.attrs).join(' ')
@@ -3199,10 +3224,13 @@
             <div class="stat-card"><div class="num" style="color:var(--danger)">${soldOut}</div><div class="label">გაყიდული</div></div>
         `;
 
-        // Hide the bag-only filter chips on non-bag categories; keep the
+        // Hide the chips that don't apply to this category; keep the
         // filter-bar itself visible so the inventory search stays available.
-        document.querySelectorAll('#tab-inventory .inv-bag-filters > *').forEach(el => {
-            el.style.display = hasBagFilters ? '' : 'none';
+        document.querySelectorAll('#tab-inventory .inv-model-filters > *').forEach(el => {
+            el.style.display = hasModelFilters ? '' : 'none';
+        });
+        document.querySelectorAll('#tab-inventory .inv-size-filters > *').forEach(el => {
+            el.style.display = hasSizeFilters ? '' : 'none';
         });
         // Clear the search input's DOM value when switching categories so
         // it matches the (just-reset) invQuery state.
@@ -3231,13 +3259,24 @@
                         </select>
                     </div>`;
             } else {
-                const fields = (catDef.fields && catDef.fields.length) ? catDef.fields : [];
-                attrBlock = fields.length
+                // Sized categories (e.g. cosmetic bags) get the same პატარა/დიდი
+                // dropdown laptop cases have. A 'size' custom field, if the
+                // owner added one, is covered by the dropdown, so skip its input.
+                const currentSize = sizeOf(i);
+                const sizeBlock = hasSizeFilters ? `
+                    <select style="width:100%;margin-top:4px" title="ზომა" onchange="setSize(${i.id},this.value)">
+                        <option value="" ${currentSize===''?'selected':''}>ზომა —</option>
+                        <option value="პატარა" ${currentSize==='პატარა'?'selected':''}>პატარა</option>
+                        <option value="დიდი" ${currentSize==='დიდი'?'selected':''}>დიდი</option>
+                    </select>` : '';
+                const fields = ((catDef.fields && catDef.fields.length) ? catDef.fields : [])
+                    .filter(f => !(hasSizeFilters && f.key === 'size'));
+                attrBlock = sizeBlock + (fields.length
                     ? '<div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">' + fields.map(f => {
                         const val = (attrs[f.key] ?? '').toString().replace(/"/g, '&quot;');
                         return `<input type="text" placeholder="${f.label}" value="${val}" onchange="setAttr(${i.id},'${f.key}',this.value)">`;
                     }).join('') + '</div>'
-                    : '';
+                    : '');
             }
             // Bags need both front + back (reversible fabric); other
             // categories start with a single slot. Extra angles live on
@@ -4703,6 +4742,14 @@
             group.classList.add('saved');
             setTimeout(() => group.classList.remove('saved'), 900);
         }
+    }
+
+    // Non-laptop sized categories: store the size column, then redraw so the
+    // ზომა chips and the card agree. The server leaves the price alone for
+    // these categories — only laptop cases have a fixed price per size.
+    async function setSize(id, value) {
+        await setLabel(id, 'size', value);
+        renderGrid();
     }
 
     function productNameFallback(item) {
