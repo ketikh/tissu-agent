@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 from datetime import datetime, timezone
-from src.db import get_db
+from src.db import DEFAULT_TENANT_ID, get_bot_config, get_db
 from src.engine import Tool
 
 
@@ -89,6 +89,58 @@ async def save_lead(name: str, phone: str = "", notes: str = "", score: int = 0,
     return {"success": True, "lead_id": row["id"]}
 
 
+async def _payment_accounts() -> list[tuple[str, str]]:
+    """The shop's bank accounts from the bot settings (admin → ბოტი tab),
+    as ``[(bank_name, account_number), ...]``. Empty when not configured or
+    when the lookup fails — the order alert must still go out."""
+    try:
+        cfg = await get_bot_config(DEFAULT_TENANT_ID) or {}
+    except Exception as e:
+        print(f"[ORDER] bank accounts lookup failed: {e}", flush=True)
+        return []
+    accounts = cfg.get("payment_accounts") or []
+    if not isinstance(accounts, list):
+        return []
+    out = []
+    for acc in accounts:
+        if not isinstance(acc, dict):
+            continue
+        number = str(acc.get("account_number") or "").strip()
+        if number:
+            out.append((str(acc.get("bank_name") or "").strip(), number))
+    return out
+
+
+def _order_notification(
+    order_id: int, customer_name: str, customer_phone: str, customer_address: str,
+    codes: list[str], items: str, total: float, payment_method: str,
+    accounts: list[tuple[str, str]], public_url: str,
+) -> tuple[str, list[str]]:
+    """Build the owner's new-order alert. Returns ``(text, copyable)`` where
+    ``copyable`` holds the customer's phone and every bank account number,
+    so on Telegram the owner copies them with one tap (she forwards the
+    account number to the customer herself)."""
+    parts = [
+        f"🛒 ახალი შეკვეთა #{order_id}!",
+        f"👤 {customer_name}",
+        f"📱 {customer_phone}",
+        f"📍 {customer_address}",
+    ]
+    if codes:
+        parts.append(f"🏷️ {', '.join(codes)}")
+    parts.extend([f"📦 {items}", f"💰 {total}₾"])
+    if payment_method:
+        parts.append(f"💳 {payment_method}")
+    if accounts:
+        parts.append("")
+        parts.append("🏦 ანგარიშები (დააჭირე — დაკოპირდება):")
+        for bank, number in accounts:
+            parts.append(f"{bank}: {number}" if bank else number)
+    parts.extend(["", f"📋 ადმინ პანელი:\n{public_url}/admin"])
+    copyable = [customer_phone] + [number for _, number in accounts]
+    return "\n".join(parts), copyable
+
+
 async def create_order(customer_name: str, customer_phone: str, customer_address: str, items: str, total: float, payment_method: str = "", notes: str = "") -> dict:
     import re as _re
     pool = await get_db()
@@ -105,21 +157,11 @@ async def create_order(customer_name: str, customer_phone: str, customer_address
 
     from src.notifications import notify_owner_text
     public_url = os.getenv("PUBLIC_URL", "https://tissu-agent-production.up.railway.app")
-    parts = [
-        f"🛒 ახალი შეკვეთა #{order_id}!",
-        f"👤 {customer_name}",
-        f"📱 {customer_phone}",
-        f"📍 {customer_address}",
-    ]
-    if codes:
-        parts.append(f"🏷️ {', '.join(codes)}")
-    parts.extend([
-        f"📦 {items}",
-        f"💰 {total}₾",
-        "",
-        f"📋 ადმინ პანელი:\n{public_url}/admin",
-    ])
-    await notify_owner_text("\n".join(parts))
+    text, copyable = _order_notification(
+        order_id, customer_name, customer_phone, customer_address,
+        codes, items, total, payment_method, await _payment_accounts(), public_url,
+    )
+    await notify_owner_text(text, copyable=copyable)
 
     return {
         "success": True,

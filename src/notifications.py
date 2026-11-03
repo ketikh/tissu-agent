@@ -5,8 +5,11 @@ and WhatsApp (legacy fallback). Used by webhooks and agent tools.
 """
 from __future__ import annotations
 
+import html
 import logging
 import os
+import re
+from typing import Sequence
 
 import httpx
 
@@ -104,8 +107,47 @@ def _get_tg_config() -> tuple[str, str]:
     )
 
 
-async def send_telegram_text(message: str) -> bool:
-    """Send a text message to the owner via Telegram."""
+def telegram_html_with_copyable(message: str, copyable: Sequence[str]) -> str:
+    """Render ``message`` as Telegram HTML, wrapping every occurrence of the
+    ``copyable`` values in ``<code>`` so one tap copies them (Telegram shows
+    code spans in monospace and copies them to the clipboard on tap).
+
+    The whole message is HTML-escaped first, so customer-typed text can't
+    break the markup; the values are escaped the same way before matching.
+    """
+    text = html.escape(message, quote=False)
+    values = {html.escape(v.strip(), quote=False) for v in copyable if v and v.strip()}
+    if not values:
+        return text
+    # One regex pass, longest value first, so a value that happens to be a
+    # substring of another (a phone number inside an account number) can
+    # never produce nested <code> tags, which Telegram rejects.
+    pattern = "|".join(re.escape(v) for v in sorted(values, key=len, reverse=True))
+    return re.sub(pattern, lambda m: f"<code>{m.group(0)}</code>", text)
+
+
+def telegram_text_payload(
+    chat_id: str, message: str, copyable: Sequence[str] = (),
+) -> dict:
+    """Build the sendMessage body. Plain text by default; switches to HTML
+    parse mode only when there are values to make tap-to-copy."""
+    payload = {
+        "chat_id": chat_id,
+        "text": message,
+        "disable_web_page_preview": True,
+    }
+    if any((v or "").strip() for v in copyable):
+        payload["text"] = telegram_html_with_copyable(message, copyable)
+        payload["parse_mode"] = "HTML"
+    return payload
+
+
+async def send_telegram_text(message: str, copyable: Sequence[str] = ()) -> bool:
+    """Send a text message to the owner via Telegram.
+
+    ``copyable`` lists values (bank account numbers, phone numbers) that
+    should be rendered tap-to-copy; see ``telegram_html_with_copyable``.
+    """
     token, chat_id = _get_tg_config()
     print(f"[TG] send_text called — token_set={bool(token)} chat_id_set={bool(chat_id)}", flush=True)
     if not (token and chat_id):
@@ -116,11 +158,7 @@ async def send_telegram_text(message: str) -> bool:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
                 f"{TG_API_BASE}/bot{token}/sendMessage",
-                json={
-                    "chat_id": chat_id,
-                    "text": message,
-                    "disable_web_page_preview": True,
-                },
+                json=telegram_text_payload(chat_id, message, copyable),
             )
             data = resp.json()
             if not data.get("ok"):
@@ -178,10 +216,12 @@ async def send_telegram_image(image_bytes: bytes, caption: str, filename: str = 
 # only if TELEGRAM_BOT_TOKEN isn't set, so the migration is just an env var
 # flip.
 
-async def notify_owner_text(message: str) -> bool:
+async def notify_owner_text(message: str, copyable: Sequence[str] = ()) -> bool:
+    """``copyable`` values become tap-to-copy on Telegram; the WhatsApp
+    fallback has no such formatting, so it gets the plain message."""
     if os.getenv("TELEGRAM_BOT_TOKEN"):
         print("[NOTIFY] → Telegram (text)", flush=True)
-        return await send_telegram_text(message)
+        return await send_telegram_text(message, copyable=copyable)
     print("[NOTIFY] → WhatsApp (text) — TELEGRAM_BOT_TOKEN not set", flush=True)
     return await send_whatsapp_text(message)
 
