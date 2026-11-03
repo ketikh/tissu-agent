@@ -22,6 +22,7 @@ from src.db import (
     DEFAULT_TENANT_ID, get_db, get_site_sections,
     list_necklace_options, get_necklace_base_price,
     list_gallery_photos,
+    list_angle_photos_for_ids,
     list_product_gallery, list_product_gallery_for_ids,
     list_reviews,
     size_variant_map_for_ids,
@@ -120,11 +121,35 @@ def _effective_price(row: dict) -> float:
         return 0.0
 
 
+def _product_photos(
+    front: str, back: str, angle_images: list[str] | None,
+) -> tuple[str, list[str]]:
+    """Resolve a product's second photo and its full photo list.
+
+    Laptop cases carry their second photo in ``image_url_back``. Other
+    categories (cosmetic bags, totes, …) get theirs from the admin card's
+    "სხვა რაკურსი" tile, which lands in ``product_extra_photos`` instead.
+    So when the back slot is empty, the first extra angle becomes the
+    second photo and the website shows it exactly like a laptop case's.
+
+    Returns ``(image_back, images)``: ``images`` is every photo in display
+    order with blanks and duplicates removed.
+    """
+    angles = [u.strip() for u in (angle_images or []) if u and u.strip()]
+    second = back or (angles[0] if angles else "")
+    images: list[str] = []
+    for url in (front, second, *angles):
+        if url and url not in images:
+            images.append(url)
+    return second, images
+
+
 def _serialize(
     row: dict,
     gallery_images: list[str] | None = None,
     category_labels: dict[str, dict] | None = None,
     size_sibling: dict | None = None,
+    angle_images: list[str] | None = None,
 ) -> dict:
     """Turn an inventory row into the public response shape.
 
@@ -132,6 +157,10 @@ def _serialize(
     an empty list (or None — coerced to []) when the product has no
     lifestyle photos. The website checks for a non-empty array to decide
     whether to render the "On model" section.
+
+    ``angle_images`` is the pre-fetched list of extra angle photos (see
+    ``_product_photos``). They fill ``image_back`` when the owner never
+    uploaded a dedicated back photo, and always appear in ``images``.
 
     ``category_labels`` is ``{slug: {name_ka, name_en}}`` so the response
     can carry the human-readable filter chip text inline. The site falls
@@ -166,6 +195,10 @@ def _serialize(
     fallback_name = " ".join(p for p in (model_part, size_part) if p).strip()
     resolved_name = explicit_name or fallback_name or (row.get("code") or "")
     resolved_name_en = explicit_name_en or resolved_name
+    image_front = row.get("image_url") or ""
+    image_back, images = _product_photos(
+        image_front, row.get("image_url_back") or "", angle_images,
+    )
     return {
         "id": str(row["id"]),
         "code": row.get("code") or "",
@@ -182,8 +215,9 @@ def _serialize(
         "stock": stock,
         "in_stock": stock > 0,
         "preorder_available": bool(row.get("preorder_available")),
-        "image_front": row.get("image_url") or "",
-        "image_back": row.get("image_url_back") or "",
+        "image_front": image_front,
+        "image_back": image_back,
+        "images": images,
         "category": _map_category(row.get("category")),
         "category_slug": row.get("category") or "",
         "category_name_ka": (
@@ -274,6 +308,9 @@ async def list_products(
     gallery_by_id = await list_product_gallery_for_ids(
         tenant_id, [r["id"] for r in rows]
     )
+    angles_by_id = await list_angle_photos_for_ids(
+        tenant_id, [r["id"] for r in rows]
+    )
     category_labels = await _fetch_category_labels(tenant_id)
     sibling_map = await size_variant_map_for_ids(
         tenant_id, [r["id"] for r in rows]
@@ -284,6 +321,7 @@ async def list_products(
             gallery_images=gallery_by_id.get(r["id"], []),
             category_labels=category_labels,
             size_sibling=sibling_map.get(r["id"]),
+            angle_images=angles_by_id.get(r["id"], []),
         )
         for r in rows
     ]
@@ -315,6 +353,7 @@ async def get_product(
         raise HTTPException(status_code=404, detail="not found")
 
     gallery = await list_product_gallery(tenant_id, inventory_id=id_int)
+    angles_by_id = await list_angle_photos_for_ids(tenant_id, [id_int])
     category_labels = await _fetch_category_labels(tenant_id)
     sibling_map = await size_variant_map_for_ids(tenant_id, [id_int])
     response.headers["Cache-Control"] = STOREFRONT_CACHE
@@ -323,6 +362,7 @@ async def get_product(
         gallery_images=[g["image_url"] for g in gallery],
         category_labels=category_labels,
         size_sibling=sibling_map.get(id_int),
+        angle_images=angles_by_id.get(id_int, []),
     )
 
 

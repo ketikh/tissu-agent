@@ -3327,11 +3327,14 @@
             }
 
             // Extra angle slots (from product_extra_photos, photo_type='angle').
-            angles.forEach((a, idx) => {
+            // Numbered after whatever slots the card already shows, so a
+            // product without a back photo labels its first extra angle
+            // "რაკურსი 2" (that is the photo the website shows second).
+            angles.forEach((a) => {
                 slots.push(`<div class="photo-slot filled">
                     <img src="${a.image_url.startsWith('http') ? a.image_url : API + a.image_url}">
                     <button class="remove-btn" onclick="deleteAngle(${a.id})" title="წაშლა">&times;</button>
-                    <span class="slot-label">რაკურსი ${3 + idx}</span>
+                    <span class="slot-label">რაკურსი ${slots.length + 1}</span>
                 </div>`);
             });
 

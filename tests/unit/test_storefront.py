@@ -116,6 +116,7 @@ def test_serialize_matches_task_contract():
         "preorder_available": False,
         "image_front": "https://cdn/front.jpg",
         "image_back": "https://cdn/back.jpg",
+        "images": ["https://cdn/front.jpg", "https://cdn/back.jpg"],
         "category": "pouch",
         "category_slug": "bag",
         "category_name_ka": "bag",
@@ -212,3 +213,59 @@ def test_serialize_falls_back_to_created_at_when_updated_at_missing():
         "updated_at": None, "created_at": "2026-04-01T00:00:00Z",
     }
     assert _serialize(row)["updated_at"] == "2026-04-01T00:00:00Z"
+
+
+# ── Second photo for categories that use the "სხვა რაკურსი" tile ──────
+
+def _cosmetic_row(**overrides) -> dict:
+    base = {
+        "id": 171, "code": "CO1", "product_name": "კოსმეტიკის ჩანთა",
+        "model": "", "size": "", "color": "", "description": None,
+        "price": 35.0, "stock": 1, "category": "cosmetic-bag", "tags": "",
+        "on_sale": False, "sale_price": None,
+        "image_url": "https://cdn/co1_front.jpg", "image_url_back": "",
+        "updated_at": "2026-11-02T10:52:28Z",
+        "created_at": "2026-11-02T10:51:27Z",
+    }
+    return {**base, **overrides}
+
+
+def test_serialize_promotes_first_extra_angle_to_second_photo():
+    """Cosmetic bags get their second photo from the admin's "სხვა რაკურსი"
+    tile, not the back slot. The website must still receive it as
+    image_back so it renders like a laptop case's second photo."""
+    out = _serialize(_cosmetic_row(), angle_images=["https://cdn/co1_angle.jpg"])
+
+    assert out["image_back"] == "https://cdn/co1_angle.jpg"
+    assert out["images"] == ["https://cdn/co1_front.jpg", "https://cdn/co1_angle.jpg"]
+
+
+def test_serialize_keeps_owner_back_photo_ahead_of_angles():
+    out = _serialize(
+        _cosmetic_row(image_url_back="https://cdn/co1_back.jpg"),
+        angle_images=["https://cdn/co1_angle.jpg", "https://cdn/co1_angle2.jpg"],
+    )
+
+    assert out["image_back"] == "https://cdn/co1_back.jpg"
+    assert out["images"] == [
+        "https://cdn/co1_front.jpg",
+        "https://cdn/co1_back.jpg",
+        "https://cdn/co1_angle.jpg",
+        "https://cdn/co1_angle2.jpg",
+    ]
+
+
+def test_serialize_images_without_extra_photos():
+    out = _serialize(_cosmetic_row())
+
+    assert out["image_back"] == ""
+    assert out["images"] == ["https://cdn/co1_front.jpg"]
+
+
+def test_serialize_images_drop_blank_and_duplicate_urls():
+    out = _serialize(
+        _cosmetic_row(image_url_back="https://cdn/co1_front.jpg"),
+        angle_images=["", "  ", "https://cdn/co1_front.jpg", "https://cdn/co1_angle.jpg"],
+    )
+
+    assert out["images"] == ["https://cdn/co1_front.jpg", "https://cdn/co1_angle.jpg"]

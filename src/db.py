@@ -2483,6 +2483,32 @@ async def list_product_gallery_for_ids(
     return out
 
 
+async def list_angle_photos_for_ids(
+    tenant_id: str, inventory_ids: list[int],
+) -> dict[int, list[str]]:
+    """Batched lookup of the extra "angle" photos the owner adds from the
+    admin card's "სხვა რაკურსი" tile (``product_extra_photos`` rows with
+    ``photo_type = 'angle'``). Returns ``{inventory_id: [url, ...]}`` in
+    upload order so the storefront can show them next to the front/back
+    photos in one round-trip."""
+    if not inventory_ids:
+        return {}
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT inventory_id, image_url FROM product_extra_photos "
+        "WHERE tenant_id = $1 AND photo_type = 'angle' "
+        "AND inventory_id = ANY($2::int[]) "
+        "ORDER BY inventory_id, created_at, id",
+        tenant_id, list(inventory_ids),
+    )
+    out: dict[int, list[str]] = {}
+    for r in rows:
+        url = (r["image_url"] or "").strip()
+        if url:
+            out.setdefault(int(r["inventory_id"]), []).append(url)
+    return out
+
+
 async def create_product_gallery_photo(
     tenant_id: str, inventory_id: int, image_url: str,
     position: int | None = None,
