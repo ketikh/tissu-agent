@@ -11,6 +11,7 @@ import pytest
 
 from src.api.storefront import (
     CATEGORY_ALIASES,
+    _size_of,
     PUBLIC_CATEGORIES,
     _map_category,
     _parse_tags,
@@ -269,3 +270,33 @@ def test_serialize_images_drop_blank_and_duplicate_urls():
     )
 
     assert out["images"] == ["https://cdn/co1_front.jpg", "https://cdn/co1_angle.jpg"]
+
+
+# ── Size read from tags (cosmetic bags tag "პატარა ზომა" / "დიდი ზომა") ──
+
+@pytest.mark.parametrize("tags, expected", [
+    (["პატარა ზომა"], "პატარა"),
+    (["დიდი ზომა"], "დიდი"),
+    (["new", "დიდი"], "დიდი"),
+    (["პატარა ზომა", "დიდი ზომა"], "პატარა"),   # first size tag wins
+    (["ზომა", "პატარას"], ""),                   # not an exact size tag
+    ([], ""),
+])
+def test_size_of_reads_the_size_tag_when_column_is_empty(tags, expected):
+    assert _size_of({"size": ""}, tags) == expected
+
+
+def test_size_of_prefers_the_admin_size_column():
+    assert _size_of({"size": "დიდი (37x27)"}, ["პატარა ზომა"]) == "დიდი (37x27)"
+
+
+def test_serialize_cosmetic_bag_exposes_size_from_tag():
+    out = _serialize(_cosmetic_row(tags="პატარა ზომა, new"))
+
+    assert out["size"] == "პატარა"
+    assert out["tags"] == ["პატარა ზომა", "new"]
+    assert out["name"] == "კოსმეტიკის ჩანთა"      # explicit name untouched
+
+
+def test_serialize_without_size_anywhere_keeps_size_blank():
+    assert _serialize(_cosmetic_row(tags="new"))["size"] == ""

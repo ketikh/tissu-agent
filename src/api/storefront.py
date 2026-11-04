@@ -105,6 +105,25 @@ def _parse_tags(raw: Any) -> list[str]:
     return [t.strip() for t in s.split(",") if t.strip() and not _is_hex_token(t.strip())]
 
 
+# A tag that is exactly "პატარა"/"დიდი", optionally followed by "ზომა" —
+# the way the owner tags sized products (cosmetic bags) in the admin panel.
+_SIZE_TAG_RE = re.compile(r"^(პატარა|დიდი)(\s+ზომა)?$")
+
+
+def _size_of(row: dict, tags: list[str]) -> str:
+    """The product's size text: the admin ``size`` column when set, else the
+    size tag. Mirrors the admin panel's size filter, so a product the owner
+    tagged "პატარა ზომა" shows as პატარა on the website too."""
+    direct = (row.get("size") or "").strip()
+    if direct:
+        return direct
+    for tag in tags:
+        match = _SIZE_TAG_RE.match(tag.strip())
+        if match:
+            return match.group(1)
+    return ""
+
+
 def _effective_price(row: dict) -> float:
     """Return the price the customer actually pays: sale_price when the
     product is on sale, otherwise the regular price."""
@@ -191,7 +210,8 @@ def _serialize(
     explicit_name = (row.get("product_name") or "").strip()
     explicit_name_en = (row.get("product_name_en") or "").strip()
     model_part = (row.get("model") or "").strip()
-    size_part = (row.get("size") or "").strip()
+    tags = _parse_tags(row.get("tags"))
+    size_part = _size_of(row, tags)
     fallback_name = " ".join(p for p in (model_part, size_part) if p).strip()
     resolved_name = explicit_name or fallback_name or (row.get("code") or "")
     resolved_name_en = explicit_name_en or resolved_name
@@ -206,7 +226,7 @@ def _serialize(
         "name_ka": resolved_name,
         "name_en": resolved_name_en,
         "model": row.get("model") or "",
-        "size": row.get("size") or "",
+        "size": size_part,
         "color": row.get("color") or "",
         "description": description,
         "price": effective,
@@ -228,7 +248,7 @@ def _serialize(
             (category_labels or {}).get(row.get("category") or "", {}).get("name_en")
             or ""
         ),
-        "tags": _parse_tags(row.get("tags")),
+        "tags": tags,
         "gallery_images": list(gallery_images or []),
         "size_sibling": size_sibling,
         "updated_at": row.get("updated_at") or row.get("created_at") or "",
